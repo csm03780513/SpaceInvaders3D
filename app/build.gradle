@@ -1,0 +1,50 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.csm.spaceinvaders3d'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId "com.csm.spaceinvaders3d"
+        minSdk 24
+        targetSdk 35
+        versionCode 1
+        versionName "1.0"
+
+        // REMOVE this for Native Activity:
+        // testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    buildTypes {
+        release {
+            // No need for Proguard in Native-only project
+            // minifyEnabled false
+            // proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    // REMOVE if you are 100% native:
+    // compileOptions {
+    //     sourceCompatibility JavaVersion.VERSION_11
+    //     targetCompatibility JavaVersion.VERSION_11
+    // }
+
+    externalNativeBuild {
+        cmake {
+            path file('src/main/cpp/CMakeLists.txt')
+            version '3.22.1'
+        }
+    }
+
+    // REMOVE for Native Activity:
+    // buildFeatures {
+    //     viewBinding true
+    // }
+    ndkVersion '28.0.13004108'
+}
+
+dependencies {
+    // (empty!)
+}

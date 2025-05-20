@@ -1,0 +1,3 @@
+<resources>
+    <style name="Theme.SpaceInvaders3D" parent="@android:style/Theme.DeviceDefault.NoActionBar"/>
+</resources>
