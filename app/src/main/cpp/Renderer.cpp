@@ -2,35 +2,14 @@
 #include <android/native_window.h>
 #include <android/log.h>
 #include <vector>
+#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "Vulkan", __VA_ARGS__)
 
 std::vector<char> loadAsset(AAssetManager *mgr, const char *filename);
-
 VkShaderModule createShaderModule(VkDevice device, const std::vector<char> &code);
-
 std::array<float, 16> makePerspective(float fovY, float aspect, float zNear, float zFar);
-
-
 void createBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkDeviceSize size,
                   VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer &buffer,
                   VkDeviceMemory &bufferMemory);
-
-#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "Vulkan", __VA_ARGS__)
-
-struct Vertex {
-    float pos[3];
-    float color[3];
-};
-struct Bullet {
-    float x, y;
-    bool active;
-};
-enum class GameState {
-    Playing,
-    Won,
-    Lost
-};
-
-GameState gameState = GameState::Playing;
 
 
 // Relative to (0, 0); will offset per-bullet in the shader or CPU
@@ -55,6 +34,24 @@ static Vertex triangleVerts[3] = {
         {{-0.5f, 0.5f,  1.0f}, {0.0f, 0.0f, 1.0f}}
 };
 
+static Vertex overlayQuadVerts[6] = {
+        // First triangle
+//        {{1.0f,  -1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}}, // bottom left (white)
+//        {{-1.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 1.0f}}, // bottom right (cyan)
+//        {{1.0f,  1.0f,  1.0f}, {1.0f, 0.0f, 1.0f}}, // top left (magenta)
+//        // Second triangle
+//        {{-1.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 1.0f}}, // bottom right
+//        {{1.0f, -1.0f,  1.0f}, {0.0f, 0.0f, 1.0f}}, // top right (blue)
+//        {{-1.0f,  -1.0f,  1.0f}, {1.0f, 0.0f, 1.0f}}  // top left
+
+        { {-0.6f, -0.2f,1.0f} }, // left-bottom
+        { { 0.6f, -0.2f,1.0f} }, // right-bottom
+        { {-0.6f, -0.05f,1.0f} }, // left-top
+        { { 0.6f, -0.2f,1.0f} }, // right-bottom
+        { { 0.6f, -0.05f,1.0f} }, // right-top
+        { {-0.6f, -0.05f,1.0f} }  // left-top
+};
+
 // Ship is a rectangle at y = -0.8f, width = 0.2, height = 0.05 (adjust as you like)
 static Vertex shipVerts[6] = {
         // First triangle
@@ -65,11 +62,6 @@ static Vertex shipVerts[6] = {
         {{-0.1f, 0.85f, 1.0f}, {0.0f, 1.0f, 1.0f}}, // bottom right
         {{-0.1f, 0.8f,  1.0f}, {0.0f, 0.0f, 1.0f}}, // top right (blue)
         {{0.1f,  0.8f,  1.0f}, {1.0f, 0.0f, 1.0f}}  // top left
-};
-
-struct Alien {
-    float x, y;
-    bool active;
 };
 
 static constexpr int NUM_ALIENS_X = 8;
@@ -180,6 +172,7 @@ void createBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkDeviceSize
 }
 
 Renderer::Renderer(android_app *app) : app_(app) {
+    mgr_ = app_->activity->assetManager;
     initVulkan();
 }
 
@@ -437,18 +430,6 @@ void Renderer::initVulkan() {// Load Vulkan functions using volk
         abort();
     }
 
-    AAssetManager *mgr = app_->activity->assetManager;
-
-    auto vertShaderCode = loadAsset(mgr, "main.vert.spv");
-    auto fragShaderCode = loadAsset(mgr, "main.frag.spv");
-    VkShaderModule mainVertShaderModule = createShaderModule(device_, vertShaderCode);
-    VkShaderModule mainFragShaderModule = createShaderModule(device_, fragShaderCode);
-
-    auto overlayVertShaderCode = loadAsset(mgr, "overlay.vert.spv");
-    auto overlayFragShaderCode = loadAsset(mgr, "overlay.frag.spv");
-    VkShaderModule overlayVertShaderModule = createShaderModule(device_, overlayVertShaderCode);
-    VkShaderModule overlayFragShaderModule = createShaderModule(device_, overlayFragShaderCode);
-
 
     VkDeviceSize bulletBufferSize = sizeof(bulletVerts);
     createBuffer(device_, physicalDevice_, bulletBufferSize,
@@ -463,13 +444,10 @@ void Renderer::initVulkan() {// Load Vulkan functions using volk
 
     VkDeviceSize bufferSize = sizeof(triangleVerts);
     createBuffer(
-            device_,
-            physicalDevice_,
-            bufferSize,
+            device_,physicalDevice_,bufferSize,
             VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-            vertexBuffer_,
-            vertexBufferMemory_
+            vertexBuffer_,vertexBufferMemory_
     );
     // Map and copy vertex data
     void *data;
@@ -484,8 +462,7 @@ void Renderer::initVulkan() {// Load Vulkan functions using volk
             shipBufferSize,
             VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-            shipVertexBuffer_,
-            shipVertexBufferMemory_
+            shipVertexBuffer_,shipVertexBufferMemory_
     );
 
 // Map/copy ship vertex data
@@ -494,6 +471,55 @@ void Renderer::initVulkan() {// Load Vulkan functions using volk
     memcpy(shipData, shipVerts, (size_t) shipBufferSize);
     vkUnmapMemory(device_, shipVertexBufferMemory_);
 
+    VkDeviceSize alienBufferSize = sizeof(alienVerts);
+    createBuffer(device_, physicalDevice_,
+                 alienBufferSize,
+                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                 alienVertexBuffer_, alienVertexBufferMemory_);
+
+    void *alienData;
+    vkMapMemory(device_, alienVertexBufferMemory_, 0, alienBufferSize, 0, &alienData);
+    memcpy(alienData, alienVerts, (size_t) alienBufferSize);
+    vkUnmapMemory(device_, alienVertexBufferMemory_);
+
+    VkDeviceSize overlayBufferSize = sizeof(overlayQuadVerts);
+    createBuffer(device_, physicalDevice_,
+                 overlayBufferSize,
+                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                 overlayVertexBuffer_, overlayVertexBufferMemory_);
+
+    void *overlayData;
+    vkMapMemory(device_,overlayVertexBufferMemory_,0,overlayBufferSize,0,&overlayData);
+    memcpy(overlayData,overlayQuadVerts,(size_t)overlayBufferSize);
+    vkUnmapMemory(device_,overlayVertexBufferMemory_);
+
+    initAliens();
+    createMainGraphicsPipeline();
+    createOverlayGraphicsPipeline();
+
+}
+
+void Renderer::initAliens(){
+    float startX = -0.7f;
+    float startY = 0.8f;
+    float dx = 0.2f;
+    float dy = 0.15f;
+    for (int y = 0; y < NUM_ALIENS_Y; ++y) {
+        for (int x = 0; x < NUM_ALIENS_X; ++x) {
+            int idx = y * NUM_ALIENS_X + x;
+            aliens_[idx].x = startX + x * dx;
+            aliens_[idx].y = startY - y * dy;
+            aliens_[idx].active = true;
+        }
+    }
+}
+void Renderer::createMainGraphicsPipeline(){
+    auto vertShaderCode = loadAsset(mgr_, "main.vert.spv");
+    auto fragShaderCode = loadAsset(mgr_, "main.frag.spv");
+    VkShaderModule mainVertShaderModule = createShaderModule(device_, vertShaderCode);
+    VkShaderModule mainFragShaderModule = createShaderModule(device_, fragShaderCode);
 
     VkPipelineShaderStageCreateInfo mainVertShaderStageInfo = {};
     mainVertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -507,7 +533,8 @@ void Renderer::initVulkan() {// Load Vulkan functions using volk
     mainFragShaderStageInfo.module = mainFragShaderModule;
     mainFragShaderStageInfo.pName = "main";
 
-    VkPipelineShaderStageCreateInfo mainShaderStages[] = {mainVertShaderStageInfo, mainFragShaderStageInfo};
+    VkPipelineShaderStageCreateInfo mainShaderStages[] = {mainVertShaderStageInfo,
+                                                          mainFragShaderStageInfo};
 
     // One binding (per-vertex data)
     VkVertexInputBindingDescription mainBindingDesc = {};
@@ -529,14 +556,15 @@ void Renderer::initVulkan() {// Load Vulkan functions using volk
     mainColorDesc.format = VK_FORMAT_R32G32B32_SFLOAT;
     mainColorDesc.offset = offsetof(Vertex, color);
 
-    std::vector<VkVertexInputAttributeDescription> vertexAttributeDesc = {mainPosDesc, mainColorDesc};
+    std::vector<VkVertexInputAttributeDescription> vertexAttributeDesc = {mainPosDesc,
+                                                                          mainColorDesc};
 
-    VkPipelineVertexInputStateCreateInfo vertexInputInfo = {};
-    vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    vertexInputInfo.vertexBindingDescriptionCount = 1;
-    vertexInputInfo.pVertexBindingDescriptions = &mainBindingDesc;
-    vertexInputInfo.vertexAttributeDescriptionCount = vertexAttributeDesc.size();
-    vertexInputInfo.pVertexAttributeDescriptions = vertexAttributeDesc.data();
+    VkPipelineVertexInputStateCreateInfo mainVertexInputInfo = {};
+    mainVertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    mainVertexInputInfo.vertexBindingDescriptionCount = 1;
+    mainVertexInputInfo.pVertexBindingDescriptions = &mainBindingDesc;
+    mainVertexInputInfo.vertexAttributeDescriptionCount = vertexAttributeDesc.size();
+    mainVertexInputInfo.pVertexAttributeDescriptions = vertexAttributeDesc.data();
 
 
     VkPipelineInputAssemblyStateCreateInfo inputAssembly = {};
@@ -612,7 +640,7 @@ void Renderer::initVulkan() {// Load Vulkan functions using volk
 
     //vkCreateDescriptorSetLayout(device_, &layoutInfo, nullptr, &mainDescriptorSetLayout_);
 
-    LOGE("descriptor set here: %p",&mainDescriptorSetLayout_);
+    LOGE("descriptor set here: %p", &mainDescriptorSetLayout_);
 
     VkPushConstantRange vkPushConstantRange = {};
     vkPushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
@@ -626,13 +654,13 @@ void Renderer::initVulkan() {// Load Vulkan functions using volk
     mainPipelineLayoutInfo.pushConstantRangeCount = 1;
     mainPipelineLayoutInfo.pPushConstantRanges = &vkPushConstantRange;
     createPipelineLayout(mainPipelineLayoutInfo, mainPipelineLayout_);
-    LOGE("main pipelineLayout: %p",&mainPipelineLayout_);
+    LOGE("main pipelineLayout: %p", &mainPipelineLayout_);
 
     VkGraphicsPipelineCreateInfo mainGraphicsPipelineCreateInfo = {};
     mainGraphicsPipelineCreateInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
     mainGraphicsPipelineCreateInfo.stageCount = 2;
     mainGraphicsPipelineCreateInfo.pStages = mainShaderStages;
-    mainGraphicsPipelineCreateInfo.pVertexInputState = &vertexInputInfo;
+    mainGraphicsPipelineCreateInfo.pVertexInputState = &mainVertexInputInfo;
     mainGraphicsPipelineCreateInfo.pInputAssemblyState = &inputAssembly;
     mainGraphicsPipelineCreateInfo.pViewportState = &viewportState;
     mainGraphicsPipelineCreateInfo.pRasterizationState = &rasterizer;
@@ -646,75 +674,7 @@ void Renderer::initVulkan() {// Load Vulkan functions using volk
     vkDestroyShaderModule(device_, mainVertShaderModule, nullptr);
     vkDestroyShaderModule(device_, mainFragShaderModule, nullptr);
 
-    // Vertex input: just position
-    VkVertexInputBindingDescription overlayBindingDesc = {};
-    overlayBindingDesc.binding = 0;
-    overlayBindingDesc.stride = sizeof(float) * 2;
-    overlayBindingDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-    // Position (location=0)
-    VkVertexInputAttributeDescription overlayPosDesc = {};
-    overlayPosDesc.binding = 0;
-    overlayPosDesc.location = 0;
-    overlayPosDesc.format = VK_FORMAT_R32G32_SFLOAT;
-    overlayPosDesc.offset = 0;
-
-    std::vector<VkVertexInputAttributeDescription> overlayVertexAttributeDesc = {overlayPosDesc};
-
-    VkPipelineVertexInputStateCreateInfo overlayVertexInputInfo = {};
-    overlayVertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    overlayVertexInputInfo.vertexBindingDescriptionCount = 1;
-    overlayVertexInputInfo.pVertexBindingDescriptions = &overlayBindingDesc;
-    overlayVertexInputInfo.vertexAttributeDescriptionCount = overlayVertexAttributeDesc.size();
-    overlayVertexInputInfo.pVertexAttributeDescriptions = overlayVertexAttributeDesc.data();
-
-
-    VkPipelineShaderStageCreateInfo overlayVertShaderStageInfo = {};
-    overlayVertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    overlayVertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
-    overlayVertShaderStageInfo.module = overlayVertShaderModule;
-    overlayVertShaderStageInfo.pName = "main";
-
-    VkPipelineShaderStageCreateInfo overlayFragShaderStageInfo = {};
-    overlayFragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    overlayFragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-    overlayFragShaderStageInfo.module = overlayFragShaderModule;
-    overlayFragShaderStageInfo.pName = "main";
-    VkPipelineShaderStageCreateInfo overlayShaderStages[] = {overlayVertShaderStageInfo, overlayFragShaderStageInfo};
-
-    VkPushConstantRange overlayPushConstantRange = {};
-    overlayPushConstantRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-    overlayPushConstantRange.offset = 0;
-    overlayPushConstantRange.size = sizeof(float) * 4; // For vec4 offset
-
-    VkPipelineLayoutCreateInfo overlayPipelineLayoutInfo = {};
-    overlayPipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    overlayPipelineLayoutInfo.setLayoutCount = 0;
-    overlayPipelineLayoutInfo.pSetLayouts = nullptr;
-    overlayPipelineLayoutInfo.pushConstantRangeCount = 1;
-    overlayPipelineLayoutInfo.pPushConstantRanges = &overlayPushConstantRange;
-
-    createPipelineLayout(overlayPipelineLayoutInfo, overlayPipelineLayout_);
-    LOGE("overlay pipelineLayout: %p",&overlayPipelineLayout_);
-
-    VkGraphicsPipelineCreateInfo overlayGraphicsPipelineCreateInfo = {};
-    overlayGraphicsPipelineCreateInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    overlayGraphicsPipelineCreateInfo.stageCount = 2;
-    overlayGraphicsPipelineCreateInfo.pStages = overlayShaderStages;
-    overlayGraphicsPipelineCreateInfo.pVertexInputState = &overlayVertexInputInfo;
-    overlayGraphicsPipelineCreateInfo.pInputAssemblyState = &inputAssembly;
-    overlayGraphicsPipelineCreateInfo.pViewportState = &viewportState;
-    overlayGraphicsPipelineCreateInfo.pRasterizationState = &rasterizer;
-    overlayGraphicsPipelineCreateInfo.pMultisampleState = &multisampling;
-    overlayGraphicsPipelineCreateInfo.pColorBlendState = &colorBlending;
-    overlayGraphicsPipelineCreateInfo.layout = overlayPipelineLayout_;
-    overlayGraphicsPipelineCreateInfo.renderPass = renderPass_;
-    overlayGraphicsPipelineCreateInfo.subpass = 0;
-
-    createPipeline(overlayGraphicsPipelineCreateInfo, overlayPipeline_);
-
-    vkDestroyShaderModule(device_, overlayVertShaderModule, nullptr);
-    vkDestroyShaderModule(device_, overlayFragShaderModule, nullptr);
 
     VkDeviceSize uboSize = sizeof(float) * 16;
     createBuffer(device_, physicalDevice_, uboSize,
@@ -776,53 +736,171 @@ void Renderer::initVulkan() {// Load Vulkan functions using volk
 
     vkUpdateDescriptorSets(device_, 1, &mainDescriptorWrite, 0, nullptr);
 
-    float startX = -0.7f;
-    float startY = 0.8f;
-    float dx = 0.2f;
-    float dy = 0.15f;
-    for (int y = 0; y < NUM_ALIENS_Y; ++y) {
-        for (int x = 0; x < NUM_ALIENS_X; ++x) {
-            int idx = y * NUM_ALIENS_X + x;
-            aliens_[idx].x = startX + x * dx;
-            aliens_[idx].y = startY - y * dy;
-            aliens_[idx].active = true;
-        }
-    }
-
-    VkDeviceSize alienBufferSize = sizeof(alienVerts);
-    createBuffer(device_, physicalDevice_,
-                 alienBufferSize,
-                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                 alienVertexBuffer_, alienVertexBufferMemory_);
-
-    void *alienData;
-    vkMapMemory(device_, alienVertexBufferMemory_, 0, alienBufferSize, 0, &alienData);
-    memcpy(alienData, alienVerts, (size_t) alienBufferSize);
-    vkUnmapMemory(device_, alienVertexBufferMemory_);
-
 }
+void Renderer::createOverlayGraphicsPipeline(){
 
-void Renderer::createPipelineLayout(VkPipelineLayoutCreateInfo &pipelineLayoutInfo,VkPipelineLayout &pipelineLayout) {
+    VkPipelineInputAssemblyStateCreateInfo overlayInputAssembly = {};
+    overlayInputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    overlayInputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    overlayInputAssembly.primitiveRestartEnable = VK_FALSE;
+
+    VkViewport viewport = {};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = (float) swapchainExtent_.width;
+    viewport.height = (float) swapchainExtent_.height;
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+
+    VkRect2D scissor = {};
+    scissor.offset = {0, 0};
+    scissor.extent = swapchainExtent_;
+
+    VkPipelineViewportStateCreateInfo viewportState = {};
+    viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewportState.viewportCount = 1;
+    viewportState.pViewports = &viewport;
+    viewportState.scissorCount = 1;
+    viewportState.pScissors = &scissor;
+
+    VkPipelineRasterizationStateCreateInfo overlayRasterizer = {};
+    overlayRasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    overlayRasterizer.depthClampEnable = VK_FALSE;
+    overlayRasterizer.rasterizerDiscardEnable = VK_FALSE;
+    overlayRasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+    overlayRasterizer.lineWidth = 1.0f;
+    overlayRasterizer.cullMode = VK_CULL_MODE_NONE;
+    overlayRasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    overlayRasterizer.depthBiasEnable = VK_FALSE;
+
+    VkPipelineMultisampleStateCreateInfo multisampling = {};
+    multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    multisampling.sampleShadingEnable = VK_FALSE;
+    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+    VkPipelineColorBlendAttachmentState overlayColorBlendAttachment = {};
+    overlayColorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    overlayColorBlendAttachment.blendEnable = VK_TRUE;
+    overlayColorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    overlayColorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    overlayColorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
+    overlayColorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    overlayColorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+    overlayColorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
+
+    VkPipelineColorBlendStateCreateInfo overlayColorBlending = {};
+    overlayColorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    overlayColorBlending.logicOpEnable = VK_FALSE;
+    overlayColorBlending.logicOp = VK_LOGIC_OP_COPY;
+    overlayColorBlending.attachmentCount = 1;
+    overlayColorBlending.pAttachments = &overlayColorBlendAttachment;
+//    overlayColorBlending.blendConstants[0] = 0.0f;
+//    overlayColorBlending.blendConstants[1] = 0.0f;
+//    overlayColorBlending.blendConstants[2] = 0.0f;
+//    overlayColorBlending.blendConstants[3] = 0.0f;
+
+    auto overlayVertShaderCode = loadAsset(mgr_, "overlay.vert.spv");
+    auto overlayFragShaderCode = loadAsset(mgr_, "overlay.frag.spv");
+    VkShaderModule overlayVertShaderModule = createShaderModule(device_, overlayVertShaderCode);
+    VkShaderModule overlayFragShaderModule = createShaderModule(device_, overlayFragShaderCode);
+
+    // Vertex input: just position
+    VkVertexInputBindingDescription overlayBindingDesc = {};
+    overlayBindingDesc.binding = 0;
+    overlayBindingDesc.stride = sizeof(Vertex);
+    overlayBindingDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    // Position (location=0)
+    VkVertexInputAttributeDescription overlayPosDesc = {};
+    overlayPosDesc.binding = 0;
+    overlayPosDesc.location = 0;
+    overlayPosDesc.format = VK_FORMAT_R32G32B32_SFLOAT;
+    overlayPosDesc.offset = offsetof(Vertex,pos);
+
+    std::vector<VkVertexInputAttributeDescription> overlayVertexAttributeDesc = {overlayPosDesc};
+
+    VkPipelineVertexInputStateCreateInfo overlayVertexInputInfo = {};
+    overlayVertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    overlayVertexInputInfo.vertexBindingDescriptionCount = 1;
+    overlayVertexInputInfo.pVertexBindingDescriptions = &overlayBindingDesc;
+    overlayVertexInputInfo.vertexAttributeDescriptionCount = overlayVertexAttributeDesc.size();
+    overlayVertexInputInfo.pVertexAttributeDescriptions = overlayVertexAttributeDesc.data();
+
+
+    VkPipelineShaderStageCreateInfo overlayVertShaderStageInfo = {};
+    overlayVertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    overlayVertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
+    overlayVertShaderStageInfo.module = overlayVertShaderModule;
+    overlayVertShaderStageInfo.pName = "main";
+
+    VkPipelineShaderStageCreateInfo overlayFragShaderStageInfo = {};
+    overlayFragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    overlayFragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    overlayFragShaderStageInfo.module = overlayFragShaderModule;
+    overlayFragShaderStageInfo.pName = "main";
+    VkPipelineShaderStageCreateInfo overlayShaderStages[] = {overlayVertShaderStageInfo,
+                                                             overlayFragShaderStageInfo};
+
+    VkPushConstantRange overlayPushConstantRange = {};
+    overlayPushConstantRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    overlayPushConstantRange.offset = 0;
+    overlayPushConstantRange.size = sizeof(float) * 4; // For vec4 offset
+
+    VkPipelineLayoutCreateInfo overlayPipelineLayoutInfo = {};
+    overlayPipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    overlayPipelineLayoutInfo.setLayoutCount = 0;
+    overlayPipelineLayoutInfo.pSetLayouts = nullptr;
+    overlayPipelineLayoutInfo.pushConstantRangeCount = 1;
+    overlayPipelineLayoutInfo.pPushConstantRanges = &overlayPushConstantRange;
+
+    createPipelineLayout(overlayPipelineLayoutInfo, overlayPipelineLayout_);
+    LOGE("overlay pipelineLayout: %p", &overlayPipelineLayout_);
+
+    VkGraphicsPipelineCreateInfo overlayGraphicsPipelineCreateInfo = {};
+    overlayGraphicsPipelineCreateInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    overlayGraphicsPipelineCreateInfo.stageCount = 2;
+    overlayGraphicsPipelineCreateInfo.pStages = overlayShaderStages;
+    overlayGraphicsPipelineCreateInfo.pVertexInputState = &overlayVertexInputInfo;
+    overlayGraphicsPipelineCreateInfo.pInputAssemblyState = &overlayInputAssembly;
+    overlayGraphicsPipelineCreateInfo.pViewportState = &viewportState;
+    overlayGraphicsPipelineCreateInfo.pRasterizationState = &overlayRasterizer;
+    overlayGraphicsPipelineCreateInfo.pMultisampleState = &multisampling;
+    overlayGraphicsPipelineCreateInfo.pColorBlendState = &overlayColorBlending;
+    overlayGraphicsPipelineCreateInfo.layout = overlayPipelineLayout_;
+    overlayGraphicsPipelineCreateInfo.renderPass = renderPass_;
+    overlayGraphicsPipelineCreateInfo.subpass = 0;
+
+    createPipeline(overlayGraphicsPipelineCreateInfo, overlayPipeline_);
+
+    vkDestroyShaderModule(device_, overlayVertShaderModule, nullptr);
+    vkDestroyShaderModule(device_, overlayFragShaderModule, nullptr);
+}
+void Renderer::createPipelineLayout(VkPipelineLayoutCreateInfo &pipelineLayoutInfo,
+                                    VkPipelineLayout &pipelineLayout) {
     VkResult res = vkCreatePipelineLayout(device_, &pipelineLayoutInfo, nullptr, &pipelineLayout);
-    if (res!= VK_SUCCESS) {
-        LOGE("Failed to create pipeline layout! error code:%d",res);
+    if (res != VK_SUCCESS) {
+        LOGE("Failed to create pipeline layout! error code:%d", res);
         abort();
     }
 }
 
-void Renderer::createPipeline(VkGraphicsPipelineCreateInfo &graphicsPipelineCreateInfo, VkPipeline &pipeline) {
-    VkResult res = vkCreateGraphicsPipelines(device_, VK_NULL_HANDLE, 1, &graphicsPipelineCreateInfo, nullptr,&pipeline);
-    if (res!= VK_SUCCESS) {
-        LOGE("Failed to create graphics pipeline! error code:%d",res);
+void Renderer::createPipeline(VkGraphicsPipelineCreateInfo &graphicsPipelineCreateInfo,
+                              VkPipeline &pipeline) {
+    VkResult res = vkCreateGraphicsPipelines(device_, VK_NULL_HANDLE, 1,
+                                             &graphicsPipelineCreateInfo, nullptr, &pipeline);
+    if (res != VK_SUCCESS) {
+        LOGE("Failed to create graphics pipeline! error code:%d", res);
         abort();
     }
 }
 
-void Renderer::createDescriptorSetLayout(VkDescriptorSetLayoutCreateInfo descriptorSetLayoutCreateInfo,VkDescriptorSetLayout &descriptorSetLayout) {
-    VkResult res = vkCreateDescriptorSetLayout(device_, &descriptorSetLayoutCreateInfo, nullptr, &descriptorSetLayout);
-    if (res!= VK_SUCCESS) {
-        LOGE("Failed to create descriptor layout! error code:%d",res);
+void
+Renderer::createDescriptorSetLayout(VkDescriptorSetLayoutCreateInfo descriptorSetLayoutCreateInfo,
+                                    VkDescriptorSetLayout &descriptorSetLayout) {
+    VkResult res = vkCreateDescriptorSetLayout(device_, &descriptorSetLayoutCreateInfo, nullptr,
+                                               &descriptorSetLayout);
+    if (res != VK_SUCCESS) {
+        LOGE("Failed to create descriptor layout! error code:%d", res);
         abort();
     }
 }
@@ -846,20 +924,19 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
 
     vkCmdBeginRenderPass(cmd, &renderBeginPassInfo, VK_SUBPASS_CONTENTS_INLINE);
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipeline_);
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineLayout_, 0, 1,
-                            &mainDescriptorSet_, 0, nullptr);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineLayout_, 0, 1,&mainDescriptorSet_, 0, nullptr);
 
     VkDeviceSize offsets[] = {0};
     // --- Draw triangle (or any background)
-    float offset[3] = {0.0, 0.0};
+    float offset[3] = {0.0, 0.0,0.0};
 
-    vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(offset), offset);
+    vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(offset),offset);
     vkCmdBindVertexBuffers(cmd, 0, 1, &vertexBuffer_, offsets);
     vkCmdDraw(cmd, 3, 1, 0, 0);
 
     // --- Draw ship
     //float offset[3] = { 0.0, 0.0 };
-    vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(offset), offset);
+    vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(offset),offset);
     vkCmdBindVertexBuffers(cmd, 0, 1, &shipVertexBuffer_, offsets);
     vkCmdDraw(cmd, 6, 1, 0, 0);
 
@@ -868,8 +945,7 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
         if (!bullets_[i].active) continue;
         float offset[2] = {bullets_[i].x, -bullets_[i].y};
 
-        vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(offset),
-                           offset);
+        vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(offset),offset);
         vkCmdBindVertexBuffers(cmd, 0, 1, &bulletVertexBuffer_, offsets);
         vkCmdDraw(cmd, 6, 1, 0, 0);
     }
@@ -879,27 +955,62 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
         float offset[2] = {aliens_[i].x, -aliens_[i].y};
 
         vkCmdBindVertexBuffers(cmd, 0, 1, &alienVertexBuffer_, offsets);
-        vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(offset),
-                           offset);
+        vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(offset),offset);
         vkCmdDraw(cmd, 6, 1, 0, 0);
 
     }
+    if (gameState != GameState::Playing) {
+        // Set special color in push constant or UBO (e.g. red for GAME OVER)
+        float overlayColor[4];
+        if (gameState == GameState::Lost) {
+            overlayColor[0] = 1.0f; // Red
+            overlayColor[1] = 0.0f;
+            overlayColor[2] = 0.0f;
+            overlayColor[3] = 0.5f; // Alpha, for see-through
+        } else {
+            overlayColor[0] = 0.0f; // Green or Blue
+            overlayColor[1] = 1.0f;
+            overlayColor[2] = 0.0f;
+            overlayColor[3] = 0.5f;
+        }
 
-
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, overlayPipeline_);
+        vkCmdBindVertexBuffers(cmd, 0, 1, &overlayVertexBuffer_, offsets);
+        vkCmdPushConstants(cmd, overlayPipelineLayout_, VK_SHADER_STAGE_FRAGMENT_BIT, 0,sizeof(overlayColor), overlayColor);
+        vkCmdDraw(cmd, 6, 1, 0, 0);
+   }
     vkCmdEndRenderPass(cmd);
     vkEndCommandBuffer(cmd);
 }
 
-void Renderer::spawnBullet() {
-    for (int i = 0; i < MAX_BULLETS; ++i) {
-        if (!bullets_[i].active) {
-            // Spawn at ship position (x, just above ship)
-            bullets_[i].x = shipX_;
-            bullets_[i].y = -0.8f; // Start just above ship
-            bullets_[i].active = true;
-            break;
-        }
+void Renderer::restartGame() {
+    // Reset player
+
+    // Reset aliens
+    initAliens();
+
+    // Reset bullets
+    for (auto& bullet : bullets_) {
+        bullet.active = false;
     }
+
+    // Reset score, level, etc.
+
+
+    gameState = GameState::Playing;
+}
+
+void Renderer::spawnBullet() {
+    if (gameState == GameState::Playing)
+        for (int i = 0; i < MAX_BULLETS; ++i) {
+            if (!bullets_[i].active) {
+                // Spawn at ship position (x, just above ship)
+                bullets_[i].x = shipX_;
+                bullets_[i].y = -0.8f; // Start just above ship
+                bullets_[i].active = true;
+                break;
+            }
+        }
 }
 
 void Renderer::updateShipBuffer() {
@@ -1011,12 +1122,13 @@ void Renderer::drawFrame() {
     uint32_t imageIndex;
     vkAcquireNextImageKHR(device_, swapchain_, UINT64_MAX, imageAvailableSemaphore_, VK_NULL_HANDLE,
                           &imageIndex);
-
-    updateShipBuffer();
-    updateBullet();
-    updateAliens();
-    updateCollision();
-    updateGameState();
+    if (gameState == GameState::Playing) {
+        updateShipBuffer();
+        updateBullet();
+        updateAliens();
+        updateCollision();
+        updateGameState();
+    }
 
     recordCommandBuffer(imageIndex);
 
@@ -1051,6 +1163,9 @@ Renderer::~Renderer() {
 
     vkDestroyBuffer(device_, bulletVertexBuffer_, nullptr);
     vkFreeMemory(device_, bulletVertexBufferMemory_, nullptr);
+
+    vkDestroyBuffer(device_, overlayVertexBuffer_, nullptr);
+    vkFreeMemory(device_, overlayVertexBufferMemory_, nullptr);
 
     if (shipVertexBuffer_ != VK_NULL_HANDLE)
         vkDestroyBuffer(device_, shipVertexBuffer_, nullptr);
@@ -1100,6 +1215,8 @@ Renderer::~Renderer() {
 
 
 }
+
+
 
 
 

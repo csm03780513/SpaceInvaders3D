@@ -5,30 +5,38 @@
 #include "Renderer.h"
 
 #define LOGI(...) __android_log_print(ANDROID_LOG_ERROR, "Vulkan", __VA_ARGS__)
-Renderer* g_renderer = nullptr; // global pointer
+Renderer *g_renderer = nullptr; // global pointer
+volatile bool g_pendingRestart = false;
 
 void set_ship_x(float x);
 
 
-
-static int32_t handle_input(struct android_app* app, AInputEvent* event) {
+static int32_t handle_input(struct android_app *app, AInputEvent *event) {
     if (AInputEvent_getType(event) == AINPUT_EVENT_TYPE_MOTION) {
         if (AMotionEvent_getAction(event) == AMOTION_EVENT_ACTION_DOWN ||
             AMotionEvent_getAction(event) == AMOTION_EVENT_ACTION_MOVE) {
             float x = AMotionEvent_getX(event, 0);
             int32_t width = ANativeWindow_getWidth(app->window);
             // Convert X to normalized device coordinate [-1, 1]
-            float ndcX = (x / (float)width) * 2.0f - 1.0f;
-            // Store in a global or singleton (or pass to Renderer instance)
-            set_ship_x(ndcX); // <-- you will define this!
+            float ndcX = (x / (float) width) * 2.0f - 1.0f;
+            if (g_renderer && g_renderer->gameState == GameState::Playing) {
+                // Move ship as before
+                if (AMotionEvent_getAction(event) == AMOTION_EVENT_ACTION_DOWN ||
+                    AMotionEvent_getAction(event) == AMOTION_EVENT_ACTION_MOVE) {
+                    set_ship_x(ndcX);
+                }
+                // Shoot bullet
+                if (AMotionEvent_getAction(event) == AMOTION_EVENT_ACTION_DOWN) {
+                    g_renderer->spawnBullet();
+                }
+            } else if (g_renderer && g_renderer->gameState != GameState::Playing) {
+                // TAP = RESTART GAME when game over/won
+                if (AMotionEvent_getAction(event) == AMOTION_EVENT_ACTION_DOWN) {
+                    g_pendingRestart = true; // Set a flag to restart in the update loop
+                }
+            }
         }
     }
-    if (AInputEvent_getType(event) == AINPUT_EVENT_TYPE_MOTION) {
-        if (AMotionEvent_getAction(event) == AMOTION_EVENT_ACTION_DOWN) {
-            g_renderer->spawnBullet();
-        }
-    }
-
     return 1; // Event handled
 }
 
@@ -38,14 +46,14 @@ void set_ship_x(float x) {
     }
 }
 
-void android_main(struct android_app* app) {
-    Renderer* renderer = nullptr;
+void android_main(struct android_app *app) {
+    Renderer *renderer = nullptr;
     app->onInputEvent = handle_input;
 
     while (true) {
         int events;
-        android_poll_source* source;
-        while (ALooper_pollOnce(0, nullptr, &events, (void**)&source) >= 0) {
+        android_poll_source *source;
+        while (ALooper_pollOnce(0, nullptr, &events, (void **) &source) >= 0) {
             if (source) source->process(app, source);
             if (app->destroyRequested) return;
 
@@ -56,6 +64,11 @@ void android_main(struct android_app* app) {
                 g_renderer = renderer;
             }
         }
+        if (g_pendingRestart) {
+            g_renderer->restartGame();
+            g_pendingRestart = false;
+        }
+
         if (renderer) renderer->drawFrame();
     }
 }

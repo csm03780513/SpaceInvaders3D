@@ -10,6 +10,25 @@
 #include <android/asset_manager_jni.h>
 #include <vector>
 
+struct Vertex {
+    float pos[3];
+    float color[3];
+};
+struct Bullet {
+    float x, y;
+    bool active;
+};
+struct Alien {
+    float x, y;
+    bool active;
+};
+enum class GameState {
+    Playing,
+    Won,
+    Lost
+};
+
+
 
 class Renderer {
 public:
@@ -19,10 +38,14 @@ public:
     void updateShipBuffer();
     void spawnBullet();
     float shipX_ = 0.0f;
+    GameState gameState;
 
+
+    void restartGame();
 
 private:
     android_app* app_;
+    AAssetManager* mgr_; // assetmgr
     VkInstance instance_{VK_NULL_HANDLE};
     VkSurfaceKHR surface_{VK_NULL_HANDLE};
     VkPhysicalDevice physicalDevice_{VK_NULL_HANDLE};
@@ -58,7 +81,9 @@ private:
 
     VkBuffer shipVertexBuffer_{VK_NULL_HANDLE};
     VkDeviceMemory shipVertexBufferMemory_{VK_NULL_HANDLE};
-    // Centered horizontally
+
+    VkBuffer overlayVertexBuffer_{VK_NULL_HANDLE};
+    VkDeviceMemory overlayVertexBufferMemory_{VK_NULL_HANDLE};
 
     VkBuffer bulletVertexBuffer_{VK_NULL_HANDLE};
     VkDeviceMemory bulletVertexBufferMemory_{VK_NULL_HANDLE};
@@ -84,4 +109,11 @@ private:
     void createPipelineLayout(VkPipelineLayoutCreateInfo &pipelineLayoutInfo, VkPipelineLayout &pipelineLayout);
 
     void createDescriptorSetLayout(VkDescriptorSetLayoutCreateInfo info, VkDescriptorSetLayout &layout);
+
+    void createOverlayGraphicsPipeline();
+    void createMainGraphicsPipeline();
+    void initAliens();
+
+    void showWinOverlay();
+
 };
