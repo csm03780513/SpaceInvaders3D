@@ -9,6 +9,7 @@ VkShaderModule createShaderModule(VkDevice device, const std::vector<char> &code
 
 std::array<float, 16> makePerspective(float fovY, float aspect, float zNear, float zFar);
 
+
 void createBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkDeviceSize size,
                   VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer &buffer,
                   VkDeviceMemory &bufferMemory);
@@ -19,22 +20,29 @@ struct Vertex {
     float pos[3];
     float color[3];
 };
-
 struct Bullet {
     float x, y;
     bool active;
 };
+enum class GameState {
+    Playing,
+    Won,
+    Lost
+};
+
+GameState gameState = GameState::Playing;
+
 
 // Relative to (0, 0); will offset per-bullet in the shader or CPU
 static const Vertex bulletVerts[6] = {
         // First triangle
-        { { -0.01f,  -0.05f, -1.0f }, { 1, 1, 0 } },
-        { {  0.01f,  -0.05f, -1.0f }, { 1, 1, 0 } },
-        { { -0.01f,  0.00f, -1.0f }, { 1, 1, 0 } },
+        {{-0.01f, -0.05f, 1.0f}, {1, 1, 0}},
+        {{0.01f,  -0.05f, 1.0f}, {1, 1, 0}},
+        {{-0.01f, 0.00f,  1.0f}, {1, 1, 0}},
         // Second triangle
-        { {  0.01f,  -0.05f, -1.0f }, { 1, 1, 0 } },
-        { {  0.01f,  0.00f, -1.0f }, { 1, 1, 0 } },
-        { { -0.01f,  0.00f, -1.0f }, { 1, 1, 0 } }
+        {{0.01f,  -0.05f, 1.0f}, {1, 1, 0}},
+        {{0.01f,  0.00f,  1.0f}, {1, 1, 0}},
+        {{-0.01f, 0.00f,  1.0f}, {1, 1, 0}}
 };
 
 static constexpr int MAX_BULLETS = 32;
@@ -42,35 +50,69 @@ Bullet bullets_[MAX_BULLETS] = {};
 
 
 static Vertex triangleVerts[3] = {
-        {{0.0f,  -0.5f, -1.0f}, {1.0f, 0.0f, 0.0f}},
-        {{0.5f,  0.5f,  -1.0f}, {0.0f, 1.0f, 0.0f}},
-        {{-0.5f, 0.5f,  -1.0f}, {0.0f, 0.0f, 1.0f}}
+        {{0.0f,  -0.5f, 1.0f}, {1.0f, 0.0f, 0.0f}},
+        {{0.5f,  0.5f,  1.0f}, {0.0f, 1.0f, 0.0f}},
+        {{-0.5f, 0.5f,  1.0f}, {0.0f, 0.0f, 1.0f}}
 };
 
 // Ship is a rectangle at y = -0.8f, width = 0.2, height = 0.05 (adjust as you like)
 static Vertex shipVerts[6] = {
         // First triangle
-        { { 0.1f, 0.85f, 1.0f }, { 1.0f, 1.0f, 1.0f } }, // bottom left (white)
-        { {  -0.1f, 0.85f, 1.0f }, { 0.0f, 1.0f, 1.0f } }, // bottom right (cyan)
-        { { 0.1f, 0.8f,  1.0f }, { 1.0f, 0.0f, 1.0f } }, // top left (magenta)
+        {{0.1f,  0.85f, 1.0f}, {1.0f, 1.0f, 1.0f}}, // bottom left (white)
+        {{-0.1f, 0.85f, 1.0f}, {0.0f, 1.0f, 1.0f}}, // bottom right (cyan)
+        {{0.1f,  0.8f,  1.0f}, {1.0f, 0.0f, 1.0f}}, // top left (magenta)
         // Second triangle
-        { {  -0.1f, 0.85f, 1.0f }, { 0.0f, 1.0f, 1.0f } }, // bottom right
-        { {  -0.1f, 0.8f,  1.0f }, { 0.0f, 0.0f, 1.0f } }, // top right (blue)
-        { { 0.1f, 0.8f,  1.0f }, { 1.0f, 0.0f, 1.0f } }  // top left
+        {{-0.1f, 0.85f, 1.0f}, {0.0f, 1.0f, 1.0f}}, // bottom right
+        {{-0.1f, 0.8f,  1.0f}, {0.0f, 0.0f, 1.0f}}, // top right (blue)
+        {{0.1f,  0.8f,  1.0f}, {1.0f, 0.0f, 1.0f}}  // top left
 };
+
+struct Alien {
+    float x, y;
+    bool active;
+};
+
+static constexpr int NUM_ALIENS_X = 8;
+static constexpr int NUM_ALIENS_Y = 3;
+static constexpr int MAX_ALIENS = NUM_ALIENS_X * NUM_ALIENS_Y;
+Alien aliens_[MAX_ALIENS] = {};
+
+static const Vertex alienVerts[6] = {
+        // Rectangle centered at (0, 0), width 0.12, height 0.07
+        {{-0.06f, -0.035f, 1.0f}, {0.3f, 1.0f, 0.3f}}, // green
+        {{0.06f,  -0.035f, 1.0f}, {0.3f, 1.0f, 0.3f}},
+        {{-0.06f, 0.035f,  1.0f}, {0.6f, 1.0f, 0.6f}},
+        {{0.06f,  -0.035f, 1.0f}, {0.3f, 1.0f, 0.3f}},
+        {{0.06f,  0.035f,  1.0f}, {0.6f, 1.0f, 0.6f}},
+        {{-0.06f, 0.035f,  1.0f}, {0.6f, 1.0f, 0.6f}},
+};
+
+float alienMoveSpeed_ = 0.01f;
+int alienDirection_ = 1; // 1 = right, -1 = left
+
+const float ALIEN_SIZE = 0.1f;   // world units, adjust as needed
+const float BULLET_SIZE = 0.05f; // world units, adjust as needed
+
+bool isCollision(const Alien &alien, const Bullet &bullet);
 
 std::array<float, 16> makePerspective(float fovY, float aspect, float zNear, float zFar) {
     float f = 1.0f / std::tan(fovY / 2.0f);
     std::array<float, 16> m = {};
     m[0] = f / aspect;
-    m[5] = -f; // NEGATIVE to flip Y for Vulkan's NDC
+    m[5] = f; // NEGATIVE to flip Y for Vulkan's NDC
     m[10] = (zFar + zNear) / (zNear - zFar);
     m[11] = -1.0f;
     m[14] = (2.0f * zFar * zNear) / (zNear - zFar);
     return m;
 }
 
+inline bool isCollision(const Alien &alien, const Bullet &bullet) {
+    float halfAlien = ALIEN_SIZE * 0.5f;
+    float halfBullet = BULLET_SIZE * 0.5f;
 
+    return std::abs(alien.x - bullet.x) < (halfAlien + halfBullet) &&
+           std::abs(alien.y - bullet.y) < (halfAlien + halfBullet);
+}
 
 
 VkShaderModule createShaderModule(VkDevice device, const std::vector<char> &code) {
@@ -139,8 +181,6 @@ void createBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkDeviceSize
 
 Renderer::Renderer(android_app *app) : app_(app) {
     initVulkan();
-
-
 }
 
 void Renderer::initVulkan() {// Load Vulkan functions using volk
@@ -399,11 +439,15 @@ void Renderer::initVulkan() {// Load Vulkan functions using volk
 
     AAssetManager *mgr = app_->activity->assetManager;
 
-    auto vertShaderCode = loadAsset(mgr, "triangle.vert.spv");
-    auto fragShaderCode = loadAsset(mgr, "triangle.frag.spv");
+    auto vertShaderCode = loadAsset(mgr, "main.vert.spv");
+    auto fragShaderCode = loadAsset(mgr, "main.frag.spv");
+    VkShaderModule mainVertShaderModule = createShaderModule(device_, vertShaderCode);
+    VkShaderModule mainFragShaderModule = createShaderModule(device_, fragShaderCode);
 
-    VkShaderModule vertShaderModule = createShaderModule(device_, vertShaderCode);
-    VkShaderModule fragShaderModule = createShaderModule(device_, fragShaderCode);
+    auto overlayVertShaderCode = loadAsset(mgr, "overlay.vert.spv");
+    auto overlayFragShaderCode = loadAsset(mgr, "overlay.frag.spv");
+    VkShaderModule overlayVertShaderModule = createShaderModule(device_, overlayVertShaderCode);
+    VkShaderModule overlayFragShaderModule = createShaderModule(device_, overlayFragShaderCode);
 
 
     VkDeviceSize bulletBufferSize = sizeof(bulletVerts);
@@ -411,7 +455,7 @@ void Renderer::initVulkan() {// Load Vulkan functions using volk
                  VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                  bulletVertexBuffer_, bulletVertexBufferMemory_);
-    void* bulletData;
+    void *bulletData;
     vkMapMemory(device_, bulletVertexBufferMemory_, 0, bulletBufferSize, 0, &bulletData);
     memcpy(bulletData, bulletVerts, bulletBufferSize);
     vkUnmapMemory(device_, bulletVertexBufferMemory_);
@@ -428,9 +472,9 @@ void Renderer::initVulkan() {// Load Vulkan functions using volk
             vertexBufferMemory_
     );
     // Map and copy vertex data
-    void* data;
+    void *data;
     vkMapMemory(device_, vertexBufferMemory_, 0, bufferSize, 0, &data);
-    memcpy(data, triangleVerts, (size_t)bufferSize);
+    memcpy(data, triangleVerts, (size_t) bufferSize);
     vkUnmapMemory(device_, vertexBufferMemory_);
 
     VkDeviceSize shipBufferSize = sizeof(shipVerts);
@@ -445,54 +489,55 @@ void Renderer::initVulkan() {// Load Vulkan functions using volk
     );
 
 // Map/copy ship vertex data
-    void* shipData;
+    void *shipData;
     vkMapMemory(device_, shipVertexBufferMemory_, 0, shipBufferSize, 0, &shipData);
-    memcpy(shipData, shipVerts, (size_t)shipBufferSize);
+    memcpy(shipData, shipVerts, (size_t) shipBufferSize);
     vkUnmapMemory(device_, shipVertexBufferMemory_);
 
 
-    VkPipelineShaderStageCreateInfo vertShaderStageInfo = {};
-    vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
-    vertShaderStageInfo.module = vertShaderModule;
-    vertShaderStageInfo.pName = "main";
+    VkPipelineShaderStageCreateInfo mainVertShaderStageInfo = {};
+    mainVertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    mainVertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
+    mainVertShaderStageInfo.module = mainVertShaderModule;
+    mainVertShaderStageInfo.pName = "main";
 
-    VkPipelineShaderStageCreateInfo fragShaderStageInfo = {};
-    fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-    fragShaderStageInfo.module = fragShaderModule;
-    fragShaderStageInfo.pName = "main";
+    VkPipelineShaderStageCreateInfo mainFragShaderStageInfo = {};
+    mainFragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    mainFragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    mainFragShaderStageInfo.module = mainFragShaderModule;
+    mainFragShaderStageInfo.pName = "main";
 
-    VkPipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo, fragShaderStageInfo };
+    VkPipelineShaderStageCreateInfo mainShaderStages[] = {mainVertShaderStageInfo, mainFragShaderStageInfo};
 
     // One binding (per-vertex data)
-    VkVertexInputBindingDescription bindingDesc = {};
-    bindingDesc.binding = 0;
-    bindingDesc.stride = sizeof(Vertex);
-    bindingDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+    VkVertexInputBindingDescription mainBindingDesc = {};
+    mainBindingDesc.binding = 0;
+    mainBindingDesc.stride = sizeof(Vertex);
+    mainBindingDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
 // Position (location=0)
-    VkVertexInputAttributeDescription attrDesc0 = {};
-    attrDesc0.binding = 0;
-    attrDesc0.location = 0;
-    attrDesc0.format = VK_FORMAT_R32G32B32_SFLOAT;
-    attrDesc0.offset = offsetof(Vertex, pos);
+    VkVertexInputAttributeDescription mainPosDesc = {};
+    mainPosDesc.binding = 0;
+    mainPosDesc.location = 0;
+    mainPosDesc.format = VK_FORMAT_R32G32B32_SFLOAT;
+    mainPosDesc.offset = offsetof(Vertex, pos);
 
 // Color (location=1)
-    VkVertexInputAttributeDescription attrDesc1 = {};
-    attrDesc1.binding = 0;
-    attrDesc1.location = 1;
-    attrDesc1.format = VK_FORMAT_R32G32B32_SFLOAT;
-    attrDesc1.offset = offsetof(Vertex, color);
+    VkVertexInputAttributeDescription mainColorDesc = {};
+    mainColorDesc.binding = 0;
+    mainColorDesc.location = 1;
+    mainColorDesc.format = VK_FORMAT_R32G32B32_SFLOAT;
+    mainColorDesc.offset = offsetof(Vertex, color);
 
-    VkVertexInputAttributeDescription attrDescs[] = { attrDesc0, attrDesc1 };
+    std::vector<VkVertexInputAttributeDescription> vertexAttributeDesc = {mainPosDesc, mainColorDesc};
 
     VkPipelineVertexInputStateCreateInfo vertexInputInfo = {};
     vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
     vertexInputInfo.vertexBindingDescriptionCount = 1;
-    vertexInputInfo.pVertexBindingDescriptions = &bindingDesc;
-    vertexInputInfo.vertexAttributeDescriptionCount = 2;
-    vertexInputInfo.pVertexAttributeDescriptions = attrDescs;
+    vertexInputInfo.pVertexBindingDescriptions = &mainBindingDesc;
+    vertexInputInfo.vertexAttributeDescriptionCount = vertexAttributeDesc.size();
+    vertexInputInfo.pVertexAttributeDescriptions = vertexAttributeDesc.data();
+
 
     VkPipelineInputAssemblyStateCreateInfo inputAssembly = {};
     inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -535,7 +580,8 @@ void Renderer::initVulkan() {// Load Vulkan functions using volk
 
     VkPipelineColorBlendAttachmentState colorBlendAttachment = {};
     colorBlendAttachment.colorWriteMask =
-            VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+            VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT |
+            VK_COLOR_COMPONENT_A_BIT;
     colorBlendAttachment.blendEnable = VK_FALSE;
 
     VkPipelineColorBlendStateCreateInfo colorBlending = {};
@@ -561,35 +607,114 @@ void Renderer::initVulkan() {// Load Vulkan functions using volk
     layoutInfo.bindingCount = 1;
     layoutInfo.pBindings = &uboLayoutBinding;
 
-    vkCreateDescriptorSetLayout(device_, &layoutInfo, nullptr, &descriptorSetLayout_);
+    //for main pipeline
+    createDescriptorSetLayout(layoutInfo, mainDescriptorSetLayout_);
 
-    VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
-    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = 1;
-    pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout_;
+    //vkCreateDescriptorSetLayout(device_, &layoutInfo, nullptr, &mainDescriptorSetLayout_);
 
-    vkCreatePipelineLayout(device_, &pipelineLayoutInfo, nullptr, &pipelineLayout_);
+    LOGE("descriptor set here: %p",&mainDescriptorSetLayout_);
 
-    VkGraphicsPipelineCreateInfo pipelineInfo = {};
-    pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    pipelineInfo.stageCount = 2;
-    pipelineInfo.pStages = shaderStages;
-    pipelineInfo.pVertexInputState = &vertexInputInfo;
-    pipelineInfo.pInputAssemblyState = &inputAssembly;
-    pipelineInfo.pViewportState = &viewportState;
-    pipelineInfo.pRasterizationState = &rasterizer;
-    pipelineInfo.pMultisampleState = &multisampling;
-    pipelineInfo.pColorBlendState = &colorBlending;
-    pipelineInfo.layout = pipelineLayout_;
-    pipelineInfo.renderPass = renderPass_;
-    pipelineInfo.subpass = 0;
+    VkPushConstantRange vkPushConstantRange = {};
+    vkPushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    vkPushConstantRange.offset = 0;
+    vkPushConstantRange.size = sizeof(float) * 2; // For vec2 offset
 
-    if (vkCreateGraphicsPipelines(device_, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &graphicsPipeline_) != VK_SUCCESS) {
-        LOGE("Failed to create graphics pipeline!");
-        abort();
-    }
-    vkDestroyShaderModule(device_, vertShaderModule, nullptr);
-    vkDestroyShaderModule(device_, fragShaderModule, nullptr);
+    VkPipelineLayoutCreateInfo mainPipelineLayoutInfo = {};
+    mainPipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    mainPipelineLayoutInfo.setLayoutCount = 1;
+    mainPipelineLayoutInfo.pSetLayouts = &mainDescriptorSetLayout_;
+    mainPipelineLayoutInfo.pushConstantRangeCount = 1;
+    mainPipelineLayoutInfo.pPushConstantRanges = &vkPushConstantRange;
+    createPipelineLayout(mainPipelineLayoutInfo, mainPipelineLayout_);
+    LOGE("main pipelineLayout: %p",&mainPipelineLayout_);
+
+    VkGraphicsPipelineCreateInfo mainGraphicsPipelineCreateInfo = {};
+    mainGraphicsPipelineCreateInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    mainGraphicsPipelineCreateInfo.stageCount = 2;
+    mainGraphicsPipelineCreateInfo.pStages = mainShaderStages;
+    mainGraphicsPipelineCreateInfo.pVertexInputState = &vertexInputInfo;
+    mainGraphicsPipelineCreateInfo.pInputAssemblyState = &inputAssembly;
+    mainGraphicsPipelineCreateInfo.pViewportState = &viewportState;
+    mainGraphicsPipelineCreateInfo.pRasterizationState = &rasterizer;
+    mainGraphicsPipelineCreateInfo.pMultisampleState = &multisampling;
+    mainGraphicsPipelineCreateInfo.pColorBlendState = &colorBlending;
+    mainGraphicsPipelineCreateInfo.layout = mainPipelineLayout_;
+    mainGraphicsPipelineCreateInfo.renderPass = renderPass_;
+    mainGraphicsPipelineCreateInfo.subpass = 0;
+    createPipeline(mainGraphicsPipelineCreateInfo, mainPipeline_);
+    LOGE("passed main pipeline creation:");
+    vkDestroyShaderModule(device_, mainVertShaderModule, nullptr);
+    vkDestroyShaderModule(device_, mainFragShaderModule, nullptr);
+
+    // Vertex input: just position
+    VkVertexInputBindingDescription overlayBindingDesc = {};
+    overlayBindingDesc.binding = 0;
+    overlayBindingDesc.stride = sizeof(float) * 2;
+    overlayBindingDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    // Position (location=0)
+    VkVertexInputAttributeDescription overlayPosDesc = {};
+    overlayPosDesc.binding = 0;
+    overlayPosDesc.location = 0;
+    overlayPosDesc.format = VK_FORMAT_R32G32_SFLOAT;
+    overlayPosDesc.offset = 0;
+
+    std::vector<VkVertexInputAttributeDescription> overlayVertexAttributeDesc = {overlayPosDesc};
+
+    VkPipelineVertexInputStateCreateInfo overlayVertexInputInfo = {};
+    overlayVertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    overlayVertexInputInfo.vertexBindingDescriptionCount = 1;
+    overlayVertexInputInfo.pVertexBindingDescriptions = &overlayBindingDesc;
+    overlayVertexInputInfo.vertexAttributeDescriptionCount = overlayVertexAttributeDesc.size();
+    overlayVertexInputInfo.pVertexAttributeDescriptions = overlayVertexAttributeDesc.data();
+
+
+    VkPipelineShaderStageCreateInfo overlayVertShaderStageInfo = {};
+    overlayVertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    overlayVertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
+    overlayVertShaderStageInfo.module = overlayVertShaderModule;
+    overlayVertShaderStageInfo.pName = "main";
+
+    VkPipelineShaderStageCreateInfo overlayFragShaderStageInfo = {};
+    overlayFragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    overlayFragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    overlayFragShaderStageInfo.module = overlayFragShaderModule;
+    overlayFragShaderStageInfo.pName = "main";
+    VkPipelineShaderStageCreateInfo overlayShaderStages[] = {overlayVertShaderStageInfo, overlayFragShaderStageInfo};
+
+    VkPushConstantRange overlayPushConstantRange = {};
+    overlayPushConstantRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    overlayPushConstantRange.offset = 0;
+    overlayPushConstantRange.size = sizeof(float) * 4; // For vec4 offset
+
+    VkPipelineLayoutCreateInfo overlayPipelineLayoutInfo = {};
+    overlayPipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    overlayPipelineLayoutInfo.setLayoutCount = 0;
+    overlayPipelineLayoutInfo.pSetLayouts = nullptr;
+    overlayPipelineLayoutInfo.pushConstantRangeCount = 1;
+    overlayPipelineLayoutInfo.pPushConstantRanges = &overlayPushConstantRange;
+
+    createPipelineLayout(overlayPipelineLayoutInfo, overlayPipelineLayout_);
+    LOGE("overlay pipelineLayout: %p",&overlayPipelineLayout_);
+
+    VkGraphicsPipelineCreateInfo overlayGraphicsPipelineCreateInfo = {};
+    overlayGraphicsPipelineCreateInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    overlayGraphicsPipelineCreateInfo.stageCount = 2;
+    overlayGraphicsPipelineCreateInfo.pStages = overlayShaderStages;
+    overlayGraphicsPipelineCreateInfo.pVertexInputState = &overlayVertexInputInfo;
+    overlayGraphicsPipelineCreateInfo.pInputAssemblyState = &inputAssembly;
+    overlayGraphicsPipelineCreateInfo.pViewportState = &viewportState;
+    overlayGraphicsPipelineCreateInfo.pRasterizationState = &rasterizer;
+    overlayGraphicsPipelineCreateInfo.pMultisampleState = &multisampling;
+    overlayGraphicsPipelineCreateInfo.pColorBlendState = &colorBlending;
+    overlayGraphicsPipelineCreateInfo.layout = overlayPipelineLayout_;
+    overlayGraphicsPipelineCreateInfo.renderPass = renderPass_;
+    overlayGraphicsPipelineCreateInfo.subpass = 0;
+
+    createPipeline(overlayGraphicsPipelineCreateInfo, overlayPipeline_);
+
+    vkDestroyShaderModule(device_, overlayVertShaderModule, nullptr);
+    vkDestroyShaderModule(device_, overlayFragShaderModule, nullptr);
 
     VkDeviceSize uboSize = sizeof(float) * 16;
     createBuffer(device_, physicalDevice_, uboSize,
@@ -600,9 +725,9 @@ void Renderer::initVulkan() {// Load Vulkan functions using volk
     float aspect = (float) swapchainExtent_.width / (float) swapchainExtent_.height;
     auto proj = makePerspective(3.14159265f / 4.0f, aspect, 0.1f, 10.0f);
 
-    void* data1;
-    vkMapMemory(device_, uniformBufferMemory_, 0, uboSize, 0, &data1);
-    memcpy(data1, proj.data(), uboSize);
+    void *uboData;
+    vkMapMemory(device_, uniformBufferMemory_, 0, uboSize, 0, &uboData);
+    memcpy(uboData, proj.data(), uboSize);
     vkUnmapMemory(device_, uniformBufferMemory_);
 
     VkDescriptorPoolSize poolSize = {};
@@ -616,7 +741,7 @@ void Renderer::initVulkan() {// Load Vulkan functions using volk
     descPoolInfo.maxSets = 1;
 
     LOGE("About to create descriptor pool");
-    VkResult res = vkCreateDescriptorPool(device_, &descPoolInfo, nullptr, &descriptorPool_);
+    VkResult res = vkCreateDescriptorPool(device_, &descPoolInfo, nullptr, &mainDescriptorPool_);
     LOGE("vkCreateDescriptorPool returned %d", res);
     if (res != VK_SUCCESS) {
         LOGE("Failed to create descriptor pool: %d", res);
@@ -625,11 +750,11 @@ void Renderer::initVulkan() {// Load Vulkan functions using volk
     LOGE("Descriptor pool created");
     VkDescriptorSetAllocateInfo descAllocInfo = {};
     descAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    descAllocInfo.descriptorPool = descriptorPool_;
+    descAllocInfo.descriptorPool = mainDescriptorPool_;
     descAllocInfo.descriptorSetCount = 1;
-    descAllocInfo.pSetLayouts = &descriptorSetLayout_;
+    descAllocInfo.pSetLayouts = &mainDescriptorSetLayout_;
     LOGE("About to create descriptor sets");
-    VkResult res1 = vkAllocateDescriptorSets(device_, &descAllocInfo, &descriptorSet_);
+    VkResult res1 = vkAllocateDescriptorSets(device_, &descAllocInfo, &mainDescriptorSet_);
     if (res1 != VK_SUCCESS) {
         LOGE("Failed to create descriptor set: %d", res);
         abort();
@@ -640,18 +765,66 @@ void Renderer::initVulkan() {// Load Vulkan functions using volk
     bufferInfo.offset = 0;
     bufferInfo.range = uboSize;
 
-    VkWriteDescriptorSet descriptorWrite = {};
-    descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptorWrite.dstSet = descriptorSet_;
-    descriptorWrite.dstBinding = 0;
-    descriptorWrite.dstArrayElement = 0;
-    descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    descriptorWrite.descriptorCount = 1;
-    descriptorWrite.pBufferInfo = &bufferInfo;
+    VkWriteDescriptorSet mainDescriptorWrite = {};
+    mainDescriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    mainDescriptorWrite.dstSet = mainDescriptorSet_;
+    mainDescriptorWrite.dstBinding = 0;
+    mainDescriptorWrite.dstArrayElement = 0;
+    mainDescriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    mainDescriptorWrite.descriptorCount = 1;
+    mainDescriptorWrite.pBufferInfo = &bufferInfo;
 
-    vkUpdateDescriptorSets(device_, 1, &descriptorWrite, 0, nullptr);
+    vkUpdateDescriptorSets(device_, 1, &mainDescriptorWrite, 0, nullptr);
 
-    // Continue: pick physical device, create logical device, swapchain, etc.
+    float startX = -0.7f;
+    float startY = 0.8f;
+    float dx = 0.2f;
+    float dy = 0.15f;
+    for (int y = 0; y < NUM_ALIENS_Y; ++y) {
+        for (int x = 0; x < NUM_ALIENS_X; ++x) {
+            int idx = y * NUM_ALIENS_X + x;
+            aliens_[idx].x = startX + x * dx;
+            aliens_[idx].y = startY - y * dy;
+            aliens_[idx].active = true;
+        }
+    }
+
+    VkDeviceSize alienBufferSize = sizeof(alienVerts);
+    createBuffer(device_, physicalDevice_,
+                 alienBufferSize,
+                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                 alienVertexBuffer_, alienVertexBufferMemory_);
+
+    void *alienData;
+    vkMapMemory(device_, alienVertexBufferMemory_, 0, alienBufferSize, 0, &alienData);
+    memcpy(alienData, alienVerts, (size_t) alienBufferSize);
+    vkUnmapMemory(device_, alienVertexBufferMemory_);
+
+}
+
+void Renderer::createPipelineLayout(VkPipelineLayoutCreateInfo &pipelineLayoutInfo,VkPipelineLayout &pipelineLayout) {
+    VkResult res = vkCreatePipelineLayout(device_, &pipelineLayoutInfo, nullptr, &pipelineLayout);
+    if (res!= VK_SUCCESS) {
+        LOGE("Failed to create pipeline layout! error code:%d",res);
+        abort();
+    }
+}
+
+void Renderer::createPipeline(VkGraphicsPipelineCreateInfo &graphicsPipelineCreateInfo, VkPipeline &pipeline) {
+    VkResult res = vkCreateGraphicsPipelines(device_, VK_NULL_HANDLE, 1, &graphicsPipelineCreateInfo, nullptr,&pipeline);
+    if (res!= VK_SUCCESS) {
+        LOGE("Failed to create graphics pipeline! error code:%d",res);
+        abort();
+    }
+}
+
+void Renderer::createDescriptorSetLayout(VkDescriptorSetLayoutCreateInfo descriptorSetLayoutCreateInfo,VkDescriptorSetLayout &descriptorSetLayout) {
+    VkResult res = vkCreateDescriptorSetLayout(device_, &descriptorSetLayoutCreateInfo, nullptr, &descriptorSetLayout);
+    if (res!= VK_SUCCESS) {
+        LOGE("Failed to create descriptor layout! error code:%d",res);
+        abort();
+    }
 }
 
 void Renderer::recordCommandBuffer(uint32_t imageIndex) {
@@ -661,7 +834,7 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     vkBeginCommandBuffer(cmd, &beginInfo);
 
-    VkClearValue clearColor = { { 0.1f, 0.2f, 0.3f, 1.0f } };
+    VkClearValue clearColor = {{0.1f, 0.2f, 0.3f, 1.0f}};
     VkRenderPassBeginInfo renderBeginPassInfo = {};
     renderBeginPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     renderBeginPassInfo.renderPass = renderPass_;
@@ -672,35 +845,46 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
     renderBeginPassInfo.pClearValues = &clearColor;
 
     vkCmdBeginRenderPass(cmd, &renderBeginPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipeline_);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineLayout_, 0, 1,
+                            &mainDescriptorSet_, 0, nullptr);
 
-    // --- Draw triangle (or any background)
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline_);
     VkDeviceSize offsets[] = {0};
+    // --- Draw triangle (or any background)
+    float offset[3] = {0.0, 0.0};
+
+    vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(offset), offset);
     vkCmdBindVertexBuffers(cmd, 0, 1, &vertexBuffer_, offsets);
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout_, 0, 1, &descriptorSet_, 0, nullptr);
     vkCmdDraw(cmd, 3, 1, 0, 0);
 
     // --- Draw ship
+    //float offset[3] = { 0.0, 0.0 };
+    vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(offset), offset);
     vkCmdBindVertexBuffers(cmd, 0, 1, &shipVertexBuffer_, offsets);
     vkCmdDraw(cmd, 6, 1, 0, 0);
 
     // --- Draw bullets (for each active bullet, update buffer and draw)
-    for (int b = 0; b < MAX_BULLETS; ++b) {
-        if (!bullets_[b].active) continue;
-        Vertex movedBullet[6];
-        for (int j = 0; j < 6; ++j) {
-            movedBullet[j] = bulletVerts[j];
-            movedBullet[j].pos[0] += bullets_[b].x;
-            movedBullet[j].pos[1] -= bullets_[b].y;
-        }
-        void* bulletBufData;
-        vkMapMemory(device_, bulletVertexBufferMemory_, 0, sizeof(movedBullet), 0, &bulletBufData);
-        memcpy(bulletBufData, movedBullet, sizeof(movedBullet));
-        vkUnmapMemory(device_, bulletVertexBufferMemory_);
+    for (int i = 0; i < MAX_BULLETS; ++i) {
+        if (!bullets_[i].active) continue;
+        float offset[2] = {bullets_[i].x, -bullets_[i].y};
 
+        vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(offset),
+                           offset);
         vkCmdBindVertexBuffers(cmd, 0, 1, &bulletVertexBuffer_, offsets);
         vkCmdDraw(cmd, 6, 1, 0, 0);
     }
+
+    for (int i = 0; i < MAX_ALIENS; ++i) {
+        if (!aliens_[i].active) continue;
+        float offset[2] = {aliens_[i].x, -aliens_[i].y};
+
+        vkCmdBindVertexBuffers(cmd, 0, 1, &alienVertexBuffer_, offsets);
+        vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(offset),
+                           offset);
+        vkCmdDraw(cmd, 6, 1, 0, 0);
+
+    }
+
 
     vkCmdEndRenderPass(cmd);
     vkEndCommandBuffer(cmd);
@@ -717,16 +901,17 @@ void Renderer::spawnBullet() {
         }
     }
 }
+
 void Renderer::updateShipBuffer() {
     static Vertex baseShipVerts[6] = {
             // First triangle
-            { { 0.1f, 0.85f, 1.0f }, { 1.0f, 1.0f, 1.0f } }, // bottom left (white)
-            { {  -0.1f, 0.85f, 1.0f }, { 0.0f, 1.0f, 1.0f } }, // bottom right (cyan)
-            { { 0.1f, 0.8f,  1.0f }, { 1.0f, 0.0f, 1.0f } }, // top left (magenta)
+            {{0.1f,  0.85f, 1.0f}, {1.0f, 1.0f, 1.0f}}, // bottom left (white)
+            {{-0.1f, 0.85f, 1.0f}, {0.0f, 1.0f, 1.0f}}, // bottom right (cyan)
+            {{0.1f,  0.8f,  1.0f}, {1.0f, 0.0f, 1.0f}}, // top left (magenta)
             // Second triangle
-            { {  -0.1f, 0.85f, 1.0f }, { 0.0f, 1.0f, 1.0f } }, // bottom right
-            { {  -0.1f, 0.8f,  1.0f }, { 0.0f, 0.0f, 1.0f } }, // top right (blue)
-            { { 0.1f, 0.8f,  1.0f }, { 1.0f, 0.0f, 1.0f } }  // top left
+            {{-0.1f, 0.85f, 1.0f}, {0.0f, 1.0f, 1.0f}}, // bottom right
+            {{-0.1f, 0.8f,  1.0f}, {0.0f, 0.0f, 1.0f}}, // top right (blue)
+            {{0.1f,  0.8f,  1.0f}, {1.0f, 0.0f, 1.0f}}  // top left
     };
 
     Vertex movedVerts[6];
@@ -736,27 +921,103 @@ void Renderer::updateShipBuffer() {
         movedVerts[i].color[1] += shipX_;
     }
 
-    void* data;
+    void *data;
     vkMapMemory(device_, shipVertexBufferMemory_, 0, sizeof(movedVerts), 0, &data);
     memcpy(data, movedVerts, sizeof(movedVerts));
     vkUnmapMemory(device_, shipVertexBufferMemory_);
 }
+
 void Renderer::updateBullet() {
     for (int i = 0; i < MAX_BULLETS; ++i) {
         if (bullets_[i].active) {
             bullets_[i].y += 0.01f; // Move up
-            LOGE("bullet at y:%f", bullets_[i].y);
             if (bullets_[i].y > 1.0f)
                 bullets_[i].active = false; // Off screen
         }
     }
 
 }
+
+void Renderer::updateAliens() {
+    bool hitEdge = false;
+    for (int i = 0; i < MAX_ALIENS; ++i) {
+        if (!aliens_[i].active) continue;
+        aliens_[i].x += alienMoveSpeed_ * alienDirection_;
+        // Check if any alien hits the left or right edge
+        if (aliens_[i].x > 0.85f || aliens_[i].x < -0.85f)
+            hitEdge = true;
+    }
+    if (hitEdge) {
+        alienDirection_ *= -1;
+        // Move all aliens down a bit
+        for (int i = 0; i < MAX_ALIENS; ++i) {
+            if (aliens_[i].active)
+                aliens_[i].y -= 0.04f;
+        }
+    }
+}
+
+void Renderer::updateCollision() {
+    for (auto &bullet: bullets_) {
+        if (!bullet.active) continue;
+
+        for (auto &alien: aliens_) {
+            if (!alien.active) continue;
+
+            if (isCollision(alien, bullet)) {
+                alien.active = false;    // Destroy alien
+                bullet.active = false;   // Destroy bullet
+                // Optionally: score++, play sound, create explosion, etc.
+                break; // Stop checking this bullet (it's now gone)
+            }
+        }
+    }
+}
+
+void Renderer::updateGameState() {
+    if (gameState == GameState::Playing) {
+        // --- Game Over: Any alien reaches the bottom (e.g. y < -0.9f)
+        for (const auto &alien: aliens_) {
+            if (alien.active && alien.y < -0.9f) {
+                gameState = GameState::Lost;
+                // Optionally: Play sound, trigger animation, etc.
+                break;
+            }
+        }
+        // --- Win Condition: All aliens destroyed
+        bool anyAlienAlive = false;
+        for (const auto &alien: aliens_) {
+            if (alien.active) {
+                anyAlienAlive = true;
+                break;
+            }
+        }
+        if (!anyAlienAlive) {
+            gameState = GameState::Won;
+            // Optionally: Play win sound, trigger animation, etc.
+        }
+    }
+
+    if (gameState == GameState::Lost) {
+        // Render "GAME OVER" text overlay (could be a texture, or draw a quad)
+    }
+    if (gameState == GameState::Won) {
+        // Render "YOU WIN!" text overlay
+    }
+
+}
+
 void Renderer::drawFrame() {
     uint32_t imageIndex;
-    vkAcquireNextImageKHR(device_, swapchain_, UINT64_MAX, imageAvailableSemaphore_, VK_NULL_HANDLE, &imageIndex);
+    vkAcquireNextImageKHR(device_, swapchain_, UINT64_MAX, imageAvailableSemaphore_, VK_NULL_HANDLE,
+                          &imageIndex);
+
     updateShipBuffer();
     updateBullet();
+    updateAliens();
+    updateCollision();
+    updateGameState();
+
     recordCommandBuffer(imageIndex);
 
     VkSubmitInfo submitInfo = {};
@@ -785,8 +1046,12 @@ void Renderer::drawFrame() {
 }
 
 Renderer::~Renderer() {
+    vkDestroyBuffer(device_, alienVertexBuffer_, nullptr);
+    vkFreeMemory(device_, alienVertexBufferMemory_, nullptr);
+
     vkDestroyBuffer(device_, bulletVertexBuffer_, nullptr);
     vkFreeMemory(device_, bulletVertexBufferMemory_, nullptr);
+
     if (shipVertexBuffer_ != VK_NULL_HANDLE)
         vkDestroyBuffer(device_, shipVertexBuffer_, nullptr);
     if (shipVertexBufferMemory_ != VK_NULL_HANDLE)
@@ -795,8 +1060,8 @@ Renderer::~Renderer() {
         vkDestroySemaphore(device_, imageAvailableSemaphore_, nullptr);
     if (renderFinishedSemaphore_ != VK_NULL_HANDLE)
         vkDestroySemaphore(device_, renderFinishedSemaphore_, nullptr);
-    if (descriptorPool_ != VK_NULL_HANDLE)
-        vkDestroyDescriptorPool(device_, descriptorPool_, nullptr);
+    if (mainDescriptorPool_ != VK_NULL_HANDLE)
+        vkDestroyDescriptorPool(device_, mainDescriptorPool_, nullptr);
     if (uniformBuffer_ != VK_NULL_HANDLE)
         vkDestroyBuffer(device_, uniformBuffer_, nullptr);
     if (uniformBufferMemory_ != VK_NULL_HANDLE)
@@ -835,5 +1100,7 @@ Renderer::~Renderer() {
 
 
 }
+
+
 
 

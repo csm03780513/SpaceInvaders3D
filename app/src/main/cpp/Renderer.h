@@ -40,13 +40,19 @@ private:
     std::vector<VkCommandBuffer> commandBuffers_;
     VkBuffer vertexBuffer_{VK_NULL_HANDLE};
     VkDeviceMemory vertexBufferMemory_{VK_NULL_HANDLE};
-    VkDescriptorSetLayout descriptorSetLayout_{VK_NULL_HANDLE};
-    VkPipelineLayout pipelineLayout_{VK_NULL_HANDLE};
-    VkPipeline graphicsPipeline_{VK_NULL_HANDLE};
+
+    VkDescriptorSetLayout mainDescriptorSetLayout_{VK_NULL_HANDLE};
+
+    VkPipelineLayout mainPipelineLayout_{VK_NULL_HANDLE};
+    VkPipeline mainPipeline_{VK_NULL_HANDLE};
+
+    VkPipelineLayout overlayPipelineLayout_{VK_NULL_HANDLE};
+    VkPipeline overlayPipeline_{VK_NULL_HANDLE};
+
     VkBuffer uniformBuffer_{VK_NULL_HANDLE};
     VkDeviceMemory uniformBufferMemory_{VK_NULL_HANDLE};
-    VkDescriptorPool descriptorPool_{VK_NULL_HANDLE};
-    VkDescriptorSet descriptorSet_{VK_NULL_HANDLE};
+    VkDescriptorPool mainDescriptorPool_{VK_NULL_HANDLE};
+    VkDescriptorSet mainDescriptorSet_{VK_NULL_HANDLE};
     VkSemaphore imageAvailableSemaphore_{VK_NULL_HANDLE};
     VkSemaphore renderFinishedSemaphore_{VK_NULL_HANDLE};
 
@@ -57,10 +63,25 @@ private:
     VkBuffer bulletVertexBuffer_{VK_NULL_HANDLE};
     VkDeviceMemory bulletVertexBufferMemory_{VK_NULL_HANDLE};
 
+    VkBuffer alienVertexBuffer_{VK_NULL_HANDLE};
+    VkDeviceMemory alienVertexBufferMemory_{VK_NULL_HANDLE};
+
 
     void recordCommandBuffer(uint32_t imageIndex);
 
     void updateBullet();
 
     void initVulkan();
+
+    void updateAliens();
+
+    void updateCollision();
+
+    void updateGameState();
+
+    void createPipeline(VkGraphicsPipelineCreateInfo &graphicsPipelineCreateInfo, VkPipeline &pipeline);
+
+    void createPipelineLayout(VkPipelineLayoutCreateInfo &pipelineLayoutInfo, VkPipelineLayout &pipelineLayout);
+
+    void createDescriptorSetLayout(VkDescriptorSetLayoutCreateInfo info, VkDescriptorSetLayout &layout);
 };
