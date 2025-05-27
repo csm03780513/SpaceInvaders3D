@@ -1,4 +1,6 @@
 #include "Renderer.h"
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
 #include <android/native_window.h>
 #include <android/log.h>
 #include <vector>
@@ -6,7 +8,6 @@
 
 std::vector<char> loadAsset(AAssetManager *mgr, const char *filename);
 VkShaderModule createShaderModule(VkDevice device, const std::vector<char> &code);
-std::array<float, 16> makePerspective(float fovY, float aspect, float zNear, float zFar);
 void createBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkDeviceSize size,
                   VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer &buffer,
                   VkDeviceMemory &bufferMemory);
@@ -26,7 +27,7 @@ static const Vertex bulletVerts[6] = {
 
 static constexpr int MAX_BULLETS = 32;
 Bullet bullets_[MAX_BULLETS] = {};
-
+Ship ship_ = {};
 
 static Vertex triangleVerts[3] = {
         {{0.0f,  -0.5f, 1.0f}, {1.0f, 0.0f, 0.0f}},
@@ -35,15 +36,6 @@ static Vertex triangleVerts[3] = {
 };
 
 static Vertex overlayQuadVerts[6] = {
-        // First triangle
-//        {{1.0f,  -1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}}, // bottom left (white)
-//        {{-1.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 1.0f}}, // bottom right (cyan)
-//        {{1.0f,  1.0f,  1.0f}, {1.0f, 0.0f, 1.0f}}, // top left (magenta)
-//        // Second triangle
-//        {{-1.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 1.0f}}, // bottom right
-//        {{1.0f, -1.0f,  1.0f}, {0.0f, 0.0f, 1.0f}}, // top right (blue)
-//        {{-1.0f,  -1.0f,  1.0f}, {1.0f, 0.0f, 1.0f}}  // top left
-
         { {-0.6f, -0.2f,1.0f} }, // left-bottom
         { { 0.6f, -0.2f,1.0f} }, // right-bottom
         { {-0.6f, -0.05f,1.0f} }, // left-top
@@ -86,26 +78,8 @@ const float ALIEN_SIZE = 0.1f;   // world units, adjust as needed
 const float BULLET_SIZE = 0.05f; // world units, adjust as needed
 
 bool isCollision(const Alien &alien, const Bullet &bullet);
-
-std::array<float, 16> makePerspective(float fovY, float aspect, float zNear, float zFar) {
-    float f = 1.0f / std::tan(fovY / 2.0f);
-    std::array<float, 16> m = {};
-    m[0] = f / aspect;
-    m[5] = f; // NEGATIVE to flip Y for Vulkan's NDC
-    m[10] = (zFar + zNear) / (zNear - zFar);
-    m[11] = -1.0f;
-    m[14] = (2.0f * zFar * zNear) / (zNear - zFar);
-    return m;
-}
-
-inline bool isCollision(const Alien &alien, const Bullet &bullet) {
-    float halfAlien = ALIEN_SIZE * 0.5f;
-    float halfBullet = BULLET_SIZE * 0.5f;
-
-    return std::abs(alien.x - bullet.x) < (halfAlien + halfBullet) &&
-           std::abs(alien.y - bullet.y) < (halfAlien + halfBullet);
-}
-
+bool loadPngFromAsset(AAssetManager* assetManager, const char* filename,
+                      std::vector<uint8_t>& image, int& width, int& height);
 
 VkShaderModule createShaderModule(VkDevice device, const std::vector<char> &code) {
     VkShaderModuleCreateInfo createInfo = {};
@@ -119,6 +93,13 @@ VkShaderModule createShaderModule(VkDevice device, const std::vector<char> &code
     }
     return shaderModule;
 }
+inline bool isCollision(const Alien &alien, const Bullet &bullet) {
+    float halfAlien = ALIEN_SIZE * 0.5f;
+    float halfBullet = BULLET_SIZE * 0.5f;
+
+    return std::abs(alien.x - bullet.x) < (halfAlien + halfBullet) &&
+           std::abs(alien.y - bullet.y) < (halfAlien + halfBullet);
+}
 
 std::vector<char> loadAsset(AAssetManager *mgr, const char *filename) {
     AAsset *asset = AAssetManager_open(mgr, filename, AASSET_MODE_STREAMING);
@@ -127,6 +108,25 @@ std::vector<char> loadAsset(AAssetManager *mgr, const char *filename) {
     AAsset_read(asset, buffer.data(), size);
     AAsset_close(asset);
     return buffer;
+}
+// Utility function
+bool loadPngFromAsset(AAssetManager* assetManager, const char* filename,
+                      std::vector<uint8_t>& image, int& width, int& height) {
+    AAsset* asset = AAssetManager_open(assetManager, filename, AASSET_MODE_STREAMING);
+    if (!asset) return false;
+
+    size_t fileLength = AAsset_getLength(asset);
+    std::vector<uint8_t> fileData(fileLength);
+    AAsset_read(asset, fileData.data(), fileLength);
+    AAsset_close(asset);
+
+    int channels;
+    unsigned char* decoded = stbi_load_from_memory(fileData.data(), fileLength, &width, &height, &channels, STBI_rgb_alpha);
+    if (!decoded) return false;
+
+    image.assign(decoded, decoded + width * height * 4);
+    stbi_image_free(decoded);
+    return true;
 }
 
 // Create a Vulkan buffer
@@ -436,6 +436,7 @@ void Renderer::initVulkan() {// Load Vulkan functions using volk
                  VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                  bulletVertexBuffer_, bulletVertexBufferMemory_);
+
     void *bulletData;
     vkMapMemory(device_, bulletVertexBufferMemory_, 0, bulletBufferSize, 0, &bulletData);
     memcpy(bulletData, bulletVerts, bulletBufferSize);
@@ -443,29 +444,24 @@ void Renderer::initVulkan() {// Load Vulkan functions using volk
 
 
     VkDeviceSize bufferSize = sizeof(triangleVerts);
-    createBuffer(
-            device_,physicalDevice_,bufferSize,
+    createBuffer(device_,physicalDevice_,bufferSize,
             VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-            vertexBuffer_,vertexBufferMemory_
-    );
-    // Map and copy vertex data
-    void *data;
-    vkMapMemory(device_, vertexBufferMemory_, 0, bufferSize, 0, &data);
-    memcpy(data, triangleVerts, (size_t) bufferSize);
+            vertexBuffer_,vertexBufferMemory_);
+
+    // Map and copy vertex triangleData
+    void *triangleData;
+    vkMapMemory(device_, vertexBufferMemory_, 0, bufferSize, 0, &triangleData);
+    memcpy(triangleData, triangleVerts, (size_t) bufferSize);
     vkUnmapMemory(device_, vertexBufferMemory_);
 
     VkDeviceSize shipBufferSize = sizeof(shipVerts);
-    createBuffer(
-            device_,
-            physicalDevice_,
-            shipBufferSize,
+    createBuffer(device_,physicalDevice_,shipBufferSize,
             VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-            shipVertexBuffer_,shipVertexBufferMemory_
-    );
+            shipVertexBuffer_,shipVertexBufferMemory_);
 
-// Map/copy ship vertex data
+// Map/copy ship vertex triangleData
     void *shipData;
     vkMapMemory(device_, shipVertexBufferMemory_, 0, shipBufferSize, 0, &shipData);
     memcpy(shipData, shipVerts, (size_t) shipBufferSize);
@@ -495,12 +491,37 @@ void Renderer::initVulkan() {// Load Vulkan functions using volk
     memcpy(overlayData,overlayQuadVerts,(size_t)overlayBufferSize);
     vkUnmapMemory(device_,overlayVertexBufferMemory_);
 
+    createUniformBuffer();
+
     initAliens();
     createMainGraphicsPipeline();
     createOverlayGraphicsPipeline();
 
 }
 
+void Renderer::createUniformBuffer() {
+    VkDeviceSize bufferSize = sizeof(UniformBufferObject);
+    createBuffer(device_, physicalDevice_, bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                 uniformBuffer_, uniformBufferMemory_);
+    vkMapMemory(device_, uniformBufferMemory_, 0, bufferSize, 0, &uniformBuffersData);
+}
+
+void Renderer::updateUniformBuffer() {
+    static auto startTime = std::chrono::high_resolution_clock::now();
+
+    auto currentTime = std::chrono::high_resolution_clock::now();
+    float time = std::chrono::duration<float>(currentTime - startTime).count();
+
+    //UniformBufferObject ubo{};
+    ubo_.model = glm::rotate(glm::mat4(1.0f), glm::radians(0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    ubo_.view = glm::lookAt(glm::vec3(0.0f, 0.0f, 5.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+    ubo_.proj = glm::perspective(glm::radians(45.0f), swapchainExtent_.width / (float) swapchainExtent_.height, 0.1f, 10.0f);
+    ubo_.proj[1][1] *= 1;
+
+    memcpy(uniformBuffersData, &ubo_, sizeof(ubo_));
+    vkUnmapMemory(device_, uniformBufferMemory_);
+}
 void Renderer::initAliens(){
     float startX = -0.7f;
     float startY = 0.8f;
@@ -647,12 +668,14 @@ void Renderer::createMainGraphicsPipeline(){
     vkPushConstantRange.offset = 0;
     vkPushConstantRange.size = sizeof(float) * 2; // For vec2 offset
 
+    std::vector<VkPushConstantRange> pushConstantRanges = {vkPushConstantRange};
+
     VkPipelineLayoutCreateInfo mainPipelineLayoutInfo = {};
     mainPipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     mainPipelineLayoutInfo.setLayoutCount = 1;
     mainPipelineLayoutInfo.pSetLayouts = &mainDescriptorSetLayout_;
-    mainPipelineLayoutInfo.pushConstantRangeCount = 1;
-    mainPipelineLayoutInfo.pPushConstantRanges = &vkPushConstantRange;
+    mainPipelineLayoutInfo.pushConstantRangeCount = pushConstantRanges.size();
+    mainPipelineLayoutInfo.pPushConstantRanges = pushConstantRanges.data();
     createPipelineLayout(mainPipelineLayoutInfo, mainPipelineLayout_);
     LOGE("main pipelineLayout: %p", &mainPipelineLayout_);
 
@@ -673,22 +696,6 @@ void Renderer::createMainGraphicsPipeline(){
     LOGE("passed main pipeline creation:");
     vkDestroyShaderModule(device_, mainVertShaderModule, nullptr);
     vkDestroyShaderModule(device_, mainFragShaderModule, nullptr);
-
-
-
-    VkDeviceSize uboSize = sizeof(float) * 16;
-    createBuffer(device_, physicalDevice_, uboSize,
-                 VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                 uniformBuffer_, uniformBufferMemory_);
-
-    float aspect = (float) swapchainExtent_.width / (float) swapchainExtent_.height;
-    auto proj = makePerspective(3.14159265f / 4.0f, aspect, 0.1f, 10.0f);
-
-    void *uboData;
-    vkMapMemory(device_, uniformBufferMemory_, 0, uboSize, 0, &uboData);
-    memcpy(uboData, proj.data(), uboSize);
-    vkUnmapMemory(device_, uniformBufferMemory_);
 
     VkDescriptorPoolSize poolSize = {};
     poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -723,7 +730,7 @@ void Renderer::createMainGraphicsPipeline(){
     VkDescriptorBufferInfo bufferInfo = {};
     bufferInfo.buffer = uniformBuffer_;
     bufferInfo.offset = 0;
-    bufferInfo.range = uboSize;
+    bufferInfo.range = sizeof(UniformBufferObject);
 
     VkWriteDescriptorSet mainDescriptorWrite = {};
     mainDescriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -737,6 +744,8 @@ void Renderer::createMainGraphicsPipeline(){
     vkUpdateDescriptorSets(device_, 1, &mainDescriptorWrite, 0, nullptr);
 
 }
+
+
 void Renderer::createOverlayGraphicsPipeline(){
 
     VkPipelineInputAssemblyStateCreateInfo overlayInputAssembly = {};
@@ -928,24 +937,23 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
 
     VkDeviceSize offsets[] = {0};
     // --- Draw triangle (or any background)
-    float offset[3] = {0.0, 0.0,0.0};
+    float trianglePos[2] = {0.0, 0.0};
 
-    vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(offset),offset);
+    vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(trianglePos), trianglePos);
     vkCmdBindVertexBuffers(cmd, 0, 1, &vertexBuffer_, offsets);
     vkCmdDraw(cmd, 3, 1, 0, 0);
 
     // --- Draw ship
-    //float offset[3] = { 0.0, 0.0 };
-    vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(offset),offset);
+     float shipPos[2] = {shipX_, ship_.y};
+    vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(shipPos), &shipPos);
     vkCmdBindVertexBuffers(cmd, 0, 1, &shipVertexBuffer_, offsets);
     vkCmdDraw(cmd, 6, 1, 0, 0);
 
     // --- Draw bullets (for each active bullet, update buffer and draw)
     for (int i = 0; i < MAX_BULLETS; ++i) {
         if (!bullets_[i].active) continue;
-        float offset[2] = {bullets_[i].x, -bullets_[i].y};
-
-        vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(offset),offset);
+        float bulletPos[2] = {bullets_[i].x, -bullets_[i].y};
+        vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(bulletPos), bulletPos);
         vkCmdBindVertexBuffers(cmd, 0, 1, &bulletVertexBuffer_, offsets);
         vkCmdDraw(cmd, 6, 1, 0, 0);
     }
@@ -1014,28 +1022,26 @@ void Renderer::spawnBullet() {
 }
 
 void Renderer::updateShipBuffer() {
-    static Vertex baseShipVerts[6] = {
-            // First triangle
-            {{0.1f,  0.85f, 1.0f}, {1.0f, 1.0f, 1.0f}}, // bottom left (white)
-            {{-0.1f, 0.85f, 1.0f}, {0.0f, 1.0f, 1.0f}}, // bottom right (cyan)
-            {{0.1f,  0.8f,  1.0f}, {1.0f, 0.0f, 1.0f}}, // top left (magenta)
-            // Second triangle
-            {{-0.1f, 0.85f, 1.0f}, {0.0f, 1.0f, 1.0f}}, // bottom right
-            {{-0.1f, 0.8f,  1.0f}, {0.0f, 0.0f, 1.0f}}, // top right (blue)
-            {{0.1f,  0.8f,  1.0f}, {1.0f, 0.0f, 1.0f}}  // top left
-    };
 
-    Vertex movedVerts[6];
-    for (int i = 0; i < 6; ++i) {
-        movedVerts[i] = baseShipVerts[i];
-        movedVerts[i].pos[0] += shipX_; // Move horizontally
-        movedVerts[i].color[1] += shipX_;
-    }
 
-    void *data;
-    vkMapMemory(device_, shipVertexBufferMemory_, 0, sizeof(movedVerts), 0, &data);
-    memcpy(data, movedVerts, sizeof(movedVerts));
-    vkUnmapMemory(device_, shipVertexBufferMemory_);
+    ship_.x = shipX_;
+    ship_.color[0] = shipX_;
+//    Vertex movedVerts[6];
+//    for (int i = 0; i < 6; ++i) {
+//        movedVerts[i] = baseShipVerts[i];
+//        movedVerts[i].pos[0] += shipX_; // Move horizontally
+//        movedVerts[i].color[1] += shipX_;
+//    }
+
+//    void *data;
+//    vkMapMemory(device_, shipVertexBufferMemory_, 0, sizeof(movedVerts), 0, &data);
+//    memcpy(data, movedVerts, sizeof(movedVerts));
+//    vkUnmapMemory(device_, shipVertexBufferMemory_);
+
+//    void *shipData;
+//    vkMapMemory(device_, shipVertexBufferMemory_, 0, sizeof(ship_), 0, &data);
+//    memcpy(shipData, ship_, sizeof(ship_));
+//    vkUnmapMemory(device_, shipVertexBufferMemory_);
 }
 
 void Renderer::updateBullet() {
@@ -1123,6 +1129,7 @@ void Renderer::drawFrame() {
     vkAcquireNextImageKHR(device_, swapchain_, UINT64_MAX, imageAvailableSemaphore_, VK_NULL_HANDLE,
                           &imageIndex);
     if (gameState == GameState::Playing) {
+        updateUniformBuffer();
         updateShipBuffer();
         updateBullet();
         updateAliens();

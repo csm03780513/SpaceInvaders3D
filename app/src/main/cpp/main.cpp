@@ -4,6 +4,7 @@
 #include <android/input.h>
 #include "Renderer.h"
 
+
 #define LOGI(...) __android_log_print(ANDROID_LOG_ERROR, "Vulkan", __VA_ARGS__)
 Renderer *g_renderer = nullptr; // global pointer
 volatile bool g_pendingRestart = false;

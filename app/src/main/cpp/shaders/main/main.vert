@@ -1,7 +1,9 @@
 #version 450
 
 layout(set = 0, binding = 0) uniform UBO {
-    mat4 mvp;
+    mat4 model;
+    mat4 view;
+    mat4 proj;
 } ubo;
 
 layout(push_constant) uniform AlienPush {
@@ -16,5 +18,5 @@ layout(location = 0) out vec3 fragColor;
 void main() {
     gl_Position = vec4(inPos.xy + pc.offset, inPos.z, 1.0);
 //    gl_Position = vec4(inPos, 0.0, 1.0);
-    fragColor = inColor;
+    fragColor = vec3(inColor.xy + pc.offset,inColor.z);
 }

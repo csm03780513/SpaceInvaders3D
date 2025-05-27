@@ -1,4 +1,5 @@
 #pragma once
+
 #define VK_USE_PLATFORM_ANDROID_KHR
 #include <android_native_app_glue.h>
 #include <vulkan/vulkan.h>
@@ -10,6 +11,23 @@
 #include <android/asset_manager_jni.h>
 #include <vector>
 
+#define GLM_FORCE_RADIANS
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
+#define GLM_FORCE_DEFAULT_ALIGNED_GENTYPES
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtx/hash.hpp>
+#include <glm/glm.hpp>
+
+#include <chrono>
+#include <unordered_map>
+
+struct UniformBufferObject {
+    alignas(16) glm::mat4 model;
+    alignas(16) glm::mat4 view;
+    alignas(16) glm::mat4 proj;
+};
 struct Vertex {
     float pos[3];
     float color[3];
@@ -17,6 +35,10 @@ struct Vertex {
 struct Bullet {
     float x, y;
     bool active;
+};
+struct Ship {
+    float x, y;
+    float color[3];
 };
 struct Alien {
     float x, y;
@@ -44,6 +66,7 @@ public:
     void restartGame();
 
 private:
+    UniformBufferObject ubo_;
     android_app* app_;
     AAssetManager* mgr_; // assetmgr
     VkInstance instance_{VK_NULL_HANDLE};
@@ -91,6 +114,8 @@ private:
     VkBuffer alienVertexBuffer_{VK_NULL_HANDLE};
     VkDeviceMemory alienVertexBufferMemory_{VK_NULL_HANDLE};
 
+    void* uniformBuffersData;
+
 
     void recordCommandBuffer(uint32_t imageIndex);
 
@@ -114,6 +139,7 @@ private:
     void createMainGraphicsPipeline();
     void initAliens();
 
-    void showWinOverlay();
+    void updateUniformBuffer();
+    void createUniformBuffer();
 
 };

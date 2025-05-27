@@ -11,21 +11,20 @@ find_package(Vulkan REQUIRED)
 
 
 set(NATIVE_APP_GLUE_DIR ${CMAKE_SOURCE_DIR}/native_app_glue)
-
-add_library(native_app_glue STATIC ${NATIVE_APP_GLUE_DIR}/android_native_app_glue.c)
 add_library(SpaceInvaders3D SHARED
         # List C/C++ source files with relative paths to this CMakeLists.txt.
         main.cpp
         Renderer.cpp
         ${NATIVE_APP_GLUE_DIR}/android_native_app_glue.c
-#        volk/volk.c
+        #        volk/volk.c
 )
 target_include_directories(SpaceInvaders3D PRIVATE
         ${CMAKE_SOURCE_DIR}/native_app_glue
         ${CMAKE_SOURCE_DIR}/glm
-#        ${CMAKE_SOURCE_DIR}/volk
+        ${CMAKE_SOURCE_DIR}/stb
+        #        ${CMAKE_SOURCE_DIR}/volk
 )
-
+add_library(native_app_glue STATIC ${NATIVE_APP_GLUE_DIR}/android_native_app_glue.c)
 target_link_libraries(SpaceInvaders3D
         ${Vulkan_LIBRARIES}
         android
