@@ -9,7 +9,7 @@
 Renderer *g_renderer = nullptr; // global pointer
 volatile bool g_pendingRestart = false;
 
-void set_ship_x(float x);
+void set_ship_x(float x, float y);
 
 
 static int32_t handle_input(struct android_app *app, AInputEvent *event) {
@@ -17,14 +17,17 @@ static int32_t handle_input(struct android_app *app, AInputEvent *event) {
         if (AMotionEvent_getAction(event) == AMOTION_EVENT_ACTION_DOWN ||
             AMotionEvent_getAction(event) == AMOTION_EVENT_ACTION_MOVE) {
             float x = AMotionEvent_getX(event, 0);
+            float y = AMotionEvent_getY(event, 0);
             int32_t width = ANativeWindow_getWidth(app->window);
+            int32_t height = ANativeWindow_getHeight(app->window);
             // Convert X to normalized device coordinate [-1, 1]
             float ndcX = (x / (float) width) * 2.0f - 1.0f;
+            float ndcY = (y / (float) height) * 1.0f - 1.0f;
             if (g_renderer && g_renderer->gameState == GameState::Playing) {
                 // Move ship as before
                 if (AMotionEvent_getAction(event) == AMOTION_EVENT_ACTION_DOWN ||
                     AMotionEvent_getAction(event) == AMOTION_EVENT_ACTION_MOVE) {
-                    set_ship_x(ndcX);
+                    set_ship_x(ndcX,ndcY);
                 }
                 // Shoot bullet
                 if (AMotionEvent_getAction(event) == AMOTION_EVENT_ACTION_DOWN) {
@@ -41,9 +44,10 @@ static int32_t handle_input(struct android_app *app, AInputEvent *event) {
     return 1; // Event handled
 }
 
-void set_ship_x(float x) {
+void set_ship_x(float x, float y) {
     if (g_renderer) {
         g_renderer->shipX_ = x;
+        g_renderer->shipY_ = y;
     }
 }
 

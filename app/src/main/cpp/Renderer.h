@@ -31,6 +31,11 @@ struct UniformBufferObject {
 struct Vertex {
     float pos[3];
     float color[3];
+    float uv[2];
+};
+struct OverlayVertex {
+    float pos[3];
+    float uv[2];
 };
 struct Bullet {
     float x, y;
@@ -44,6 +49,37 @@ struct Alien {
     float x, y;
     bool active;
 };
+
+struct GraphicsPipelineData {
+    std::vector<VkPipelineShaderStageCreateInfo> shaderStages;
+    VkPipelineVertexInputStateCreateInfo vertexInputStateCreateInfo;
+    VkPipelineInputAssemblyStateCreateInfo inputAssemblyStateCreateInfo;
+    VkPipelineViewportStateCreateInfo viewportState;
+    VkPipelineRasterizationStateCreateInfo rasterizationStateCreateInfo;
+    VkPipelineMultisampleStateCreateInfo multisamplingStateCreateInfo;
+    VkPipelineColorBlendStateCreateInfo colorBlendState;
+    VkPipelineLayout pipelineLayout;
+    VkRenderPass renderPass;
+    uint32_t subpass;
+};
+
+struct ColorBlendingData {
+    VkPipelineColorBlendAttachmentState colorBlendAttachment = {};
+    VkBool32 blendEnable;
+    VkBlendFactor srcColorBlendFactor;
+    VkBlendFactor dstColorBlendFactor;
+    VkBlendOp colorBlendOp;
+    VkBlendFactor srcAlphaBlendFactor;
+    VkBlendFactor dstAlphaBlendFactor;
+    VkBlendOp alphaBlendOp;
+    VkColorComponentFlags colorWriteMask;
+};
+
+struct ViewPortData {
+    VkViewport viewport;
+    VkRect2D scissor;
+};
+
 enum class GameState {
     Playing,
     Won,
@@ -60,6 +96,8 @@ public:
     void updateShipBuffer();
     void spawnBullet();
     float shipX_ = 0.0f;
+    float shipY_ = 0.0f;
+
     GameState gameState;
 
 
@@ -68,7 +106,7 @@ public:
 private:
     UniformBufferObject ubo_;
     android_app* app_;
-    AAssetManager* mgr_; // assetmgr
+    AAssetManager* assetManager_; // assetmgr
     VkInstance instance_{VK_NULL_HANDLE};
     VkSurfaceKHR surface_{VK_NULL_HANDLE};
     VkPhysicalDevice physicalDevice_{VK_NULL_HANDLE};
@@ -87,7 +125,10 @@ private:
     VkBuffer vertexBuffer_{VK_NULL_HANDLE};
     VkDeviceMemory vertexBufferMemory_{VK_NULL_HANDLE};
 
-    VkDescriptorSetLayout mainDescriptorSetLayout_{VK_NULL_HANDLE};
+    VkDescriptorSetLayout shipDescriptorSetLayout_{VK_NULL_HANDLE};
+    VkDescriptorSetLayout alienDescriptorSetLayout_{VK_NULL_HANDLE};
+    VkDescriptorSetLayout shipBulletDescriptorSetLayout_{VK_NULL_HANDLE};
+    VkDescriptorSetLayout overlayDescriptorSetLayout_{VK_NULL_HANDLE};
 
     VkPipelineLayout mainPipelineLayout_{VK_NULL_HANDLE};
     VkPipeline mainPipeline_{VK_NULL_HANDLE};
@@ -95,10 +136,20 @@ private:
     VkPipelineLayout overlayPipelineLayout_{VK_NULL_HANDLE};
     VkPipeline overlayPipeline_{VK_NULL_HANDLE};
 
+
+
+    VkDescriptorPool overlayDescriptorPool_ = {VK_NULL_HANDLE};
+    VkDescriptorSet overlayDescriptorSet_{VK_NULL_HANDLE};
+
     VkBuffer uniformBuffer_{VK_NULL_HANDLE};
     VkDeviceMemory uniformBufferMemory_{VK_NULL_HANDLE};
+
     VkDescriptorPool mainDescriptorPool_{VK_NULL_HANDLE};
-    VkDescriptorSet mainDescriptorSet_{VK_NULL_HANDLE};
+
+    VkDescriptorSet shipDescriptorSet_{VK_NULL_HANDLE};
+    VkDescriptorSet alienDescriptorSet_{VK_NULL_HANDLE};
+    VkDescriptorSet shipBulletDescriptorSet_{VK_NULL_HANDLE};
+
     VkSemaphore imageAvailableSemaphore_{VK_NULL_HANDLE};
     VkSemaphore renderFinishedSemaphore_{VK_NULL_HANDLE};
 
@@ -116,14 +167,36 @@ private:
 
     void* uniformBuffersData;
 
+    VkImage overlayImage_{VK_NULL_HANDLE};
+    VkDeviceMemory overlayImageDeviceMemory_{VK_NULL_HANDLE};
+
+    VkImageView overlayImageView_{VK_NULL_HANDLE};
+    VkSampler overlaySampler_{VK_NULL_HANDLE};
+
+    VkImage shipImage_{VK_NULL_HANDLE};
+    VkDeviceMemory shipImageDeviceMemory_{VK_NULL_HANDLE};
+
+    VkImageView shipImageView_{VK_NULL_HANDLE};
+    VkSampler shipSampler_{VK_NULL_HANDLE};
+
+
+    VkImage alienImage_{VK_NULL_HANDLE};
+    VkDeviceMemory alienImageDeviceMemory_{VK_NULL_HANDLE};
+
+    VkImageView alienImageView_{VK_NULL_HANDLE};
+    VkSampler alienSampler_{VK_NULL_HANDLE};
+
+    VkImage shipBulletImage_{VK_NULL_HANDLE};
+    VkDeviceMemory shipBulletImageDeviceMemory_{VK_NULL_HANDLE};
+
+    VkImageView shipBulletImageView_{VK_NULL_HANDLE};
+    VkSampler shipBulletSampler_{VK_NULL_HANDLE};
 
     void recordCommandBuffer(uint32_t imageIndex);
-
-    void updateBullet();
-
     void initVulkan();
-
-    void updateAliens();
+    void updateBullet(float deltaTime);
+    void updateAliens(float deltaTime);
+    void updateUniformBuffer(float deltaTime);
 
     void updateCollision();
 
@@ -135,11 +208,15 @@ private:
 
     void createDescriptorSetLayout(VkDescriptorSetLayoutCreateInfo info, VkDescriptorSetLayout &layout);
 
-    void createOverlayGraphicsPipeline();
     void createMainGraphicsPipeline();
     void initAliens();
 
-    void updateUniformBuffer();
+
     void createUniformBuffer();
 
+    void createImageOverlayDescriptor();
+
+    void loadTexture(const char *filename, VkImage &vkImage, VkDeviceMemory &vkDeviceMemory, VkImageView &imageView, VkSampler &vkSampler);
+
+    void createOverlayGraphicsPipeline();
 };
