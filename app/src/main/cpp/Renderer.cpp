@@ -116,9 +116,15 @@ setShaderCreateInfo(VkDevice device, AAssetManager *assetManager, const char *sp
                     const char *spirvFragmentFilename,
                     GraphicsPipelineData &graphicsPipelineData);
 
-void
-setColorBlending(ColorBlendingData colorBlendingData, GraphicsPipelineData &graphicsPipelineData);
-void setViewPortState(VkExtent2D swapchainExtent,ViewPortData viewPortData,GraphicsPipelineData &graphicsPipelineData);
+void setColorBlending(GraphicsPipelineData &graphicsPipelineData);
+
+void setViewPortState(GraphicsPipelineData &graphicsPipelineData);
+
+void setInputAssembly(GraphicsPipelineData &graphicsPipelineData);
+
+void setRasterizer(GraphicsPipelineData &graphicsPipelineData);
+
+void setSampling(GraphicsPipelineData &graphicsPipelineData);
 
 VkShaderModule createShaderModule(VkDevice device, const std::vector<char> &code) {
     VkShaderModuleCreateInfo createInfo = {};
@@ -150,17 +156,6 @@ std::vector<char> loadAsset(AAssetManager *mgr, const char *filename) {
     return buffer;
 }
 
-// Utility function
-// 1. Load PNG data into std::vector<uint8_t> imageData;
-// 2. Create staging buffer, upload imageData to it
-// 3. createImage(...)
-// 4. transitionImageLayout(..., VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
-// 5. copyBufferToImage(...)
-// 6. transitionImageLayout(..., VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
-// 7. createImageView(...)
-// 8. createTextureSampler(...)
-// 9. Update descriptor set to bind image view + sampler
-// 10. Render the quad!
 void Renderer::loadTexture(const char *filename, VkImage &vkImage, VkDeviceMemory &vkDeviceMemory,
                            VkImageView &imageView, VkSampler &vkSampler) {
 
@@ -476,10 +471,19 @@ Renderer::Renderer(android_app *app) : app_(app) {
     initVulkan();
 }
 
-void Renderer::createImageOverlayDescriptor() {
+void Renderer::loadAllTextures() {
 
+    loadTexture("ke_ship_1.png", shipImage_, shipImageDeviceMemory_, shipImageView_, shipSampler_);
+    loadTexture("alien_ship_1.png", alienImage_, alienImageDeviceMemory_, alienImageView_,
+                alienSampler_);
+    loadTexture("laser_2.png", shipBulletImage_, shipBulletImageDeviceMemory_, shipBulletImageView_,
+                shipBulletSampler_);
     loadTexture("tap_to_restart_2.png", overlayImage_, overlayImageDeviceMemory_, overlayImageView_,
                 overlaySampler_);
+
+}
+
+void Renderer::createImageOverlayDescriptor(GraphicsPipelineData &graphicsPipelineData) {
 
     VkDescriptorSetLayoutBinding overlaySamplerLayoutBinding = {};
     overlaySamplerLayoutBinding.binding = 0;
@@ -511,6 +515,20 @@ void Renderer::createImageOverlayDescriptor() {
         abort();
     }
 
+    VkPushConstantRange overlayPushConstantRange = {};
+    overlayPushConstantRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    overlayPushConstantRange.offset = 0;
+    overlayPushConstantRange.size = sizeof(float) * 4; // For vec4 offset
+
+    VkPipelineLayoutCreateInfo overlayPipelineLayoutInfo = {};
+    overlayPipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    overlayPipelineLayoutInfo.setLayoutCount = 1;
+    overlayPipelineLayoutInfo.pSetLayouts = &overlayDescriptorSetLayout_;
+    overlayPipelineLayoutInfo.pushConstantRangeCount = 1;
+    overlayPipelineLayoutInfo.pPushConstantRanges = &overlayPushConstantRange;
+
+    createPipelineLayout(overlayPipelineLayoutInfo, graphicsPipelineData);
+
     VkDescriptorSetAllocateInfo allocInfo = {};
     allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     allocInfo.descriptorPool = overlayDescriptorPool_;
@@ -535,6 +553,188 @@ void Renderer::createImageOverlayDescriptor() {
     descriptorWrite.pImageInfo = &imageInfo;
 
     vkUpdateDescriptorSets(device_, 1, &descriptorWrite, 0, nullptr);
+}
+
+void Renderer::createMainDescriptor(GraphicsPipelineData &graphicsPipelineData) {
+
+    VkDescriptorSetLayoutBinding uboLayoutBinding = {};
+    uboLayoutBinding.binding = 0;
+    uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    uboLayoutBinding.descriptorCount = 1;
+    uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+    VkDescriptorSetLayoutBinding samplerLayoutBinding = {};
+    samplerLayoutBinding.binding = 1;
+    samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    samplerLayoutBinding.descriptorCount = 1;
+    samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    std::vector<VkDescriptorSetLayoutBinding> bindings = {uboLayoutBinding, samplerLayoutBinding};
+
+    VkDescriptorSetLayoutCreateInfo layoutInfo = {};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.bindingCount = bindings.size();
+    layoutInfo.pBindings = bindings.data();
+
+
+    //setLayouts for ship and alien
+    createDescriptorSetLayout(layoutInfo, shipDescriptorSetLayout_);
+    createDescriptorSetLayout(layoutInfo, alienDescriptorSetLayout_);
+    createDescriptorSetLayout(layoutInfo, shipBulletDescriptorSetLayout_);
+
+    std::vector<VkDescriptorSetLayout> descriptionSetLayouts = {shipDescriptorSetLayout_,
+                                                                alienDescriptorSetLayout_,
+                                                                shipBulletDescriptorSetLayout_};
+
+    VkPushConstantRange vkPushConstantRange = {};
+    vkPushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    vkPushConstantRange.offset = 0;
+    vkPushConstantRange.size = sizeof(float) * 2; // For vec2 offset
+
+    std::vector<VkPushConstantRange> pushConstantRanges = {vkPushConstantRange};
+
+    VkPipelineLayoutCreateInfo mainPipelineLayoutInfo = {};
+    mainPipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    mainPipelineLayoutInfo.setLayoutCount = descriptionSetLayouts.size();
+    mainPipelineLayoutInfo.pSetLayouts = descriptionSetLayouts.data();
+    mainPipelineLayoutInfo.pushConstantRangeCount = pushConstantRanges.size();
+    mainPipelineLayoutInfo.pPushConstantRanges = pushConstantRanges.data();
+
+    createPipelineLayout(mainPipelineLayoutInfo, graphicsPipelineData);
+    LOGE("main pipelineLayout gd: %llu", graphicsPipelineData.pipelineLayout);
+
+    std::vector<VkDescriptorSet> descriptorSets{shipDescriptorSet_, alienDescriptorSet_,
+                                                shipBulletDescriptorSet_};
+
+    VkDescriptorPoolSize uboPoolSize = {};
+    uboPoolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    uboPoolSize.descriptorCount = descriptorSets.size();
+
+    VkDescriptorPoolSize samplerPoolSize = {};
+    samplerPoolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    samplerPoolSize.descriptorCount = descriptorSets.size();
+
+    std::vector<VkDescriptorPoolSize> poolSizes = {uboPoolSize, samplerPoolSize};
+
+    VkDescriptorPoolCreateInfo descPoolInfo = {};
+    descPoolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    descPoolInfo.poolSizeCount = poolSizes.size();
+    descPoolInfo.pPoolSizes = poolSizes.data();
+    descPoolInfo.maxSets = descriptorSets.size();
+
+    LOGE("About to create descriptor pool");
+    VkResult res = vkCreateDescriptorPool(device_, &descPoolInfo, nullptr, &mainDescriptorPool_);
+    LOGE("vkCreateDescriptorPool returned %d", res);
+    if (res != VK_SUCCESS) {
+        LOGE("Failed to create descriptor pool: %d", res);
+        abort();
+    }
+    LOGE("Descriptor pool created");
+
+    // Allocate sets
+    VkDescriptorSetAllocateInfo descAllocInfo = {};
+    descAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    descAllocInfo.descriptorPool = mainDescriptorPool_;
+    descAllocInfo.descriptorSetCount = descriptorSets.size();
+    descAllocInfo.pSetLayouts = descriptionSetLayouts.data();
+
+    LOGE("About to create descriptor sets");
+    VkResult res1 = vkAllocateDescriptorSets(device_, &descAllocInfo, descriptorSets.data());
+    if (res1 != VK_SUCCESS) {
+        LOGE("Failed to create descriptor set: %d", res);
+        abort();
+    }
+
+    shipDescriptorSet_ = descriptorSets[0];
+    alienDescriptorSet_ = descriptorSets[1];
+    shipBulletDescriptorSet_ = descriptorSets[2];
+
+    LOGE("Descriptor set created");
+    VkDescriptorBufferInfo bufferInfo = {};
+    bufferInfo.buffer = uniformBuffer_;
+    bufferInfo.offset = 0;
+    bufferInfo.range = sizeof(UniformBufferObject);
+
+    VkWriteDescriptorSet shipBulletBufferDescriptorWrite = {};
+    shipBulletBufferDescriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    shipBulletBufferDescriptorWrite.dstSet = shipBulletDescriptorSet_;
+    shipBulletBufferDescriptorWrite.dstBinding = 0;
+    shipBulletBufferDescriptorWrite.dstArrayElement = 0;
+    shipBulletBufferDescriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    shipBulletBufferDescriptorWrite.descriptorCount = 1;
+    shipBulletBufferDescriptorWrite.pBufferInfo = &bufferInfo;
+
+    VkWriteDescriptorSet shipBufferDescriptorWrite = {};
+    shipBufferDescriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    shipBufferDescriptorWrite.dstSet = shipDescriptorSet_;
+    shipBufferDescriptorWrite.dstBinding = 0;
+    shipBufferDescriptorWrite.dstArrayElement = 0;
+    shipBufferDescriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    shipBufferDescriptorWrite.descriptorCount = 1;
+    shipBufferDescriptorWrite.pBufferInfo = &bufferInfo;
+
+    VkWriteDescriptorSet alienBufferDescriptorWrite = {};
+    alienBufferDescriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    alienBufferDescriptorWrite.dstSet = alienDescriptorSet_;
+    alienBufferDescriptorWrite.dstBinding = 0;
+    alienBufferDescriptorWrite.dstArrayElement = 0;
+    alienBufferDescriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    alienBufferDescriptorWrite.descriptorCount = 1;
+    alienBufferDescriptorWrite.pBufferInfo = &bufferInfo;
+
+    VkDescriptorImageInfo shipBulletImageInfo = {};
+    shipBulletImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    shipBulletImageInfo.imageView = shipBulletImageView_;
+    shipBulletImageInfo.sampler = shipBulletSampler_;
+
+    VkWriteDescriptorSet shipBulletsSamplerDescriptorWrite = {};
+    shipBulletsSamplerDescriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    shipBulletsSamplerDescriptorWrite.dstSet = shipBulletDescriptorSet_;
+    shipBulletsSamplerDescriptorWrite.dstBinding = 1;
+    shipBulletsSamplerDescriptorWrite.dstArrayElement = 0;
+    shipBulletsSamplerDescriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    shipBulletsSamplerDescriptorWrite.descriptorCount = 1;
+    shipBulletsSamplerDescriptorWrite.pImageInfo = &shipBulletImageInfo;
+
+    VkDescriptorImageInfo shipImageInfo = {};
+    shipImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    shipImageInfo.imageView = shipImageView_;
+    shipImageInfo.sampler = shipSampler_;
+
+    VkWriteDescriptorSet shipSamplerDescriptorWrite = {};
+    shipSamplerDescriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    shipSamplerDescriptorWrite.dstSet = shipDescriptorSet_;
+    shipSamplerDescriptorWrite.dstBinding = 1;
+    shipSamplerDescriptorWrite.dstArrayElement = 0;
+    shipSamplerDescriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    shipSamplerDescriptorWrite.descriptorCount = 1;
+    shipSamplerDescriptorWrite.pImageInfo = &shipImageInfo;
+
+    VkDescriptorImageInfo alienImageInfo = {};
+    alienImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    alienImageInfo.imageView = alienImageView_;
+    alienImageInfo.sampler = alienSampler_;
+
+    VkWriteDescriptorSet alienSamplerDescriptorWrite = {};
+    alienSamplerDescriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    alienSamplerDescriptorWrite.dstSet = alienDescriptorSet_;
+    alienSamplerDescriptorWrite.dstBinding = 1;
+    alienSamplerDescriptorWrite.dstArrayElement = 0;
+    alienSamplerDescriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    alienSamplerDescriptorWrite.descriptorCount = 1;
+    alienSamplerDescriptorWrite.pImageInfo = &alienImageInfo;
+
+
+    std::vector<VkWriteDescriptorSet> writeDescriptorSets = {shipBulletsSamplerDescriptorWrite,
+                                                             shipBulletBufferDescriptorWrite,
+                                                             shipBufferDescriptorWrite,
+                                                             shipSamplerDescriptorWrite,
+                                                             alienBufferDescriptorWrite,
+                                                             alienSamplerDescriptorWrite};
+
+
+    vkUpdateDescriptorSets(device_, writeDescriptorSets.size(), writeDescriptorSets.data(), 0,
+                           nullptr);
 }
 
 void Renderer::initVulkan() {// Load Vulkan functions using volk
@@ -853,11 +1053,9 @@ void Renderer::initVulkan() {// Load Vulkan functions using volk
     vkUnmapMemory(device_, overlayVertexBufferMemory_);
 
     createUniformBuffer();
-
     initAliens();
+    loadAllTextures();
     createMainGraphicsPipeline();
-
-
     createOverlayGraphicsPipeline();
 
 }
@@ -903,32 +1101,6 @@ void Renderer::initAliens() {
 
 void Renderer::createMainGraphicsPipeline() {
 
-    loadTexture("ke_ship_1.png", shipImage_, shipImageDeviceMemory_, shipImageView_, shipSampler_);
-    loadTexture("alien_ship_1.png", alienImage_, alienImageDeviceMemory_, alienImageView_,
-                alienSampler_);
-    loadTexture("laser_2.png", shipBulletImage_, shipBulletImageDeviceMemory_, shipBulletImageView_,
-                shipBulletSampler_);
-
-    auto vertShaderCode = loadAsset(assetManager_, "main.vert.spv");
-    auto fragShaderCode = loadAsset(assetManager_, "main.frag.spv");
-    VkShaderModule mainVertShaderModule = createShaderModule(device_, vertShaderCode);
-    VkShaderModule mainFragShaderModule = createShaderModule(device_, fragShaderCode);
-
-    VkPipelineShaderStageCreateInfo mainVertShaderStageInfo = {};
-    mainVertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    mainVertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
-    mainVertShaderStageInfo.module = mainVertShaderModule;
-    mainVertShaderStageInfo.pName = "main";
-
-    VkPipelineShaderStageCreateInfo mainFragShaderStageInfo = {};
-    mainFragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    mainFragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-    mainFragShaderStageInfo.module = mainFragShaderModule;
-    mainFragShaderStageInfo.pName = "main";
-
-    VkPipelineShaderStageCreateInfo mainShaderStages[] = {mainVertShaderStageInfo,
-                                                          mainFragShaderStageInfo};
-
     // One binding (per-vertex data)
     VkVertexInputBindingDescription mainBindingDesc = {};
     mainBindingDesc.binding = 0;
@@ -959,7 +1131,6 @@ void Renderer::createMainGraphicsPipeline() {
     std::vector<VkVertexInputAttributeDescription> vertexAttributeDesc = {mainPosDesc,
                                                                           mainColorDesc,
                                                                           mainUVDesc};
-
     VkPipelineVertexInputStateCreateInfo mainVertexInputInfo = {};
     mainVertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
     mainVertexInputInfo.vertexBindingDescriptionCount = 1;
@@ -967,304 +1138,43 @@ void Renderer::createMainGraphicsPipeline() {
     mainVertexInputInfo.vertexAttributeDescriptionCount = vertexAttributeDesc.size();
     mainVertexInputInfo.pVertexAttributeDescriptions = vertexAttributeDesc.data();
 
+    GraphicsPipelineData graphicsPipelineData{
+            .pipeline = mainPipeline_,
+            .vertexInputState = mainVertexInputInfo,
+            .pipelineLayout = mainPipelineLayout_,
+            .viewport {.x=0.0, .y=0.0f, .width=(float) swapchainExtent_.width, .height=(float) swapchainExtent_.height, .minDepth=0.0f, .maxDepth=1.0f},
+            .scissor {.offset{0, 0}, .extent = swapchainExtent_}
+    };
 
-    VkPipelineInputAssemblyStateCreateInfo inputAssembly = {};
-    inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-    inputAssembly.primitiveRestartEnable = VK_FALSE;
+    setShaderCreateInfo(device_, assetManager_, "main.vert.spv", "main.frag.spv",
+                        graphicsPipelineData);
+    setColorBlending(graphicsPipelineData);
+    setViewPortState(graphicsPipelineData);
+    setInputAssembly(graphicsPipelineData);
+    setRasterizer(graphicsPipelineData);
+    setSampling(graphicsPipelineData);
+    createMainDescriptor(graphicsPipelineData);
+    createPipeline(graphicsPipelineData, "main");
 
-    VkViewport viewport = {};
-    viewport.x = 0.0f;
-    viewport.y = 0.0f;
-    viewport.width = (float) swapchainExtent_.width;
-    viewport.height = (float) swapchainExtent_.height;
-    viewport.minDepth = 0.0f;
-    viewport.maxDepth = 1.0f;
-
-    VkRect2D scissor = {};
-    scissor.offset = {0, 0};
-    scissor.extent = swapchainExtent_;
-
-    VkPipelineViewportStateCreateInfo viewportState = {};
-    viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
-    viewportState.viewportCount = 1;
-    viewportState.pViewports = &viewport;
-    viewportState.scissorCount = 1;
-    viewportState.pScissors = &scissor;
-
-    VkPipelineRasterizationStateCreateInfo rasterizer = {};
-    rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-    rasterizer.depthClampEnable = VK_FALSE;
-    rasterizer.rasterizerDiscardEnable = VK_FALSE;
-    rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
-    rasterizer.lineWidth = 1.0f;
-    rasterizer.cullMode = VK_CULL_MODE_NONE;
-    rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-    rasterizer.depthBiasEnable = VK_FALSE;
-
-    VkPipelineMultisampleStateCreateInfo multisampling = {};
-    multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-    multisampling.sampleShadingEnable = VK_FALSE;
-    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-
-
-    VkPipelineColorBlendAttachmentState colorBlendAttachment = {};
-    colorBlendAttachment.colorWriteMask =
-            VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT |
-            VK_COLOR_COMPONENT_A_BIT;
-    colorBlendAttachment.blendEnable = VK_TRUE;
-    colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-    colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
-    colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-    colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
-    colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
-
-    VkPipelineColorBlendStateCreateInfo colorBlending = {};
-    colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-    colorBlending.logicOpEnable = VK_FALSE;
-    colorBlending.logicOp = VK_LOGIC_OP_COPY;
-    colorBlending.attachmentCount = 1;
-    colorBlending.pAttachments = &colorBlendAttachment;
-    colorBlending.blendConstants[0] = 0.0f;
-    colorBlending.blendConstants[1] = 0.0f;
-    colorBlending.blendConstants[2] = 0.0f;
-    colorBlending.blendConstants[3] = 0.0f;
-
-
-    VkDescriptorSetLayoutBinding uboLayoutBinding = {};
-    uboLayoutBinding.binding = 0;
-    uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    uboLayoutBinding.descriptorCount = 1;
-    uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
-    VkDescriptorSetLayoutBinding samplerLayoutBinding = {};
-    samplerLayoutBinding.binding = 1;
-    samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    samplerLayoutBinding.descriptorCount = 1;
-    samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-    std::vector<VkDescriptorSetLayoutBinding> bindings = {uboLayoutBinding, samplerLayoutBinding};
-
-    VkDescriptorSetLayoutCreateInfo layoutInfo = {};
-    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = bindings.size();
-    layoutInfo.pBindings = bindings.data();
-
-
-    //setLayouts for ship and alien
-    createDescriptorSetLayout(layoutInfo, shipDescriptorSetLayout_);
-    createDescriptorSetLayout(layoutInfo, alienDescriptorSetLayout_);
-    createDescriptorSetLayout(layoutInfo, shipBulletDescriptorSetLayout_);
-
-    std::vector<VkDescriptorSetLayout> descriptionSetLayouts = {shipDescriptorSetLayout_,
-                                                                alienDescriptorSetLayout_,
-                                                                shipBulletDescriptorSetLayout_};
-
-    VkPushConstantRange vkPushConstantRange = {};
-    vkPushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-    vkPushConstantRange.offset = 0;
-    vkPushConstantRange.size = sizeof(float) * 2; // For vec2 offset
-
-    std::vector<VkPushConstantRange> pushConstantRanges = {vkPushConstantRange};
-
-    VkPipelineLayoutCreateInfo mainPipelineLayoutInfo = {};
-    mainPipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    mainPipelineLayoutInfo.setLayoutCount = descriptionSetLayouts.size();
-    mainPipelineLayoutInfo.pSetLayouts = descriptionSetLayouts.data();
-    mainPipelineLayoutInfo.pushConstantRangeCount = pushConstantRanges.size();
-    mainPipelineLayoutInfo.pPushConstantRanges = pushConstantRanges.data();
-
-    createPipelineLayout(mainPipelineLayoutInfo, mainPipelineLayout_);
-    LOGE("main pipelineLayout: %p", &mainPipelineLayout_);
-
-    std::vector<VkDescriptorSet> descriptorSets{shipDescriptorSet_, alienDescriptorSet_,
-                                                shipBulletDescriptorSet_};
-
-
-    VkDescriptorPoolSize uboPoolSize = {};
-    uboPoolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    uboPoolSize.descriptorCount = descriptorSets.size();
-
-    VkDescriptorPoolSize samplerPoolSize = {};
-    samplerPoolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    samplerPoolSize.descriptorCount = descriptorSets.size();
-
-    std::vector<VkDescriptorPoolSize> poolSizes = {uboPoolSize, samplerPoolSize};
-
-    VkDescriptorPoolCreateInfo descPoolInfo = {};
-    descPoolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    descPoolInfo.poolSizeCount = poolSizes.size();
-    descPoolInfo.pPoolSizes = poolSizes.data();
-    descPoolInfo.maxSets = descriptorSets.size();
-
-    LOGE("About to create descriptor pool");
-    VkResult res = vkCreateDescriptorPool(device_, &descPoolInfo, nullptr, &mainDescriptorPool_);
-    LOGE("vkCreateDescriptorPool returned %d", res);
-    if (res != VK_SUCCESS) {
-        LOGE("Failed to create descriptor pool: %d", res);
-        abort();
-    }
-    LOGE("Descriptor pool created");
-
-    // Allocate sets
-    VkDescriptorSetAllocateInfo descAllocInfo = {};
-    descAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    descAllocInfo.descriptorPool = mainDescriptorPool_;
-    descAllocInfo.descriptorSetCount = descriptorSets.size();
-    descAllocInfo.pSetLayouts = descriptionSetLayouts.data();
-
-    LOGE("About to create descriptor sets");
-    VkResult res1 = vkAllocateDescriptorSets(device_, &descAllocInfo, descriptorSets.data());
-    if (res1 != VK_SUCCESS) {
-        LOGE("Failed to create descriptor set: %d", res);
-        abort();
-    }
-
-    shipDescriptorSet_ = descriptorSets[0];
-    alienDescriptorSet_ = descriptorSets[1];
-    shipBulletDescriptorSet_ = descriptorSets[2];
-
-    LOGE("Descriptor set created");
-    VkDescriptorBufferInfo bufferInfo = {};
-    bufferInfo.buffer = uniformBuffer_;
-    bufferInfo.offset = 0;
-    bufferInfo.range = sizeof(UniformBufferObject);
-
-    VkWriteDescriptorSet shipBulletBufferDescriptorWrite = {};
-    shipBulletBufferDescriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    shipBulletBufferDescriptorWrite.dstSet = shipBulletDescriptorSet_;
-    shipBulletBufferDescriptorWrite.dstBinding = 0;
-    shipBulletBufferDescriptorWrite.dstArrayElement = 0;
-    shipBulletBufferDescriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    shipBulletBufferDescriptorWrite.descriptorCount = 1;
-    shipBulletBufferDescriptorWrite.pBufferInfo = &bufferInfo;
-
-    VkWriteDescriptorSet shipBufferDescriptorWrite = {};
-    shipBufferDescriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    shipBufferDescriptorWrite.dstSet = shipDescriptorSet_;
-    shipBufferDescriptorWrite.dstBinding = 0;
-    shipBufferDescriptorWrite.dstArrayElement = 0;
-    shipBufferDescriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    shipBufferDescriptorWrite.descriptorCount = 1;
-    shipBufferDescriptorWrite.pBufferInfo = &bufferInfo;
-
-    VkWriteDescriptorSet alienBufferDescriptorWrite = {};
-    alienBufferDescriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    alienBufferDescriptorWrite.dstSet = alienDescriptorSet_;
-    alienBufferDescriptorWrite.dstBinding = 0;
-    alienBufferDescriptorWrite.dstArrayElement = 0;
-    alienBufferDescriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    alienBufferDescriptorWrite.descriptorCount = 1;
-    alienBufferDescriptorWrite.pBufferInfo = &bufferInfo;
-
-    VkDescriptorImageInfo shipBulletImageInfo = {};
-    shipBulletImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    shipBulletImageInfo.imageView = shipBulletImageView_;
-    shipBulletImageInfo.sampler = shipBulletSampler_;
-
-    VkWriteDescriptorSet shipBulletsSamplerDescriptorWrite = {};
-    shipBulletsSamplerDescriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    shipBulletsSamplerDescriptorWrite.dstSet = shipBulletDescriptorSet_;
-    shipBulletsSamplerDescriptorWrite.dstBinding = 1;
-    shipBulletsSamplerDescriptorWrite.dstArrayElement = 0;
-    shipBulletsSamplerDescriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    shipBulletsSamplerDescriptorWrite.descriptorCount = 1;
-    shipBulletsSamplerDescriptorWrite.pImageInfo = &shipBulletImageInfo;
-
-    VkDescriptorImageInfo shipImageInfo = {};
-    shipImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    shipImageInfo.imageView = shipImageView_;
-    shipImageInfo.sampler = shipSampler_;
-
-    VkWriteDescriptorSet shipSamplerDescriptorWrite = {};
-    shipSamplerDescriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    shipSamplerDescriptorWrite.dstSet = shipDescriptorSet_;
-    shipSamplerDescriptorWrite.dstBinding = 1;
-    shipSamplerDescriptorWrite.dstArrayElement = 0;
-    shipSamplerDescriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    shipSamplerDescriptorWrite.descriptorCount = 1;
-    shipSamplerDescriptorWrite.pImageInfo = &shipImageInfo;
-
-    VkDescriptorImageInfo alienImageInfo = {};
-    alienImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    alienImageInfo.imageView = alienImageView_;
-    alienImageInfo.sampler = alienSampler_;
-
-    VkWriteDescriptorSet alienSamplerDescriptorWrite = {};
-    alienSamplerDescriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    alienSamplerDescriptorWrite.dstSet = alienDescriptorSet_;
-    alienSamplerDescriptorWrite.dstBinding = 1;
-    alienSamplerDescriptorWrite.dstArrayElement = 0;
-    alienSamplerDescriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    alienSamplerDescriptorWrite.descriptorCount = 1;
-    alienSamplerDescriptorWrite.pImageInfo = &alienImageInfo;
-
-
-    std::vector<VkWriteDescriptorSet> writeDescriptorSets = {shipBulletsSamplerDescriptorWrite,
-                                                             shipBulletBufferDescriptorWrite,
-                                                             shipBufferDescriptorWrite,
-                                                             shipSamplerDescriptorWrite,
-                                                             alienBufferDescriptorWrite,
-                                                             alienSamplerDescriptorWrite};
-
-
-    vkUpdateDescriptorSets(device_, writeDescriptorSets.size(), writeDescriptorSets.data(), 0,
-                           nullptr);
-
-
-    VkGraphicsPipelineCreateInfo mainGraphicsPipelineCreateInfo = {};
-    mainGraphicsPipelineCreateInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    mainGraphicsPipelineCreateInfo.stageCount = 2;
-    mainGraphicsPipelineCreateInfo.pStages = mainShaderStages;
-    mainGraphicsPipelineCreateInfo.pVertexInputState = &mainVertexInputInfo;
-    mainGraphicsPipelineCreateInfo.pInputAssemblyState = &inputAssembly;
-    mainGraphicsPipelineCreateInfo.pViewportState = &viewportState;
-    mainGraphicsPipelineCreateInfo.pRasterizationState = &rasterizer;
-    mainGraphicsPipelineCreateInfo.pMultisampleState = &multisampling;
-    mainGraphicsPipelineCreateInfo.pColorBlendState = &colorBlending;
-    mainGraphicsPipelineCreateInfo.layout = mainPipelineLayout_;
-    mainGraphicsPipelineCreateInfo.renderPass = renderPass_;
-    mainGraphicsPipelineCreateInfo.subpass = 0;
-    createPipeline(mainGraphicsPipelineCreateInfo, mainPipeline_);
-    LOGE("passed main pipeline creation:");
-    vkDestroyShaderModule(device_, mainVertShaderModule, nullptr);
-    vkDestroyShaderModule(device_, mainFragShaderModule, nullptr);
 
 }
 
-
 void Renderer::createOverlayGraphicsPipeline() {
-    GraphicsPipelineData graphicsPipelineData{};
-    ColorBlendingData colorBlendingData{};
-    ViewPortData viewPortData{};
+
+    GraphicsPipelineData graphicsPipelineData{
+        .pipeline = overlayPipeline_,
+            .viewport {.x=0.0, .y=0.0f, .width=(float) swapchainExtent_.width, .height=(float) swapchainExtent_.height, .minDepth=0.0f, .maxDepth=1.0f},
+            .scissor {.offset{0, 0}, .extent = swapchainExtent_}
+    };
 
     setShaderCreateInfo(device_, assetManager_, "overlay.vert.spv", "overlay.frag.spv",
                         graphicsPipelineData);
-    setColorBlending(colorBlendingData, graphicsPipelineData);
-    setViewPortState(swapchainExtent_, viewPortData,graphicsPipelineData);
-    createImageOverlayDescriptor();
-
-    VkPipelineInputAssemblyStateCreateInfo overlayInputAssembly = {};
-    overlayInputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-    overlayInputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-    overlayInputAssembly.primitiveRestartEnable = VK_FALSE;
-
-
-    VkPipelineRasterizationStateCreateInfo overlayRasterizer = {};
-    overlayRasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-    overlayRasterizer.depthClampEnable = VK_FALSE;
-    overlayRasterizer.rasterizerDiscardEnable = VK_FALSE;
-    overlayRasterizer.polygonMode = VK_POLYGON_MODE_FILL;
-    overlayRasterizer.lineWidth = 1.0f;
-    overlayRasterizer.cullMode = VK_CULL_MODE_NONE;
-    overlayRasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-    overlayRasterizer.depthBiasEnable = VK_FALSE;
-
-    VkPipelineMultisampleStateCreateInfo multisampling = {};
-    multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-    multisampling.sampleShadingEnable = VK_FALSE;
-    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    setColorBlending(graphicsPipelineData);
+    setViewPortState(graphicsPipelineData);
+    setInputAssembly(graphicsPipelineData);
+    setRasterizer(graphicsPipelineData);
+    setSampling(graphicsPipelineData);
+    createImageOverlayDescriptor(graphicsPipelineData);
 
     // Vertex input: just position
     VkVertexInputBindingDescription overlayBindingDesc = {};
@@ -1295,43 +1205,26 @@ void Renderer::createOverlayGraphicsPipeline() {
     overlayVertexInputInfo.vertexAttributeDescriptionCount = overlayVertexAttributeDesc.size();
     overlayVertexInputInfo.pVertexAttributeDescriptions = overlayVertexAttributeDesc.data();
 
-    VkPushConstantRange overlayPushConstantRange = {};
-    overlayPushConstantRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-    overlayPushConstantRange.offset = 0;
-    overlayPushConstantRange.size = sizeof(float) * 4; // For vec4 offset
 
-    VkPipelineLayoutCreateInfo overlayPipelineLayoutInfo = {};
-    overlayPipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    overlayPipelineLayoutInfo.setLayoutCount = 1;
-    overlayPipelineLayoutInfo.pSetLayouts = &overlayDescriptorSetLayout_;
-    overlayPipelineLayoutInfo.pushConstantRangeCount = 1;
-    overlayPipelineLayoutInfo.pPushConstantRanges = &overlayPushConstantRange;
+    LOGE("overlay pipelineLayout: %llu", graphicsPipelineData.pipelineLayout);
 
-    createPipelineLayout(overlayPipelineLayoutInfo, overlayPipelineLayout_);
-    LOGE("overlay pipelineLayout: %p", &overlayPipelineLayout_);
+    graphicsPipelineData.vertexInputState = overlayVertexInputInfo;
 
-    VkGraphicsPipelineCreateInfo overlayGraphicsPipelineCreateInfo = {};
-    overlayGraphicsPipelineCreateInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    overlayGraphicsPipelineCreateInfo.stageCount = graphicsPipelineData.shaderStages.size();
-    overlayGraphicsPipelineCreateInfo.pStages = graphicsPipelineData.shaderStages.data();
-    overlayGraphicsPipelineCreateInfo.pVertexInputState = &overlayVertexInputInfo;
-    overlayGraphicsPipelineCreateInfo.pInputAssemblyState = &overlayInputAssembly;
-    overlayGraphicsPipelineCreateInfo.pViewportState = &graphicsPipelineData.viewportState;
-    overlayGraphicsPipelineCreateInfo.pRasterizationState = &overlayRasterizer;
-    overlayGraphicsPipelineCreateInfo.pMultisampleState = &multisampling;
-    overlayGraphicsPipelineCreateInfo.pColorBlendState = &graphicsPipelineData.colorBlendState;
-    overlayGraphicsPipelineCreateInfo.layout = overlayPipelineLayout_;
-    overlayGraphicsPipelineCreateInfo.renderPass = renderPass_;
-    overlayGraphicsPipelineCreateInfo.subpass = 0;
-
-    createPipeline(overlayGraphicsPipelineCreateInfo, overlayPipeline_);
-
-    vkDestroyShaderModule(device_, graphicsPipelineData.shaderStages[0].module,
-                          nullptr);
-    vkDestroyShaderModule(device_, graphicsPipelineData.shaderStages[1].module,
-                          nullptr);
+    createPipeline(graphicsPipelineData, "overlayPipeline");
 
 
+}
+
+void setRasterizer(GraphicsPipelineData &graphicsPipelineData) {
+    VkPipelineRasterizationStateCreateInfo overlayRasterizer = graphicsPipelineData.rasterizationState;
+    overlayRasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    overlayRasterizer.depthClampEnable = VK_FALSE;
+    overlayRasterizer.rasterizerDiscardEnable = VK_FALSE;
+    overlayRasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+    overlayRasterizer.lineWidth = 1.0f;
+    overlayRasterizer.cullMode = VK_CULL_MODE_NONE;
+    overlayRasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    overlayRasterizer.depthBiasEnable = VK_FALSE;
 }
 
 void
@@ -1360,10 +1253,9 @@ setShaderCreateInfo(VkDevice device, AAssetManager *assetManager, const char *sp
                                          fragShaderStageInfo};
 }
 
-void
-setColorBlending(ColorBlendingData colorBlendingData, GraphicsPipelineData &graphicsPipelineData) {
+void setColorBlending(GraphicsPipelineData &graphicsPipelineData) {
 
-    auto &colorBlendAttachment = colorBlendingData.colorBlendAttachment;
+    auto &colorBlendAttachment = graphicsPipelineData.colorBlendAttachment;
     colorBlendAttachment.colorWriteMask =
             VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT |
             VK_COLOR_COMPONENT_A_BIT;
@@ -1388,45 +1280,82 @@ setColorBlending(ColorBlendingData colorBlendingData, GraphicsPipelineData &grap
     graphicsPipelineData.colorBlendState = colorBlending;
 }
 
-void setViewPortState(VkExtent2D swapchainExtent,ViewPortData viewPortData,GraphicsPipelineData &graphicsPipelineData) {
-    VkViewport &viewport = viewPortData.viewport;
-    viewport.x = 0.0f;
-    viewport.y = 0.0f;
-    viewport.width = (float) swapchainExtent.width;
-    viewport.height = (float) swapchainExtent.height;
-    viewport.minDepth = 0.0f;
-    viewport.maxDepth = 1.0f;
+void setViewPortState(GraphicsPipelineData &graphicsPipelineData) {
 
-    VkRect2D &scissor = viewPortData.scissor;
-    scissor.offset = {0, 0};
-    scissor.extent = swapchainExtent;
-
-    VkPipelineViewportStateCreateInfo viewportState = {};
+    VkPipelineViewportStateCreateInfo &viewportState = graphicsPipelineData.viewportState;
     viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
     viewportState.viewportCount = 1;
-    viewportState.pViewports = &viewport;
+    viewportState.pViewports = &graphicsPipelineData.viewport;
     viewportState.scissorCount = 1;
-    viewportState.pScissors = &scissor;
-    graphicsPipelineData.viewportState = viewportState;
+    viewportState.pScissors = &graphicsPipelineData.scissor;
 }
 
-void Renderer::createPipelineLayout(VkPipelineLayoutCreateInfo &pipelineLayoutInfo,
-                                    VkPipelineLayout &pipelineLayout) {
-    VkResult res = vkCreatePipelineLayout(device_, &pipelineLayoutInfo, nullptr, &pipelineLayout);
+void setInputAssembly(GraphicsPipelineData &graphicsPipelineData) {
+    auto &overlayInputAssembly = graphicsPipelineData.inputAssemblyState;
+    overlayInputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    overlayInputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    overlayInputAssembly.primitiveRestartEnable = VK_FALSE;
+}
+
+void setSampling(GraphicsPipelineData &graphicsPipelineData) {
+    VkPipelineMultisampleStateCreateInfo &multisampling = graphicsPipelineData.multisamplingState;
+    multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    multisampling.sampleShadingEnable = VK_FALSE;
+    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+}
+
+void Renderer::createPipelineLayout(VkPipelineLayoutCreateInfo &pipelineLayoutInfo,GraphicsPipelineData &graphicsPipelineData) {
+    VkResult res = vkCreatePipelineLayout(device_, &pipelineLayoutInfo, nullptr, &graphicsPipelineData.pipelineLayout);
     if (res != VK_SUCCESS) {
         LOGE("Failed to create pipeline layout! error code:%d", res);
         abort();
     }
+
 }
 
-void Renderer::createPipeline(VkGraphicsPipelineCreateInfo &graphicsPipelineCreateInfo,
-                              VkPipeline &pipeline) {
+void
+Renderer::createPipeline(GraphicsPipelineData &graphicsPipelineData, const char pipelineName[10]) {
+
+    VkGraphicsPipelineCreateInfo pipelineCreateInfo = graphicsPipelineData.pipelineCreateInfo;
+    pipelineCreateInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    pipelineCreateInfo.stageCount = graphicsPipelineData.shaderStages.size();
+    pipelineCreateInfo.pStages = graphicsPipelineData.shaderStages.data();
+    pipelineCreateInfo.pVertexInputState = &graphicsPipelineData.vertexInputState;
+    pipelineCreateInfo.pInputAssemblyState = &graphicsPipelineData.inputAssemblyState;
+    pipelineCreateInfo.pViewportState = &graphicsPipelineData.viewportState;
+    pipelineCreateInfo.pRasterizationState = &graphicsPipelineData.rasterizationState;
+    pipelineCreateInfo.pMultisampleState = &graphicsPipelineData.multisamplingState;
+    pipelineCreateInfo.pColorBlendState = &graphicsPipelineData.colorBlendState;
+    pipelineCreateInfo.layout = graphicsPipelineData.pipelineLayout;
+    pipelineCreateInfo.renderPass = renderPass_;
+    pipelineCreateInfo.subpass = 0;
+    LOGE("creating pipeline name 1: %c", pipelineName[0]);
     VkResult res = vkCreateGraphicsPipelines(device_, VK_NULL_HANDLE, 1,
-                                             &graphicsPipelineCreateInfo, nullptr, &pipeline);
+                                             &pipelineCreateInfo, nullptr,
+                                             &graphicsPipelineData.pipeline);
+    LOGE("creating pipeline name: %c", pipelineName[0]);
     if (res != VK_SUCCESS) {
         LOGE("Failed to create graphics pipeline! error code:%d", res);
         abort();
     }
+
+    switch (pipelineName[0]) {
+        case 'm':
+            mainPipeline_ = graphicsPipelineData.pipeline;
+            mainPipelineLayout_ = graphicsPipelineData.pipelineLayout;
+            LOGE("main pipelineLayout: %llu", mainPipelineLayout_);
+            break;
+        case 'o':
+            overlayPipeline_ = graphicsPipelineData.pipeline;
+            overlayPipelineLayout_ = graphicsPipelineData.pipelineLayout;
+            break;
+        default:
+            LOGE("Unknown pipeline name: %s", pipelineName);
+            break;
+    }
+
+    vkDestroyShaderModule(device_, graphicsPipelineData.shaderStages[0].module, nullptr);
+    vkDestroyShaderModule(device_, graphicsPipelineData.shaderStages[1].module, nullptr);
 }
 
 void
@@ -1514,7 +1443,7 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
         } else {
             overlayColor[0] = 0.0f; // Green or Blue
             overlayColor[1] = 1.0f;
-            overlayColor[2] = 0.0f;
+            overlayColor[2] = 0.5f;
             overlayColor[3] = 0.5f;
         }
 

@@ -23,6 +23,7 @@
 #include <chrono>
 #include <unordered_map>
 
+
 struct UniformBufferObject {
     alignas(16) glm::mat4 model;
     alignas(16) glm::mat4 view;
@@ -51,33 +52,21 @@ struct Alien {
 };
 
 struct GraphicsPipelineData {
+    VkPipeline pipeline{VK_NULL_HANDLE};
     std::vector<VkPipelineShaderStageCreateInfo> shaderStages;
-    VkPipelineVertexInputStateCreateInfo vertexInputStateCreateInfo;
-    VkPipelineInputAssemblyStateCreateInfo inputAssemblyStateCreateInfo;
+    VkPipelineVertexInputStateCreateInfo vertexInputState;
+    VkPipelineInputAssemblyStateCreateInfo inputAssemblyState;
     VkPipelineViewportStateCreateInfo viewportState;
-    VkPipelineRasterizationStateCreateInfo rasterizationStateCreateInfo;
-    VkPipelineMultisampleStateCreateInfo multisamplingStateCreateInfo;
+    VkPipelineRasterizationStateCreateInfo rasterizationState;
+    VkPipelineMultisampleStateCreateInfo multisamplingState;
     VkPipelineColorBlendStateCreateInfo colorBlendState;
+    VkGraphicsPipelineCreateInfo pipelineCreateInfo;
     VkPipelineLayout pipelineLayout;
     VkRenderPass renderPass;
     uint32_t subpass;
-};
-
-struct ColorBlendingData {
-    VkPipelineColorBlendAttachmentState colorBlendAttachment = {};
-    VkBool32 blendEnable;
-    VkBlendFactor srcColorBlendFactor;
-    VkBlendFactor dstColorBlendFactor;
-    VkBlendOp colorBlendOp;
-    VkBlendFactor srcAlphaBlendFactor;
-    VkBlendFactor dstAlphaBlendFactor;
-    VkBlendOp alphaBlendOp;
-    VkColorComponentFlags colorWriteMask;
-};
-
-struct ViewPortData {
     VkViewport viewport;
     VkRect2D scissor;
+    VkPipelineColorBlendAttachmentState colorBlendAttachment;
 };
 
 enum class GameState {
@@ -202,9 +191,10 @@ private:
 
     void updateGameState();
 
-    void createPipeline(VkGraphicsPipelineCreateInfo &graphicsPipelineCreateInfo, VkPipeline &pipeline);
+    void createPipeline(GraphicsPipelineData &graphicsPipelineData, const char pipelineName[10]);
 
-    void createPipelineLayout(VkPipelineLayoutCreateInfo &pipelineLayoutInfo, VkPipelineLayout &pipelineLayout);
+    void createPipelineLayout(VkPipelineLayoutCreateInfo &pipelineLayoutInfo,
+                              GraphicsPipelineData &graphicsPipelineData);
 
     void createDescriptorSetLayout(VkDescriptorSetLayoutCreateInfo info, VkDescriptorSetLayout &layout);
 
@@ -214,9 +204,13 @@ private:
 
     void createUniformBuffer();
 
-    void createImageOverlayDescriptor();
+    void createImageOverlayDescriptor(GraphicsPipelineData &graphicsPipelineData);
 
     void loadTexture(const char *filename, VkImage &vkImage, VkDeviceMemory &vkDeviceMemory, VkImageView &imageView, VkSampler &vkSampler);
 
     void createOverlayGraphicsPipeline();
+
+    void loadAllTextures();
+
+    void createMainDescriptor(GraphicsPipelineData &graphicsPipelineData);
 };
