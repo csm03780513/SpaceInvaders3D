@@ -112,9 +112,9 @@ void copyBufferToImage(VkDevice device, VkCommandPool commandPool, VkQueue graph
 void createTextureSampler(VkDevice device, VkSampler &sampler);
 
 void
-setShaderCreateInfo(VkDevice device, AAssetManager *assetManager, const char *spirvVertexFilename,
-                    const char *spirvFragmentFilename,
-                    GraphicsPipelineData &graphicsPipelineData);
+setShaderStages(VkDevice device, AAssetManager *assetManager, const char *spirvVertexFilename,
+                const char *spirvFragmentFilename,
+                GraphicsPipelineData &graphicsPipelineData);
 
 void setColorBlending(GraphicsPipelineData &graphicsPipelineData);
 
@@ -1146,8 +1146,8 @@ void Renderer::createMainGraphicsPipeline() {
             .scissor {.offset{0, 0}, .extent = swapchainExtent_}
     };
 
-    setShaderCreateInfo(device_, assetManager_, "main.vert.spv", "main.frag.spv",
-                        graphicsPipelineData);
+    setShaderStages(device_, assetManager_, "main.vert.spv", "main.frag.spv",
+                    graphicsPipelineData);
     setColorBlending(graphicsPipelineData);
     setViewPortState(graphicsPipelineData);
     setInputAssembly(graphicsPipelineData);
@@ -1167,8 +1167,8 @@ void Renderer::createOverlayGraphicsPipeline() {
             .scissor {.offset{0, 0}, .extent = swapchainExtent_}
     };
 
-    setShaderCreateInfo(device_, assetManager_, "overlay.vert.spv", "overlay.frag.spv",
-                        graphicsPipelineData);
+    setShaderStages(device_, assetManager_, "overlay.vert.spv", "overlay.frag.spv",
+                    graphicsPipelineData);
     setColorBlending(graphicsPipelineData);
     setViewPortState(graphicsPipelineData);
     setInputAssembly(graphicsPipelineData);
@@ -1227,10 +1227,9 @@ void setRasterizer(GraphicsPipelineData &graphicsPipelineData) {
     overlayRasterizer.depthBiasEnable = VK_FALSE;
 }
 
-void
-setShaderCreateInfo(VkDevice device, AAssetManager *assetManager, const char *spirvVertexFilename,
-                    const char *spirvFragmentFilename,
-                    GraphicsPipelineData &graphicsPipelineData) {
+void setShaderStages(VkDevice device, AAssetManager *assetManager, const char *spirvVertexFilename,
+                const char *spirvFragmentFilename,
+                GraphicsPipelineData &graphicsPipelineData) {
 
     auto vertShaderCode = loadAsset(assetManager, spirvVertexFilename);
     auto fragShaderCode = loadAsset(assetManager, spirvFragmentFilename);
@@ -1601,7 +1600,6 @@ void Renderer::updateGameState() {
     }
 
 }
-
 
 void Renderer::drawFrame() {
     uint32_t imageIndex;
