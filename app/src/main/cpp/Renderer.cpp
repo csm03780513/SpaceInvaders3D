@@ -1081,7 +1081,6 @@ void Renderer::updateUniformBuffer(float deltaTime) {
     ubo_.proj[1][1] *= 1;
 
     memcpy(uniformBuffersData, &ubo_, sizeof(ubo_));
-    vkUnmapMemory(device_, uniformBufferMemory_);
 }
 
 void Renderer::initAliens() {
@@ -1690,6 +1689,10 @@ Renderer::~Renderer() {
         vkDestroyDescriptorPool(device_, mainDescriptorPool_, nullptr);
     if (uniformBuffer_ != VK_NULL_HANDLE)
         vkDestroyBuffer(device_, uniformBuffer_, nullptr);
+    if (uniformBuffersData != nullptr) {
+        vkUnmapMemory(device_, uniformBufferMemory_);
+        uniformBuffersData = nullptr;
+    }
     if (uniformBufferMemory_ != VK_NULL_HANDLE)
         vkFreeMemory(device_, uniformBufferMemory_, nullptr);
 

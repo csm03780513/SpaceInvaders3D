@@ -154,7 +154,7 @@ private:
     VkBuffer alienVertexBuffer_{VK_NULL_HANDLE};
     VkDeviceMemory alienVertexBufferMemory_{VK_NULL_HANDLE};
 
-    void* uniformBuffersData;
+    void* uniformBuffersData{nullptr};
 
     VkImage overlayImage_{VK_NULL_HANDLE};
     VkDeviceMemory overlayImageDeviceMemory_{VK_NULL_HANDLE};
