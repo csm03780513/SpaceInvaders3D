@@ -582,9 +582,9 @@ void Renderer::createMainDescriptor(GraphicsPipelineData &graphicsPipelineData) 
     createDescriptorSetLayout(layoutInfo, alienDescriptorSetLayout_);
     createDescriptorSetLayout(layoutInfo, shipBulletDescriptorSetLayout_);
 
-    std::vector<VkDescriptorSetLayout> descriptionSetLayouts = {shipDescriptorSetLayout_,
-                                                                alienDescriptorSetLayout_,
-                                                                shipBulletDescriptorSetLayout_};
+    std::vector<VkDescriptorSetLayout> descriptorSetLayouts = {shipDescriptorSetLayout_,
+                                                               alienDescriptorSetLayout_,
+                                                               shipBulletDescriptorSetLayout_};
 
     VkPushConstantRange vkPushConstantRange = {};
     vkPushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
@@ -595,8 +595,8 @@ void Renderer::createMainDescriptor(GraphicsPipelineData &graphicsPipelineData) 
 
     VkPipelineLayoutCreateInfo mainPipelineLayoutInfo = {};
     mainPipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    mainPipelineLayoutInfo.setLayoutCount = descriptionSetLayouts.size();
-    mainPipelineLayoutInfo.pSetLayouts = descriptionSetLayouts.data();
+    mainPipelineLayoutInfo.setLayoutCount = descriptorSetLayouts.size();
+    mainPipelineLayoutInfo.pSetLayouts = descriptorSetLayouts.data();
     mainPipelineLayoutInfo.pushConstantRangeCount = pushConstantRanges.size();
     mainPipelineLayoutInfo.pPushConstantRanges = pushConstantRanges.data();
 
@@ -636,7 +636,7 @@ void Renderer::createMainDescriptor(GraphicsPipelineData &graphicsPipelineData) 
     descAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     descAllocInfo.descriptorPool = mainDescriptorPool_;
     descAllocInfo.descriptorSetCount = descriptorSets.size();
-    descAllocInfo.pSetLayouts = descriptionSetLayouts.data();
+    descAllocInfo.pSetLayouts = descriptorSetLayouts.data();
 
     LOGE("About to create descriptor sets");
     VkResult res1 = vkAllocateDescriptorSets(device_, &descAllocInfo, descriptorSets.data());
@@ -1689,9 +1689,11 @@ Renderer::~Renderer() {
         vkDestroyDescriptorPool(device_, mainDescriptorPool_, nullptr);
     if (uniformBuffer_ != VK_NULL_HANDLE)
         vkDestroyBuffer(device_, uniformBuffer_, nullptr);
+  
     if (uniformBufferMemory_ != VK_NULL_HANDLE) {
-        if (uniformBuffersData)
+        if (uniformBuffersData){
             vkUnmapMemory(device_, uniformBufferMemory_);
+        }
         vkFreeMemory(device_, uniformBufferMemory_, nullptr);
     }
 
