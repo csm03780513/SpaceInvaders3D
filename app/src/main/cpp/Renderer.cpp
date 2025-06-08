@@ -10,6 +10,20 @@
 
 std::unordered_map<GameText, std::pair<VkBuffer, std::vector<Vertex>>> allTextVertices;
 
+const std::vector<const char*> validationLayers = {
+        "VK_LAYER_KHRONOS_validation"
+};
+
+
+// Add these to createInfo.enabledExtensionCount and createInfo.ppEnabledExtensionNames as well
+
+
+#ifdef NDEBUG
+const bool enableValidationLayers = false;
+#else
+const bool enableValidationLayers = true;
+#endif
+
 // Relative to (0, 0); will offset per-bullet in the shader or CPU
 static const Vertex bulletVerts[6] = {
         // First triangle
@@ -128,6 +142,28 @@ void setRasterizer(GraphicsPipelineData &graphicsPipelineData);
 void setSampling(GraphicsPipelineData &graphicsPipelineData);
 
 void updateFontBuffer(VkDevice device,std::vector<Vertex> textVertices, VkDeviceMemory fontVertexBufferMemory_);
+
+
+VkResult CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT *pCreateInfo,
+                                      const VkAllocationCallbacks *pAllocator,
+                                      VkDebugUtilsMessengerEXT *pDebugMessenger) {
+    auto func = (PFN_vkCreateDebugUtilsMessengerEXT) vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT");
+    if (func != nullptr) {
+        return func(instance, pCreateInfo, pAllocator, pDebugMessenger);
+    } else {
+        return VK_ERROR_EXTENSION_NOT_PRESENT;
+    }
+}
+
+void DestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT debugMessenger,
+                                   const VkAllocationCallbacks *pAllocator) {
+    auto func = (PFN_vkDestroyDebugUtilsMessengerEXT)
+            vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT");
+    if (func != nullptr) {
+        func(instance, debugMessenger, pAllocator);
+    }
+}
+
 
 VkShaderModule createShaderModule(VkDevice device, const std::vector<char> &code) {
     VkShaderModuleCreateInfo createInfo = {};
@@ -833,22 +869,53 @@ void Renderer::createMainDescriptor(GraphicsPipelineData &graphicsPipelineData) 
                            nullptr);
 }
 
+VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
+        VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+        VkDebugUtilsMessageTypeFlagsEXT messageType,
+        const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
+        void* pUserData) {
+
+    LOGE("Vulkan Validation: %s", pCallbackData->pMessage);
+    return VK_FALSE;
+}
+
+bool checkValidationLayerSupport() {
+    uint32_t layerCount;
+    vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
+    std::vector<VkLayerProperties> availableLayers(layerCount);
+    vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
+
+    for (const char* layerName : validationLayers) {
+        bool found = false;
+        for (const auto& layerProperties : availableLayers) {
+            if (strcmp(layerName, layerProperties.layerName) == 0) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) return false;
+    }
+    return true;
+}
 
 
-void Renderer::initVulkan() {// Load Vulkan functions using volk
-//    volkInitialize();
-
+void Renderer::createInstance(){
+    //    volkInitialize();
+    if (enableValidationLayers && !checkValidationLayerSupport()) {
+        LOGE("Validation layers requested, but not available!");
+        throw std::runtime_error("validation layers requested, but not available!");
+    }
     // Create Vulkan instance
     VkApplicationInfo appInfo = {};
     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
     appInfo.pApplicationName = "3D Space Invaders";
     appInfo.apiVersion = VK_API_VERSION_1_1;
 
-
     // Required extensions
     std::vector<const char *> extensions = {
             VK_KHR_SURFACE_EXTENSION_NAME,
-            VK_KHR_ANDROID_SURFACE_EXTENSION_NAME
+            VK_KHR_ANDROID_SURFACE_EXTENSION_NAME,
+            VK_EXT_DEBUG_UTILS_EXTENSION_NAME
     };
 
     VkInstanceCreateInfo instanceInfo = {};
@@ -856,12 +923,41 @@ void Renderer::initVulkan() {// Load Vulkan functions using volk
     instanceInfo.pApplicationInfo = &appInfo;
     instanceInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
     instanceInfo.ppEnabledExtensionNames = extensions.data();
+    if (enableValidationLayers) {
+        instanceInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
+        instanceInfo.ppEnabledLayerNames = validationLayers.data();
+    } else {
+        instanceInfo.enabledLayerCount = 0;
+    }
 
     if (vkCreateInstance(&instanceInfo, nullptr, &instance_) != VK_SUCCESS) {
         LOGE("Failed to create Vulkan instance");
         abort();
     }
 
+    if(enableValidationLayers) {
+        VkDebugUtilsMessengerEXT debugMessenger;
+
+        VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo = {};
+        debugCreateInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+        debugCreateInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+                                          VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+        debugCreateInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+                                      VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+                                      VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+        debugCreateInfo.pfnUserCallback = debugCallback;
+
+        VkResult result = CreateDebugUtilsMessengerEXT(instance_, &debugCreateInfo, nullptr,
+                                                       &debugMessenger);
+        if (result != VK_SUCCESS) {
+            LOGE("Failed to set up debug messenger!");
+            abort();
+        }
+    }
+// check result...
+
+}
+void Renderer::createSurface() {
     // Create Android surface from ANativeWindow
     VkAndroidSurfaceCreateInfoKHR surfInfo = {};
     surfInfo.sType = VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR;
@@ -876,7 +972,8 @@ void Renderer::initVulkan() {// Load Vulkan functions using volk
         LOGE("Failed to create Android Vulkan surface, error code: %d", surfaceResult);
         abort();
     }
-
+}
+void Renderer::getPhysicalDevice() {
     // 1. Enumerate physical devices
     uint32_t deviceCount = 0;
     vkEnumeratePhysicalDevices(instance_, &deviceCount, nullptr);
@@ -909,6 +1006,12 @@ void Renderer::initVulkan() {// Load Vulkan functions using volk
         abort();
     }
     LOGE("Physical device and graphics queue family selected: %u", graphicsQueueFamily_);
+
+}
+void Renderer::initVulkan() {// Load Vulkan functions using volk
+     createInstance();
+     createSurface();
+     getPhysicalDevice();
 
     float queuePriority = 1.0f;
     VkDeviceQueueCreateInfo queueCreateInfo = {};
@@ -1326,7 +1429,7 @@ void Renderer::createFontGraphicsPipeline() {
 }
 
 void setRasterizer(GraphicsPipelineData &graphicsPipelineData) {
-    VkPipelineRasterizationStateCreateInfo overlayRasterizer = graphicsPipelineData.rasterizationState;
+    auto &overlayRasterizer = graphicsPipelineData.rasterizationState;
     overlayRasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
     overlayRasterizer.depthClampEnable = VK_FALSE;
     overlayRasterizer.rasterizerDiscardEnable = VK_FALSE;
@@ -1438,11 +1541,9 @@ Renderer::createPipeline(GraphicsPipelineData &graphicsPipelineData, const char 
     pipelineCreateInfo.layout = graphicsPipelineData.pipelineLayout;
     pipelineCreateInfo.renderPass = renderPass_;
     pipelineCreateInfo.subpass = 0;
-    LOGE("creating pipeline name 1: %c", pipelineName[0]);
     VkResult res = vkCreateGraphicsPipelines(device_, VK_NULL_HANDLE, 1,
                                              &pipelineCreateInfo, nullptr,
                                              &graphicsPipelineData.pipeline);
-    LOGE("creating pipeline name: %c", pipelineName[0]);
     if (res != VK_SUCCESS) {
         LOGE("Failed to create graphics pipeline! error code:%d", res);
         abort();
@@ -1452,15 +1553,17 @@ Renderer::createPipeline(GraphicsPipelineData &graphicsPipelineData, const char 
         case 'm':
             mainPipeline_ = graphicsPipelineData.pipeline;
             mainPipelineLayout_ = graphicsPipelineData.pipelineLayout;
-            LOGE("main pipelineLayout: %llu", mainPipelineLayout_);
+            LOGE("mainPipeline_: %llu", mainPipeline_);
             break;
         case 'o':
             overlayPipeline_ = graphicsPipelineData.pipeline;
             overlayPipelineLayout_ = graphicsPipelineData.pipelineLayout;
+            LOGE("overlayPipeline_:  %p", &overlayPipeline_);
             break;
         case 'f':
             fontPipeline_ = graphicsPipelineData.pipeline;
             fontPipelineLayout_ = graphicsPipelineData.pipelineLayout;
+            LOGE("fontPipeline_: %p", &graphicsPipelineData.pipeline);
             break;
         default:
             LOGE("Unknown pipeline name: %s", pipelineName);
@@ -1509,6 +1612,8 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
 
     vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(trianglePos),
                        trianglePos);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineLayout_, 0, 1,
+                            &shipDescriptorSet_, 0, nullptr);
     vkCmdBindVertexBuffers(cmd, 0, 1, &vertexBuffer_, offsets);
     vkCmdDraw(cmd, 3, 1, 0, 0);
 
@@ -1656,7 +1761,16 @@ void Renderer::updateAliens(float deltaTime) {
         }
     }
 }
-uint score = 0;
+
+int actualScore = 0;            // Game logic value
+float displayedScore_ = 0.0f;    // Smoothed UI value
+float scoreAnimSpeed_ = 200.0f;  // Units per second (tune for effect)
+std::string scoreText_;          // Current display string, e.g. "Score: 1234"
+
+float scoreScale_ = 0.002f;         // Current scale for the pop effect
+float scoreScaleTarget_ = 0.002f;   // Where we're scaling toward
+float scoreScaleSpeed_ = 6.0f;    // How quickly scale returns to normal
+float scorePopAmount_ = 0.0022f;    // How much to “pop” the score on change
 void Renderer::updateCollision() {
     for (auto &bullet: bullets_) {
         if (!bullet.active) continue;
@@ -1667,19 +1781,13 @@ void Renderer::updateCollision() {
             if (isCollision(alien, bullet)) {
                 alien.active = false;    // Destroy alien
                 bullet.active = false;   // Destroy bullet
-
-                std::string currentScore = "Score:"+ std::to_string(++score);
-                std::vector<Vertex> scoreVertices;
-                scoreVertices = fontManager_->buildTextVertices(currentScore,-0.95f, -0.80f, 1.0f,0.002f);
-                allTextVertices[GameText::Score] = {scoreTextVertexBuffer_,scoreVertices};
-                updateFontBuffer(device_, scoreVertices, scoreTextVertexBufferMemory_);
+                actualScore +=100;
                 // Optionally: score++, play sound, create explosion, etc.
                 break; // Stop checking this bullet (it's now gone)
             }
         }
     }
 }
-
 void Renderer::updateGameState() {
     if (gameState == GameState::Playing) {
         // --- Game Over: Any alien reaches the bottom (e.g. y < -0.9f)
@@ -1713,6 +1821,61 @@ void Renderer::updateGameState() {
 
 }
 
+
+void Renderer::animateScore(float deltaTime) {
+    int newScore = actualScore; // (set by your gameplay logic elsewhere)
+    int prevDisplay = static_cast<int>(displayedScore_);
+
+    // Roll toward actualScore_
+    if (displayedScore_ != newScore) {
+        float diff = newScore - displayedScore_;
+        float step = scoreAnimSpeed_ * deltaTime;
+
+        if (fabs(diff) < step)
+            displayedScore_ = static_cast<float>(newScore);
+        else
+            displayedScore_ += (diff > 0 ? 1 : -1) * step;
+    }
+
+    int nowDisplay = static_cast<int>(displayedScore_);
+
+    // Only rebuild vertices if digit has changed!
+    if (nowDisplay != prevDisplay) {
+        char buf[32];
+        snprintf(buf, sizeof(buf), "Score:%d", nowDisplay);
+        scoreText_ = buf;
+
+        std::vector<Vertex> scoreVertices;
+        scoreVertices = fontManager_->buildTextVertices(scoreText_,-0.95f, -0.80f, 1.0f,scoreScale_);
+        allTextVertices[GameText::Score] = {scoreTextVertexBuffer_,scoreVertices};
+        updateFontBuffer(device_, scoreVertices, scoreTextVertexBufferMemory_);
+
+        // POP! Trigger the scale effect
+        scoreScale_ = scorePopAmount_;
+        scoreScaleTarget_ = 0.002f;
+
+    }
+    // Animate the scale back to normal (damped spring)
+    if (scoreScale_ != scoreScaleTarget_) {
+        float delta = scoreScaleTarget_ - scoreScale_;
+        float snap = scoreScaleSpeed_ * deltaTime;
+        if (fabs(delta) < 0.0001f)
+            scoreScale_ = scoreScaleTarget_;
+        else
+            scoreScale_ += delta * snap;
+        // After updating scale, optionally rebuild vertices for smooth shrink
+        // (But: for best performance, only rebuild if scale is "out of rest")
+        char buf[32];
+        snprintf(buf, sizeof(buf), "Score:%d", nowDisplay);
+        scoreText_ = buf;
+        std::vector<Vertex> scoreVertices;
+        scoreVertices = fontManager_->buildTextVertices(scoreText_,-0.95f, -0.80f, 1.0f,scoreScale_);
+        allTextVertices[GameText::Score] = {scoreTextVertexBuffer_,scoreVertices};
+        updateFontBuffer(device_, scoreVertices, scoreTextVertexBufferMemory_);
+    }
+}
+
+
 void Renderer::drawFrame() {
     uint32_t imageIndex;
     vkAcquireNextImageKHR(device_, swapchain_, UINT64_MAX, imageAvailableSemaphore_, VK_NULL_HANDLE,
@@ -1730,6 +1893,7 @@ void Renderer::drawFrame() {
         updateAliens(deltaTime);
         updateCollision();
         updateGameState();
+        animateScore(deltaTime);
     }
 
     recordCommandBuffer(imageIndex);
@@ -1775,7 +1939,7 @@ void Renderer::loadText() {
     allTextVertices[GameText::Title] = {titleTextVertexBuffer_,titleVertices};
 
     std::vector<Vertex> scoreVertices;
-    scoreVertices = fontManager_->buildTextVertices("Score:999",-0.95f, -0.8f,0.0f, 0.002f);
+    scoreVertices = fontManager_->buildTextVertices("Score:99999999",-0.95f, -0.8f,0.0f, 0.002f);
     VkDeviceSize scoreTextBufferSize = scoreVertices.size() * sizeof(Vertex);
     createBuffer(device_, physicalDevice_,
                  scoreTextBufferSize,

@@ -164,4 +164,11 @@ private:
     void loadText();
     void loadGameObjects();
 
+    void animateScore(float deltaTime);
+
+    void createInstance();
+
+    void createSurface();
+
+    void getPhysicalDevice();
 };
