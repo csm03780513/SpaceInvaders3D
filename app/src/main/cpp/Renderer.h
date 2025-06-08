@@ -1,81 +1,6 @@
 #pragma once
 
-#define VK_USE_PLATFORM_ANDROID_KHR
-#include <android_native_app_glue.h>
-#include <vulkan/vulkan.h>
-#include <vulkan/vulkan_android.h>
-//#include <volk.h>
-#include <vector>
-
-#include <android/asset_manager.h>
-#include <android/asset_manager_jni.h>
-#include <vector>
-
-#define GLM_FORCE_RADIANS
-#define GLM_FORCE_DEPTH_ZERO_TO_ONE
-#define GLM_FORCE_DEFAULT_ALIGNED_GENTYPES
-#include <glm/glm.hpp>
-#include <glm/gtc/matrix_transform.hpp>
-#define GLM_ENABLE_EXPERIMENTAL
-#include <glm/gtx/hash.hpp>
-#include <glm/glm.hpp>
-
-#include <chrono>
-#include <unordered_map>
-
-
-struct UniformBufferObject {
-    alignas(16) glm::mat4 model;
-    alignas(16) glm::mat4 view;
-    alignas(16) glm::mat4 proj;
-};
-struct Vertex {
-    float pos[3];
-    float color[3];
-    float uv[2];
-};
-struct OverlayVertex {
-    float pos[3];
-    float uv[2];
-};
-struct Bullet {
-    float x, y;
-    bool active;
-};
-struct Ship {
-    float x, y;
-    float color[3];
-};
-struct Alien {
-    float x, y;
-    bool active;
-};
-
-struct GraphicsPipelineData {
-    VkPipeline pipeline{VK_NULL_HANDLE};
-    std::vector<VkPipelineShaderStageCreateInfo> shaderStages;
-    VkPipelineVertexInputStateCreateInfo vertexInputState;
-    VkPipelineInputAssemblyStateCreateInfo inputAssemblyState;
-    VkPipelineViewportStateCreateInfo viewportState;
-    VkPipelineRasterizationStateCreateInfo rasterizationState;
-    VkPipelineMultisampleStateCreateInfo multisamplingState;
-    VkPipelineColorBlendStateCreateInfo colorBlendState;
-    VkGraphicsPipelineCreateInfo pipelineCreateInfo;
-    VkPipelineLayout pipelineLayout;
-    VkRenderPass renderPass;
-    uint32_t subpass;
-    VkViewport viewport;
-    VkRect2D scissor;
-    VkPipelineColorBlendAttachmentState colorBlendAttachment;
-};
-
-enum class GameState {
-    Playing,
-    Won,
-    Lost
-};
-
-
+#include "FontManager.h"
 
 class Renderer {
 public:
@@ -93,6 +18,7 @@ public:
     void restartGame();
 
 private:
+    FontManager *fontManager_;
     UniformBufferObject ubo_;
     android_app* app_;
     AAssetManager* assetManager_; // assetmgr
@@ -181,6 +107,23 @@ private:
     VkImageView shipBulletImageView_{VK_NULL_HANDLE};
     VkSampler shipBulletSampler_{VK_NULL_HANDLE};
 
+    VkBuffer titleTextVertexBuffer_{VK_NULL_HANDLE};
+    VkDeviceMemory titleTextVertexBufferMemory_{VK_NULL_HANDLE};
+
+    VkBuffer scoreTextVertexBuffer_;
+    VkDeviceMemory scoreTextVertexBufferMemory_;
+
+    VkImage fontAtlasImage_;
+    VkDeviceMemory fontAtlasImageDeviceMemory_;
+    VkImageView fontAtlasImageView_;
+    VkSampler fontAtlasSampler_;
+
+    VkPipelineLayout fontPipelineLayout_{VK_NULL_HANDLE};
+    VkDescriptorSet fontDescriptorSet_{VK_NULL_HANDLE};
+    VkPipeline fontPipeline_{VK_NULL_HANDLE};
+    VkDescriptorPool fontDescriptorPool_{VK_NULL_HANDLE};
+    VkDescriptorSetLayout fontDescriptorSetLayout_{VK_NULL_HANDLE};
+
     void recordCommandBuffer(uint32_t imageIndex);
     void initVulkan();
     void updateBullet(float deltaTime);
@@ -206,11 +149,19 @@ private:
 
     void createImageOverlayDescriptor(GraphicsPipelineData &graphicsPipelineData);
 
-    void loadTexture(const char *filename, VkImage &vkImage, VkDeviceMemory &vkDeviceMemory, VkImageView &imageView, VkSampler &vkSampler);
+    void loadTexture(const char *filename, VkImage &vkImage, VkDeviceMemory &vkDeviceMemory, VkImageView &imageView, VkSampler &vkSampler,GameTextureType gameTextureType);
 
     void createOverlayGraphicsPipeline();
 
     void loadAllTextures();
 
     void createMainDescriptor(GraphicsPipelineData &graphicsPipelineData);
+
+    void createFontGraphicsPipeline();
+
+    void createFontDescriptor(GraphicsPipelineData &graphicsPipelineData);
+
+    void loadText();
+    void loadGameObjects();
+
 };

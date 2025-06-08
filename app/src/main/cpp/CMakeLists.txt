@@ -16,6 +16,7 @@ add_library(SpaceInvaders3D SHARED
         main.cpp
         Renderer.cpp
         ${NATIVE_APP_GLUE_DIR}/android_native_app_glue.c
+        FontManager.cpp
         #        volk/volk.c
 )
 target_include_directories(SpaceInvaders3D PRIVATE

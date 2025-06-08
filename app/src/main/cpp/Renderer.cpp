@@ -1,14 +1,14 @@
 #include "Renderer.h"
 
+
+
 #define STB_IMAGE_IMPLEMENTATION
 
 #include <stb_image.h>
 #include <android/native_window.h>
-#include <android/log.h>
 #include <vector>
 
-#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "Vulkan", __VA_ARGS__)
-
+std::unordered_map<GameText, std::pair<VkBuffer, std::vector<Vertex>>> allTextVertices;
 
 // Relative to (0, 0); will offset per-bullet in the shader or CPU
 static const Vertex bulletVerts[6] = {
@@ -64,6 +64,7 @@ static const Vertex alienVerts[6] = {
 };
 
 
+
 static constexpr int MAX_BULLETS = 32;
 Bullet bullets_[MAX_BULLETS] = {};
 Ship ship_ = {};
@@ -74,8 +75,8 @@ static constexpr int NUM_ALIENS_Y = 3;
 static constexpr int MAX_ALIENS = NUM_ALIENS_X * NUM_ALIENS_Y;
 Alien aliens_[MAX_ALIENS] = {};
 
-float alienMoveSpeed_ = 0.5f;
-float bulletMoveSpeed_ = 1.0f;
+float alienMoveSpeed_ = 0.3f;
+float bulletMoveSpeed_ = 2.0f;
 int alienDirection_ = 1; // 1 = right, -1 = left
 
 const float ALIEN_SIZE = 0.1f;   // world units, adjust as needed
@@ -109,7 +110,7 @@ void transitionImageLayout(VkDevice device, VkCommandPool commandPool, VkQueue g
 void copyBufferToImage(VkDevice device, VkCommandPool commandPool, VkQueue graphicsQueue,
                        VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
 
-void createTextureSampler(VkDevice device, VkSampler &sampler);
+void createTextureSampler(VkDevice device, VkSampler &sampler, GameTextureType type);
 
 void
 setShaderStages(VkDevice device, AAssetManager *assetManager, const char *spirvVertexFilename,
@@ -125,6 +126,8 @@ void setInputAssembly(GraphicsPipelineData &graphicsPipelineData);
 void setRasterizer(GraphicsPipelineData &graphicsPipelineData);
 
 void setSampling(GraphicsPipelineData &graphicsPipelineData);
+
+void updateFontBuffer(VkDevice device,std::vector<Vertex> textVertices, VkDeviceMemory fontVertexBufferMemory_);
 
 VkShaderModule createShaderModule(VkDevice device, const std::vector<char> &code) {
     VkShaderModuleCreateInfo createInfo = {};
@@ -157,7 +160,7 @@ std::vector<char> loadAsset(AAssetManager *mgr, const char *filename) {
 }
 
 void Renderer::loadTexture(const char *filename, VkImage &vkImage, VkDeviceMemory &vkDeviceMemory,
-                           VkImageView &imageView, VkSampler &vkSampler) {
+                           VkImageView &imageView, VkSampler &vkSampler,GameTextureType gameTextureType) {
 
     std::vector<uint8_t> pixelData;
     int textureWidth, textureHeight;
@@ -181,8 +184,18 @@ void Renderer::loadTexture(const char *filename, VkImage &vkImage, VkDeviceMemor
 
     stbi_image_free(decoded);
 
+    if(gameTextureType == GameTextureType::FontAtlas) {
+        // 2. Describe your atlas grid
+        int cellW = 32, cellH = 32, cols = 16, rows = 16;
+
+// 3. Auto-scan metrics:
+        LOGE("width:%i x hieght:%i",textureWidth,textureHeight);
+         fontManager_->autoPackFontAtlas(pixelData, textureWidth,textureHeight,
+                                                                         cellW, cellH, cols, rows);
+    }
+
     if (imageIsLoaded) {
-        LOGE("after loading image asset");
+        LOGE("loading image asset:%s",filename);
         VkBuffer stagingBuffer{VK_NULL_HANDLE};
         VkDeviceMemory stagingBufferMemory{VK_NULL_HANDLE};
         // 1. Create staging buffer & copy image data
@@ -192,38 +205,34 @@ void Renderer::loadTexture(const char *filename, VkImage &vkImage, VkDeviceMemor
                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                      stagingBuffer, stagingBufferMemory);
 
-        LOGE("after creating image buffer");
         void *imageData;
         vkMapMemory(device_, stagingBufferMemory, 0, imageSize, 0, &imageData);
         memcpy(imageData, pixelData.data(), imageSize);
         vkUnmapMemory(device_, stagingBufferMemory);
-        LOGE("after mapping image data");
+
 
 // 2. Create the Vulkan image (device local)
         createImage(device_, physicalDevice_, textureWidth, textureHeight, VK_FORMAT_R8G8B8A8_UNORM,
                     VK_IMAGE_TILING_OPTIMAL,
                     VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vkImage, vkDeviceMemory);
-
-        LOGE("after creating image");
 // 3. Copy from staging buffer to Vulkan image (with transitions)
         transitionImageLayout(device_, commandPool_, graphicsQueue_, vkImage,
                               VK_FORMAT_R8G8B8A8_UNORM,
                               VK_IMAGE_LAYOUT_UNDEFINED,
                               VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-        LOGE("after doing transition image layout");
+
         copyBufferToImage(device_, commandPool_, graphicsQueue_, stagingBuffer, vkImage,
                           textureWidth, textureHeight);
 
-        LOGE("after copyBufferToImage");
+
         transitionImageLayout(device_, commandPool_, graphicsQueue_, vkImage,
                               VK_FORMAT_R8G8B8A8_UNORM,
                               VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                               VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-        LOGE("last transition image layout");
 // 4. Create image view and sampler
         createImageView(device_, vkImage, VK_FORMAT_R8G8B8A8_UNORM, imageView);
-        createTextureSampler(device_, vkSampler);
+        createTextureSampler(device_, vkSampler, gameTextureType);
 
         vkDestroyBuffer(device_, stagingBuffer, nullptr);
         vkFreeMemory(device_, stagingBufferMemory, nullptr);
@@ -448,11 +457,17 @@ void createImageView(VkDevice device, VkImage image, VkFormat format, VkImageVie
     vkCreateImageView(device, &viewInfo, nullptr, &imageView);
 }
 
-void createTextureSampler(VkDevice device, VkSampler &sampler) {
+void createTextureSampler(VkDevice device, VkSampler &sampler, GameTextureType type) {
     VkSamplerCreateInfo samplerInfo = {};
     samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-    samplerInfo.magFilter = VK_FILTER_LINEAR;
-    samplerInfo.minFilter = VK_FILTER_LINEAR;
+    if(type == GameTextureType::FontAtlas){
+        samplerInfo.magFilter = VK_FILTER_LINEAR;
+        samplerInfo.minFilter = VK_FILTER_LINEAR;
+
+    } else {
+        samplerInfo.magFilter = VK_FILTER_LINEAR;
+        samplerInfo.minFilter = VK_FILTER_LINEAR;
+    }
     samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
@@ -466,20 +481,26 @@ void createTextureSampler(VkDevice device, VkSampler &sampler) {
     vkCreateSampler(device, &samplerInfo, nullptr, &sampler);
 }
 
+
+
 Renderer::Renderer(android_app *app) : app_(app) {
     assetManager_ = app_->activity->assetManager;
+    fontManager_ =
+            new FontManager();
     initVulkan();
 }
 
 void Renderer::loadAllTextures() {
 
-    loadTexture("ke_ship_1.png", shipImage_, shipImageDeviceMemory_, shipImageView_, shipSampler_);
+    loadTexture("ke_ship_1.png", shipImage_, shipImageDeviceMemory_, shipImageView_, shipSampler_,GameTextureType::Ship);
     loadTexture("alien_ship_1.png", alienImage_, alienImageDeviceMemory_, alienImageView_,
-                alienSampler_);
+                alienSampler_,GameTextureType::Alien);
     loadTexture("laser_2.png", shipBulletImage_, shipBulletImageDeviceMemory_, shipBulletImageView_,
-                shipBulletSampler_);
+                shipBulletSampler_,GameTextureType::ShipBullet);
     loadTexture("tap_to_restart_2.png", overlayImage_, overlayImageDeviceMemory_, overlayImageView_,
-                overlaySampler_);
+                overlaySampler_,GameTextureType::Overlay);
+    loadTexture("8bitOperatorBold.png", fontAtlasImage_, fontAtlasImageDeviceMemory_, fontAtlasImageView_,fontAtlasSampler_,
+                GameTextureType::FontAtlas);
 
 }
 
@@ -553,6 +574,81 @@ void Renderer::createImageOverlayDescriptor(GraphicsPipelineData &graphicsPipeli
     descriptorWrite.pImageInfo = &imageInfo;
 
     vkUpdateDescriptorSets(device_, 1, &descriptorWrite, 0, nullptr);
+}
+
+void Renderer::createFontDescriptor(GraphicsPipelineData &graphicsPipelineData){
+
+
+    VkDescriptorSetLayoutBinding layoutBinding = {};
+    layoutBinding.binding = 0;
+    layoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    layoutBinding.descriptorCount = 1;
+    layoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    VkDescriptorSetLayoutCreateInfo layoutInfo = {};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.bindingCount = 1;
+    layoutInfo.pBindings = &layoutBinding;
+
+    createDescriptorSetLayout(layoutInfo, fontDescriptorSetLayout_);
+
+    VkDescriptorPoolSize vkDescriptorPoolSize = {};
+    vkDescriptorPoolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    vkDescriptorPoolSize.descriptorCount = 1;
+
+    VkDescriptorPoolCreateInfo descriptorPoolCreateInfo = {};
+    descriptorPoolCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    descriptorPoolCreateInfo.maxSets = 1;
+    descriptorPoolCreateInfo.poolSizeCount = 1;
+    descriptorPoolCreateInfo.pPoolSizes = &vkDescriptorPoolSize;
+
+    VkResult res1 = vkCreateDescriptorPool(device_, &descriptorPoolCreateInfo, nullptr,
+                                           &fontDescriptorPool_);
+    if (res1 != VK_SUCCESS) {
+        LOGE("Failed to create font descriptor pool at: %d", res1);
+        abort();
+    }
+
+    VkPushConstantRange pushConstantRange = {};
+    pushConstantRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    pushConstantRange.offset = 0;
+    pushConstantRange.size = sizeof(float) * 4; // For vec4 offset
+
+    VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = {};
+    pipelineLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipelineLayoutCreateInfo.setLayoutCount = 1;
+    pipelineLayoutCreateInfo.pSetLayouts = &fontDescriptorSetLayout_;
+    pipelineLayoutCreateInfo.pushConstantRangeCount = 1;
+    pipelineLayoutCreateInfo.pPushConstantRanges = &pushConstantRange;
+
+    createPipelineLayout(pipelineLayoutCreateInfo, graphicsPipelineData);
+    LOGE("font pipelineLayout:%llu",graphicsPipelineData.pipelineLayout);
+
+    VkDescriptorSetAllocateInfo allocInfo = {};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = fontDescriptorPool_;
+    allocInfo.descriptorSetCount = 1;
+    allocInfo.pSetLayouts = &fontDescriptorSetLayout_;
+
+
+    vkAllocateDescriptorSets(device_, &allocInfo, &fontDescriptorSet_);
+
+    VkDescriptorImageInfo imageInfo = {};
+    imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    imageInfo.imageView = fontAtlasImageView_;
+    imageInfo.sampler = fontAtlasSampler_;
+
+    VkWriteDescriptorSet descriptorWrite = {};
+    descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrite.dstSet = fontDescriptorSet_;
+    descriptorWrite.dstBinding = 0;
+    descriptorWrite.dstArrayElement = 0;
+    descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    descriptorWrite.descriptorCount = 1;
+    descriptorWrite.pImageInfo = &imageInfo;
+
+    vkUpdateDescriptorSets(device_, 1, &descriptorWrite, 0, nullptr);
+
 }
 
 void Renderer::createMainDescriptor(GraphicsPipelineData &graphicsPipelineData) {
@@ -736,6 +832,8 @@ void Renderer::createMainDescriptor(GraphicsPipelineData &graphicsPipelineData) 
     vkUpdateDescriptorSets(device_, writeDescriptorSets.size(), writeDescriptorSets.data(), 0,
                            nullptr);
 }
+
+
 
 void Renderer::initVulkan() {// Load Vulkan functions using volk
 //    volkInitialize();
@@ -991,73 +1089,23 @@ void Renderer::initVulkan() {// Load Vulkan functions using volk
         abort();
     }
 
-
-    VkDeviceSize bulletBufferSize = sizeof(bulletVerts);
-    createBuffer(device_, physicalDevice_, bulletBufferSize,
-                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                 bulletVertexBuffer_, bulletVertexBufferMemory_);
-
-    void *bulletData;
-    vkMapMemory(device_, bulletVertexBufferMemory_, 0, bulletBufferSize, 0, &bulletData);
-    memcpy(bulletData, bulletVerts, bulletBufferSize);
-    vkUnmapMemory(device_, bulletVertexBufferMemory_);
-
-
-    VkDeviceSize bufferSize = sizeof(triangleVerts);
-    createBuffer(device_, physicalDevice_, bufferSize,
-                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                 vertexBuffer_, vertexBufferMemory_);
-
-    // Map and copy vertex triangleData
-    void *triangleData;
-    vkMapMemory(device_, vertexBufferMemory_, 0, bufferSize, 0, &triangleData);
-    memcpy(triangleData, triangleVerts, (size_t) bufferSize);
-    vkUnmapMemory(device_, vertexBufferMemory_);
-
-    VkDeviceSize shipBufferSize = sizeof(shipVerts);
-    createBuffer(device_, physicalDevice_, shipBufferSize,
-                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                 shipVertexBuffer_, shipVertexBufferMemory_);
-
-// Map/copy ship vertex triangleData
-    void *shipData;
-    vkMapMemory(device_, shipVertexBufferMemory_, 0, shipBufferSize, 0, &shipData);
-    memcpy(shipData, shipVerts, (size_t) shipBufferSize);
-    vkUnmapMemory(device_, shipVertexBufferMemory_);
-
-    VkDeviceSize alienBufferSize = sizeof(alienVerts);
-    createBuffer(device_, physicalDevice_,
-                 alienBufferSize,
-                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                 alienVertexBuffer_, alienVertexBufferMemory_);
-
-    void *alienData;
-    vkMapMemory(device_, alienVertexBufferMemory_, 0, alienBufferSize, 0, &alienData);
-    memcpy(alienData, alienVerts, (size_t) alienBufferSize);
-    vkUnmapMemory(device_, alienVertexBufferMemory_);
-
-    VkDeviceSize overlayBufferSize = sizeof(overlayQuadVerts);
-    createBuffer(device_, physicalDevice_,
-                 overlayBufferSize,
-                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                 overlayVertexBuffer_, overlayVertexBufferMemory_);
-
-    void *overlayData;
-    vkMapMemory(device_, overlayVertexBufferMemory_, 0, overlayBufferSize, 0, &overlayData);
-    memcpy(overlayData, overlayQuadVerts, (size_t) overlayBufferSize);
-    vkUnmapMemory(device_, overlayVertexBufferMemory_);
-
+    loadAllTextures();
+    loadText();
+    loadGameObjects();
     createUniformBuffer();
     initAliens();
-    loadAllTextures();
     createMainGraphicsPipeline();
     createOverlayGraphicsPipeline();
+    createFontGraphicsPipeline();
 
+}
+
+void updateFontBuffer(VkDevice device,std::vector<Vertex> textVertices,VkDeviceMemory fontVertexBufferMemory) {
+    VkDeviceSize textBufferSize = textVertices.size() * sizeof(Vertex);
+    void *fontData;
+    vkMapMemory(device, fontVertexBufferMemory, 0, textBufferSize, 0, &fontData);
+    memcpy(fontData, textVertices.data(),(size_t) textBufferSize);
+    vkUnmapMemory(device, fontVertexBufferMemory);
 }
 
 void Renderer::createUniformBuffer() {
@@ -1214,6 +1262,69 @@ void Renderer::createOverlayGraphicsPipeline() {
 
 }
 
+void Renderer::createFontGraphicsPipeline() {
+    GraphicsPipelineData graphicsPipelineData{
+            .pipeline = fontPipeline_,
+            .viewport {.x=0.0, .y=0.0f, .width=(float) swapchainExtent_.width, .height=(float) swapchainExtent_.height, .minDepth=0.0f, .maxDepth=1.0f},
+            .scissor {.offset{0, 0}, .extent = swapchainExtent_}
+    };
+
+    setShaderStages(device_, assetManager_, "font.vert.spv", "font.frag.spv",
+                    graphicsPipelineData);
+    setColorBlending(graphicsPipelineData);
+    setViewPortState(graphicsPipelineData);
+    setInputAssembly(graphicsPipelineData);
+    setRasterizer(graphicsPipelineData);
+    setSampling(graphicsPipelineData);
+    createFontDescriptor(graphicsPipelineData);
+
+    // Vertex input: just position
+    VkVertexInputBindingDescription inputBindingDescription = {};
+    inputBindingDescription.binding = 0;
+    inputBindingDescription.stride = sizeof(Vertex);
+    inputBindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+
+// Position (location=0)
+    VkVertexInputAttributeDescription posDesc = {};
+    posDesc.binding = 0;
+    posDesc.location = 0;
+    posDesc.format = VK_FORMAT_R32G32B32_SFLOAT;
+    posDesc.offset = offsetof(Vertex, pos);
+
+// Color (location=1)
+    VkVertexInputAttributeDescription colorDesc = {};
+    colorDesc.binding = 0;
+    colorDesc.location = 1;
+    colorDesc.format = VK_FORMAT_R32G32B32_SFLOAT;
+    colorDesc.offset = offsetof(Vertex, color);
+
+    // Color (location=1)
+    VkVertexInputAttributeDescription uvDesc = {};
+    uvDesc.binding = 0;
+    uvDesc.location = 2;
+    uvDesc.format = VK_FORMAT_R32G32_SFLOAT;
+    uvDesc.offset = offsetof(Vertex, uv);
+
+    std::vector<VkVertexInputAttributeDescription> vertexAttributeDesc = {posDesc,
+                                                                          colorDesc,
+                                                                          uvDesc};
+
+    VkPipelineVertexInputStateCreateInfo vertexInputInfo = {};
+    vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vertexInputInfo.vertexBindingDescriptionCount = 1;
+    vertexInputInfo.pVertexBindingDescriptions = &inputBindingDescription;
+    vertexInputInfo.vertexAttributeDescriptionCount = vertexAttributeDesc.size();
+    vertexInputInfo.pVertexAttributeDescriptions = vertexAttributeDesc.data();
+
+    graphicsPipelineData.vertexInputState = vertexInputInfo;
+
+    createPipeline(graphicsPipelineData, "fontPipeline");
+
+
+
+}
+
 void setRasterizer(GraphicsPipelineData &graphicsPipelineData) {
     VkPipelineRasterizationStateCreateInfo overlayRasterizer = graphicsPipelineData.rasterizationState;
     overlayRasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
@@ -1347,6 +1458,10 @@ Renderer::createPipeline(GraphicsPipelineData &graphicsPipelineData, const char 
             overlayPipeline_ = graphicsPipelineData.pipeline;
             overlayPipelineLayout_ = graphicsPipelineData.pipelineLayout;
             break;
+        case 'f':
+            fontPipeline_ = graphicsPipelineData.pipeline;
+            fontPipelineLayout_ = graphicsPipelineData.pipelineLayout;
+            break;
         default:
             LOGE("Unknown pipeline name: %s", pipelineName);
             break;
@@ -1454,6 +1569,16 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
         vkCmdDraw(cmd, 6, 1, 0, 0);
     }
 
+    int idx = 0;
+    for (const auto &[textName,textData]: allTextVertices) {
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, fontPipeline_);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, fontPipelineLayout_, 0, 1,
+                                &fontDescriptorSet_, 0, nullptr);
+        vkCmdBindVertexBuffers(cmd, 0, 1, &textData.first, offsets);
+        vkCmdDraw(cmd, textData.second.size(), 1, 0, 0);
+    }
+
+
 
     vkCmdEndRenderPass(cmd);
     vkEndCommandBuffer(cmd);
@@ -1492,27 +1617,9 @@ void Renderer::spawnBullet() {
 }
 
 void Renderer::updateShipBuffer() {
-
-
     ship_.x = shipX_;
     //ship_.y = shipY_;
     ship_.color[0] = shipX_;
-//    Vertex movedVerts[6];
-//    for (int i = 0; i < 6; ++i) {
-//        movedVerts[i] = baseShipVerts[i];
-//        movedVerts[i].pos[0] += shipX_; // Move horizontally
-//        movedVerts[i].color[1] += shipX_;
-//    }
-
-//    void *data;
-//    vkMapMemory(device_, shipVertexBufferMemory_, 0, sizeof(movedVerts), 0, &data);
-//    memcpy(data, movedVerts, sizeof(movedVerts));
-//    vkUnmapMemory(device_, shipVertexBufferMemory_);
-
-//    void *shipData;
-//    vkMapMemory(device_, shipVertexBufferMemory_, 0, sizeof(ship_), 0, &data);
-//    memcpy(shipData, ship_, sizeof(ship_));
-//    vkUnmapMemory(device_, shipVertexBufferMemory_);
 }
 
 void Renderer::updateBullet(float deltaTime) {
@@ -1549,7 +1656,7 @@ void Renderer::updateAliens(float deltaTime) {
         }
     }
 }
-
+uint score = 0;
 void Renderer::updateCollision() {
     for (auto &bullet: bullets_) {
         if (!bullet.active) continue;
@@ -1560,6 +1667,12 @@ void Renderer::updateCollision() {
             if (isCollision(alien, bullet)) {
                 alien.active = false;    // Destroy alien
                 bullet.active = false;   // Destroy bullet
+
+                std::string currentScore = "Score:"+ std::to_string(++score);
+                std::vector<Vertex> scoreVertices;
+                scoreVertices = fontManager_->buildTextVertices(currentScore,-0.95f, -0.80f, 1.0f,0.002f);
+                allTextVertices[GameText::Score] = {scoreTextVertexBuffer_,scoreVertices};
+                updateFontBuffer(device_, scoreVertices, scoreTextVertexBufferMemory_);
                 // Optionally: score++, play sound, create explosion, etc.
                 break; // Stop checking this bullet (it's now gone)
             }
@@ -1646,7 +1759,106 @@ void Renderer::drawFrame() {
     vkQueueWaitIdle(graphicsQueue_);
 }
 
+
+
+void Renderer::loadText() {
+    std::vector<Vertex> titleVertices;
+    titleVertices = fontManager_->buildTextVertices("Nairobi Space Force 2030",-0.95f, -0.85f,0.0f, 0.002f);
+
+    VkDeviceSize titleTextBufferSize = titleVertices.size() * sizeof(Vertex);
+    createBuffer(device_, physicalDevice_,
+                 titleTextBufferSize,
+                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                 titleTextVertexBuffer_, titleTextVertexBufferMemory_);
+    updateFontBuffer(device_, titleVertices, titleTextVertexBufferMemory_);
+    allTextVertices[GameText::Title] = {titleTextVertexBuffer_,titleVertices};
+
+    std::vector<Vertex> scoreVertices;
+    scoreVertices = fontManager_->buildTextVertices("Score:999",-0.95f, -0.8f,0.0f, 0.002f);
+    VkDeviceSize scoreTextBufferSize = scoreVertices.size() * sizeof(Vertex);
+    createBuffer(device_, physicalDevice_,
+                 scoreTextBufferSize,
+                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                 scoreTextVertexBuffer_, scoreTextVertexBufferMemory_);
+    scoreVertices = fontManager_->buildTextVertices("Score:0",-0.95f, -0.8f,0.0f, 0.002f);
+    allTextVertices[GameText::Score] = {scoreTextVertexBuffer_,scoreVertices};
+    updateFontBuffer(device_, scoreVertices, scoreTextVertexBufferMemory_);
+
+
+}
+
+void Renderer::loadGameObjects() {
+    VkDeviceSize bulletBufferSize = sizeof(bulletVerts);
+    createBuffer(device_, physicalDevice_, bulletBufferSize,
+                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                 bulletVertexBuffer_, bulletVertexBufferMemory_);
+
+    void *bulletData;
+    vkMapMemory(device_, bulletVertexBufferMemory_, 0, bulletBufferSize, 0, &bulletData);
+    memcpy(bulletData, bulletVerts, bulletBufferSize);
+    vkUnmapMemory(device_, bulletVertexBufferMemory_);
+
+    VkDeviceSize bufferSize = sizeof(triangleVerts);
+    createBuffer(device_, physicalDevice_, bufferSize,
+                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                 vertexBuffer_, vertexBufferMemory_);
+
+    // Map and copy vertex triangleData
+    void *triangleData;
+    vkMapMemory(device_, vertexBufferMemory_, 0, bufferSize, 0, &triangleData);
+    memcpy(triangleData, triangleVerts, (size_t) bufferSize);
+    vkUnmapMemory(device_, vertexBufferMemory_);
+
+    VkDeviceSize shipBufferSize = sizeof(shipVerts);
+    createBuffer(device_, physicalDevice_, shipBufferSize,
+                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                 shipVertexBuffer_, shipVertexBufferMemory_);
+
+// Map/copy ship vertex triangleData
+    void *shipData;
+    vkMapMemory(device_, shipVertexBufferMemory_, 0, shipBufferSize, 0, &shipData);
+    memcpy(shipData, shipVerts, (size_t) shipBufferSize);
+    vkUnmapMemory(device_, shipVertexBufferMemory_);
+
+    VkDeviceSize alienBufferSize = sizeof(alienVerts);
+    createBuffer(device_, physicalDevice_,
+                 alienBufferSize,
+                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                 alienVertexBuffer_, alienVertexBufferMemory_);
+
+    void *alienData;
+    vkMapMemory(device_, alienVertexBufferMemory_, 0, alienBufferSize, 0, &alienData);
+    memcpy(alienData, alienVerts, (size_t) alienBufferSize);
+    vkUnmapMemory(device_, alienVertexBufferMemory_);
+
+    VkDeviceSize overlayBufferSize = sizeof(overlayQuadVerts);
+    createBuffer(device_, physicalDevice_,
+                 overlayBufferSize,
+                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                 overlayVertexBuffer_, overlayVertexBufferMemory_);
+
+    void *overlayData;
+    vkMapMemory(device_, overlayVertexBufferMemory_, 0, overlayBufferSize, 0, &overlayData);
+    memcpy(overlayData, overlayQuadVerts, (size_t) overlayBufferSize);
+    vkUnmapMemory(device_, overlayVertexBufferMemory_);
+
+}
+
 Renderer::~Renderer() {
+    delete(fontManager_);
+
+    vkDestroySampler(device_, fontAtlasSampler_, nullptr);
+    vkDestroyImageView(device_, fontAtlasImageView_, nullptr);
+    vkFreeMemory(device_, fontAtlasImageDeviceMemory_, nullptr);
+    vkDestroyImage(device_, fontAtlasImage_, nullptr);
+
 
     vkDestroySampler(device_, shipSampler_, nullptr);
     vkDestroyImageView(device_, shipImageView_, nullptr);
@@ -1689,7 +1901,7 @@ Renderer::~Renderer() {
         vkDestroyDescriptorPool(device_, mainDescriptorPool_, nullptr);
     if (uniformBuffer_ != VK_NULL_HANDLE)
         vkDestroyBuffer(device_, uniformBuffer_, nullptr);
-  
+
     if (uniformBufferMemory_ != VK_NULL_HANDLE) {
         if (uniformBuffersData){
             vkUnmapMemory(device_, uniformBufferMemory_);
@@ -1730,6 +1942,7 @@ Renderer::~Renderer() {
 
 
 }
+
 
 
 
