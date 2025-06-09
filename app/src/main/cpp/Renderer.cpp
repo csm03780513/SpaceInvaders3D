@@ -1764,7 +1764,7 @@ void Renderer::updateAliens(float deltaTime) {
 
 int actualScore = 0;            // Game logic value
 float displayedScore_ = 0.0f;    // Smoothed UI value
-float scoreAnimSpeed_ = 200.0f;  // Units per second (tune for effect)
+float scoreAnimSpeed_ = 400.0f;  // Units per second (tune for effect)
 std::string scoreText_;          // Current display string, e.g. "Score: 1234"
 
 float scoreScale_ = 0.002f;         // Current scale for the pop effect
@@ -1782,6 +1782,7 @@ void Renderer::updateCollision() {
                 alien.active = false;    // Destroy alien
                 bullet.active = false;   // Destroy bullet
                 actualScore +=100;
+                alienMoveSpeed_ +=0.005f;
                 // Optionally: score++, play sound, create explosion, etc.
                 break; // Stop checking this bullet (it's now gone)
             }
