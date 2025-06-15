@@ -1,6 +1,7 @@
 #pragma once
 
 #include "FontManager.h"
+#include "ParticleSystem.h"
 
 class Renderer {
 public:
@@ -19,6 +20,7 @@ public:
 
 private:
     FontManager *fontManager_;
+    ParticleSystem *particleSystem_;
     UniformBufferObject ubo_;
     android_app* app_;
     AAssetManager* assetManager_; // assetmgr
@@ -113,16 +115,33 @@ private:
     VkBuffer scoreTextVertexBuffer_;
     VkDeviceMemory scoreTextVertexBufferMemory_;
 
+    VkBuffer particlesVertexBuffer_{VK_NULL_HANDLE};
+    VkDeviceMemory particlesVertexBufferMemory_{VK_NULL_HANDLE};
+
+    VkBuffer particlesIndexBuffer_{VK_NULL_HANDLE};
+    VkDeviceMemory particlesIndexBufferMemory_{VK_NULL_HANDLE};
+
+    VkBuffer particlesInstanceBuffer_;
+    VkDeviceMemory particlesInstanceBufferMemory_;
+
+
     VkImage fontAtlasImage_;
     VkDeviceMemory fontAtlasImageDeviceMemory_;
     VkImageView fontAtlasImageView_;
     VkSampler fontAtlasSampler_;
 
+    VkPipeline fontPipeline_{VK_NULL_HANDLE};
     VkPipelineLayout fontPipelineLayout_{VK_NULL_HANDLE};
     VkDescriptorSet fontDescriptorSet_{VK_NULL_HANDLE};
-    VkPipeline fontPipeline_{VK_NULL_HANDLE};
     VkDescriptorPool fontDescriptorPool_{VK_NULL_HANDLE};
     VkDescriptorSetLayout fontDescriptorSetLayout_{VK_NULL_HANDLE};
+
+
+    VkPipeline particlesPipeline_{VK_NULL_HANDLE};
+    VkPipelineLayout particlesPipelineLayout_{VK_NULL_HANDLE};
+    VkDescriptorSet particlesDescriptorSet_{VK_NULL_HANDLE};
+    VkDescriptorPool particlesDescriptorPool_{VK_NULL_HANDLE};
+    VkDescriptorSetLayout particlesDescriptorSetLayout_{VK_NULL_HANDLE};
 
     void recordCommandBuffer(uint32_t imageIndex);
     void initVulkan();
@@ -134,7 +153,7 @@ private:
 
     void updateGameState();
 
-    void createPipeline(GraphicsPipelineData &graphicsPipelineData, const char pipelineName[10]);
+    void createPipeline(GraphicsPipelineData &graphicsPipelineData, GraphicsPipelineType graphicsPipelineType);
 
     void createPipelineLayout(VkPipelineLayoutCreateInfo &pipelineLayoutInfo,
                               GraphicsPipelineData &graphicsPipelineData);
@@ -171,4 +190,12 @@ private:
     void createSurface();
 
     void getPhysicalDevice();
+
+    void updateParticleInstances(const std::vector<ParticleInstance> &particles);
+
+    void createParticlesGraphicsPipeline();
+
+    void createParticleDescriptor(GraphicsPipelineData &graphicsPipelineData);
+
+    void createDescriptorSetLayout();
 };

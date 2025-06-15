@@ -24,60 +24,6 @@ const bool enableValidationLayers = false;
 const bool enableValidationLayers = true;
 #endif
 
-// Relative to (0, 0); will offset per-bullet in the shader or CPU
-static const Vertex bulletVerts[6] = {
-        // First triangle
-        {{-0.02f, -0.05f, 1.0f}, {1, 1, 0}, {0.0f, 0.0f}},
-        {{0.02f,  -0.05f, 1.0f}, {1, 1, 0}, {1.0f, 0.0f}},
-        {{-0.02f, 0.00f,  1.0f}, {1, 1, 0}, {0.0f, 1.0f}},
-        // Second triangle
-        {{0.02f,  -0.05f, 1.0f}, {1, 1, 0}, {1.0f, 0.0f}},
-        {{0.02f,  0.00f,  1.0f}, {1, 1, 0}, {1.0f, 1.0f}},
-        {{-0.02f, 0.00f,  1.0f}, {1, 1, 0}, {0.0f, 1.0f}}
-};
-
-static Vertex triangleVerts[3] = {
-        {{0.0f,  -0.5f, 1.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
-        {{0.5f,  0.5f,  1.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
-        {{-0.5f, 0.5f,  1.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}}
-};
-
-OverlayVertex overlayQuadVerts[6] = {
-        {{-0.6f, -0.3f,  1.0f}, {0.0f, 0.0f}}, // bottom-left
-        {{0.6f,  -0.3f,  1.0f}, {1.0f, 0.0f}}, // bottom-right
-        {{-0.6f, -0.05f, 1.0f}, {0.0f, 1.0f}}, // top-left
-
-        {{0.6f,  -0.3f,  1.0f}, {1.0f, 0.0f}}, // bottom-right
-        {{0.6f,  -0.05f, 1.0f}, {1.0f, 1.0f}}, // top-right
-        {{-0.6f, -0.05f, 1.0f}, {0.0f, 1.0f}} // top-left
-
-};
-
-
-// Ship is a rectangle at y = -0.8f, width = 0.2, height = 0.05 (adjust as you like)
-static Vertex shipVerts[6] = {
-        // First triangle
-        {{0.1f,  0.9f, 1.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}}, // bottom left (white)
-        {{-0.1f, 0.9f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f}}, // bottom right (cyan)
-        {{0.1f,  0.8f, 1.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 0.0f}}, // top left (magenta)
-        // Second triangle
-        {{-0.1f, 0.9f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f}}, // bottom right
-        {{-0.1f, 0.8f, 1.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f}}, // top right (blue)
-        {{0.1f,  0.8f, 1.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 0.0f}}  // top left
-};
-
-static const Vertex alienVerts[6] = {
-        // Rectangle centered at (0, 0), width 0.12, height 0.07
-        {{-0.07f, -0.045f, 1.0f}, {0.3f, 1.0f, 0.3f}, {0.0f, 0.0f}}, // green
-        {{0.07f,  -0.045f, 1.0f}, {0.3f, 1.0f, 0.3f}, {1.0f, 0.0f}},
-        {{-0.07f, 0.045f,  1.0f}, {0.6f, 1.0f, 0.6f}, {0.0f, 1.0f}},
-
-        {{0.07f,  -0.045f, 1.0f}, {0.3f, 1.0f, 0.3f}, {1.0f, 0.0f}},
-        {{0.07f,  0.045f,  1.0f}, {0.6f, 1.0f, 0.6f}, {1.0f, 1.0f}},
-        {{-0.07f, 0.045f,  1.0f}, {0.6f, 1.0f, 0.6f}, {0.0f, 1.0f}},
-};
-
-
 
 static constexpr int MAX_BULLETS = 32;
 Bullet bullets_[MAX_BULLETS] = {};
@@ -516,13 +462,25 @@ void createTextureSampler(VkDevice device, VkSampler &sampler, GameTextureType t
 
     vkCreateSampler(device, &samplerInfo, nullptr, &sampler);
 }
+std::vector<ParticleInstance> liveParticles;
+
+void Renderer::updateParticleInstances(const std::vector<ParticleInstance>& particles) {
+    if(!particles.empty()) {
+        void *data;
+        VkDeviceSize size = particles.size() * sizeof(ParticleInstance);
+        vkMapMemory(device_, particlesIndexBufferMemory_, 0, size, 0, &data);
+        memcpy(data, particles.data(), size);
+        vkUnmapMemory(device_, particlesIndexBufferMemory_);
+    }
+}
+
 
 
 
 Renderer::Renderer(android_app *app) : app_(app) {
     assetManager_ = app_->activity->assetManager;
-    fontManager_ =
-            new FontManager();
+    fontManager_ = new FontManager();
+    particleSystem_ = new ParticleSystem();
     initVulkan();
 }
 
@@ -869,6 +827,65 @@ void Renderer::createMainDescriptor(GraphicsPipelineData &graphicsPipelineData) 
                            nullptr);
 }
 
+void Renderer::createParticleDescriptor(GraphicsPipelineData &graphicsPipelineData) {
+
+    VkDescriptorPoolSize vkDescriptorPoolSize = {};
+    vkDescriptorPoolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    vkDescriptorPoolSize.descriptorCount = 1;
+
+    VkDescriptorPoolCreateInfo particlesDescriptorPoolInfo = {};
+    particlesDescriptorPoolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    particlesDescriptorPoolInfo.maxSets = 1;
+    particlesDescriptorPoolInfo.poolSizeCount = 1;
+    particlesDescriptorPoolInfo.pPoolSizes = &vkDescriptorPoolSize;
+
+    VkResult res1 = vkCreateDescriptorPool(device_, &particlesDescriptorPoolInfo, nullptr,
+                                           &particlesDescriptorPool_);
+    if (res1 != VK_SUCCESS) {
+        LOGE("Failed to create overlay descriptor pool at: %d", res1);
+        abort();
+    }
+
+    VkPushConstantRange particlesPushConstantRange = {};
+    particlesPushConstantRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    particlesPushConstantRange.offset = 0;
+    particlesPushConstantRange.size = sizeof(float) * 4; // For vec4 offset
+
+    VkPipelineLayoutCreateInfo particlesPipelineLayoutInfo = {};
+    particlesPipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    particlesPipelineLayoutInfo.setLayoutCount = 1;
+    particlesPipelineLayoutInfo.pSetLayouts = &particlesDescriptorSetLayout_;
+    particlesPipelineLayoutInfo.pushConstantRangeCount = 1;
+    particlesPipelineLayoutInfo.pPushConstantRanges = &particlesPushConstantRange;
+
+    createPipelineLayout(particlesPipelineLayoutInfo, graphicsPipelineData);
+
+    VkDescriptorSetAllocateInfo allocInfo = {};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = overlayDescriptorPool_;
+    allocInfo.descriptorSetCount = 1;
+    allocInfo.pSetLayouts = &particlesDescriptorSetLayout_;
+
+
+    vkAllocateDescriptorSets(device_, &allocInfo, &particlesDescriptorSet_);
+
+    VkDescriptorImageInfo imageInfo = {};
+    imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    imageInfo.imageView = overlayImageView_;
+    imageInfo.sampler = overlaySampler_;
+
+    VkWriteDescriptorSet descriptorWrite = {};
+    descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrite.dstSet = particlesDescriptorSet_;
+    descriptorWrite.dstBinding = 0;
+    descriptorWrite.dstArrayElement = 0;
+    descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    descriptorWrite.descriptorCount = 1;
+    descriptorWrite.pImageInfo = &imageInfo;
+
+    vkUpdateDescriptorSets(device_, 1, &descriptorWrite, 0, nullptr);
+}
+
 VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
         VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
         VkDebugUtilsMessageTypeFlagsEXT messageType,
@@ -1200,6 +1217,7 @@ void Renderer::initVulkan() {// Load Vulkan functions using volk
     createMainGraphicsPipeline();
     createOverlayGraphicsPipeline();
     createFontGraphicsPipeline();
+    createParticlesGraphicsPipeline();
 
 }
 
@@ -1304,7 +1322,7 @@ void Renderer::createMainGraphicsPipeline() {
     setRasterizer(graphicsPipelineData);
     setSampling(graphicsPipelineData);
     createMainDescriptor(graphicsPipelineData);
-    createPipeline(graphicsPipelineData, "main");
+    createPipeline(graphicsPipelineData, GraphicsPipelineType::Main);
 
 
 }
@@ -1360,7 +1378,7 @@ void Renderer::createOverlayGraphicsPipeline() {
 
     graphicsPipelineData.vertexInputState = overlayVertexInputInfo;
 
-    createPipeline(graphicsPipelineData, "overlayPipeline");
+    createPipeline(graphicsPipelineData, GraphicsPipelineType::Overlay);
 
 
 }
@@ -1422,11 +1440,84 @@ void Renderer::createFontGraphicsPipeline() {
 
     graphicsPipelineData.vertexInputState = vertexInputInfo;
 
-    createPipeline(graphicsPipelineData, "fontPipeline");
+    createPipeline(graphicsPipelineData, GraphicsPipelineType::Font);
 
 
 
 }
+void Renderer::createParticlesGraphicsPipeline() {
+
+    GraphicsPipelineData graphicsPipelineData{
+            .pipeline = particlesPipeline_,
+            .viewport {.x=0.0, .y=0.0f, .width=(float) swapchainExtent_.width, .height=(float) swapchainExtent_.height, .minDepth=0.0f, .maxDepth=1.0f},
+            .scissor {.offset{0, 0}, .extent = swapchainExtent_}
+    };
+
+    setShaderStages(device_, assetManager_, "particles_instanced.vert.spv", "particles_instanced.frag.spv",
+                    graphicsPipelineData);
+    setColorBlending(graphicsPipelineData);
+    setViewPortState(graphicsPipelineData);
+    setInputAssembly(graphicsPipelineData);
+    setRasterizer(graphicsPipelineData);
+    setSampling(graphicsPipelineData);
+
+    VkDescriptorSetLayoutBinding particleInstanceBinding = {};
+    particleInstanceBinding.binding = 0;
+    particleInstanceBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    particleInstanceBinding.descriptorCount = 1;
+    particleInstanceBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+    VkDescriptorSetLayoutCreateInfo particlesLayoutInfo = {};
+    particlesLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    particlesLayoutInfo.bindingCount = 1;
+    particlesLayoutInfo.pBindings = &particleInstanceBinding;
+
+    createDescriptorSetLayout(particlesLayoutInfo, particlesDescriptorSetLayout_);
+
+
+    VkPipelineLayoutCreateInfo particlesPipelineLayoutInfo = {};
+    particlesPipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    particlesPipelineLayoutInfo.setLayoutCount = 1;
+    particlesPipelineLayoutInfo.pSetLayouts = &particlesDescriptorSetLayout_;
+    particlesPipelineLayoutInfo.pushConstantRangeCount = 0;
+    particlesPipelineLayoutInfo.pPushConstantRanges = nullptr;
+
+    createPipelineLayout(particlesPipelineLayoutInfo, graphicsPipelineData);
+
+    // Vertex input: just position
+    VkVertexInputBindingDescription bindings[2] = {
+            { 0, sizeof(Vertex), VK_VERTEX_INPUT_RATE_VERTEX },
+            { 1, sizeof(ParticleInstance),   VK_VERTEX_INPUT_RATE_INSTANCE }
+    };
+
+
+    std::vector<VkVertexInputAttributeDescription> attributes = {
+            // Quad position (location=0)
+            {0, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(Vertex, pos)},
+            // Instance data (location=1,2,3,4)
+            {1, 1, VK_FORMAT_R32G32_SFLOAT, offsetof(ParticleInstance, center)},
+            {2, 1, VK_FORMAT_R32_SFLOAT,     offsetof(ParticleInstance, size)},
+            {3, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(ParticleInstance, color)}
+    };
+
+
+    VkPipelineVertexInputStateCreateInfo particlesVertexInputInfo = {};
+    particlesVertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    particlesVertexInputInfo.vertexBindingDescriptionCount = 2;
+    particlesVertexInputInfo.pVertexBindingDescriptions = bindings;
+    particlesVertexInputInfo.vertexAttributeDescriptionCount = attributes.size();
+    particlesVertexInputInfo.pVertexAttributeDescriptions = attributes.data();
+
+
+    LOGE("particles pipelineLayout: %llu", graphicsPipelineData.pipelineLayout);
+
+    graphicsPipelineData.vertexInputState = particlesVertexInputInfo;
+
+    createPipeline(graphicsPipelineData, GraphicsPipelineType::Particles);
+
+
+}
+
 
 void setRasterizer(GraphicsPipelineData &graphicsPipelineData) {
     auto &overlayRasterizer = graphicsPipelineData.rasterizationState;
@@ -1526,7 +1617,7 @@ void Renderer::createPipelineLayout(VkPipelineLayoutCreateInfo &pipelineLayoutIn
 }
 
 void
-Renderer::createPipeline(GraphicsPipelineData &graphicsPipelineData, const char pipelineName[10]) {
+Renderer::createPipeline(GraphicsPipelineData &graphicsPipelineData, GraphicsPipelineType graphicsPipelineType) {
 
     VkGraphicsPipelineCreateInfo pipelineCreateInfo = graphicsPipelineData.pipelineCreateInfo;
     pipelineCreateInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -1549,24 +1640,29 @@ Renderer::createPipeline(GraphicsPipelineData &graphicsPipelineData, const char 
         abort();
     }
 
-    switch (pipelineName[0]) {
-        case 'm':
+    switch (graphicsPipelineType) {
+        case GraphicsPipelineType::Main:
             mainPipeline_ = graphicsPipelineData.pipeline;
             mainPipelineLayout_ = graphicsPipelineData.pipelineLayout;
             LOGE("mainPipeline_: %llu", mainPipeline_);
             break;
-        case 'o':
+        case GraphicsPipelineType::Overlay:
             overlayPipeline_ = graphicsPipelineData.pipeline;
             overlayPipelineLayout_ = graphicsPipelineData.pipelineLayout;
             LOGE("overlayPipeline_:  %p", &overlayPipeline_);
             break;
-        case 'f':
+        case GraphicsPipelineType::Font:
             fontPipeline_ = graphicsPipelineData.pipeline;
             fontPipelineLayout_ = graphicsPipelineData.pipelineLayout;
             LOGE("fontPipeline_: %p", &graphicsPipelineData.pipeline);
             break;
+        case GraphicsPipelineType::Particles:
+            particlesPipeline_ = graphicsPipelineData.pipeline;
+            particlesPipelineLayout_ = graphicsPipelineData.pipelineLayout;
+            LOGE("particlesPipeline_: %p", &graphicsPipelineData.pipeline);
+            break;
         default:
-            LOGE("Unknown pipeline name: %s", pipelineName);
+            LOGE("Unknown pipeline name: %s", graphicsPipelineType);
             break;
     }
 
@@ -1674,7 +1770,6 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
         vkCmdDraw(cmd, 6, 1, 0, 0);
     }
 
-    int idx = 0;
     for (const auto &[textName,textData]: allTextVertices) {
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, fontPipeline_);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, fontPipelineLayout_, 0, 1,
@@ -1683,7 +1778,18 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
         vkCmdDraw(cmd, textData.second.size(), 1, 0, 0);
     }
 
+//    particleSystem_->render(cmd,overlayPipelineLayout_,overlayPipeline_);
 
+    VkBuffer vertexBuffers[] = {particlesVertexBuffer_, particlesInstanceBuffer_};
+    VkDeviceSize particleOffsets[] = {0, 0};
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, particlesPipeline_);
+//    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, particlesPipelineLayout_, 0, 1,
+//                           &particlesDescriptorSet_, 0, nullptr);
+    vkCmdBindVertexBuffers(cmd, 0, 2, vertexBuffers, particleOffsets);
+    vkCmdBindIndexBuffer(cmd, particlesIndexBuffer_, 0, VK_INDEX_TYPE_UINT16);
+
+// For N active particles:
+    vkCmdDrawIndexed(cmd, 6, MAX_PARTICLES, 0, 0, 0);
 
     vkCmdEndRenderPass(cmd);
     vkEndCommandBuffer(cmd);
@@ -1771,6 +1877,7 @@ float scoreScale_ = 0.002f;         // Current scale for the pop effect
 float scoreScaleTarget_ = 0.002f;   // Where we're scaling toward
 float scoreScaleSpeed_ = 6.0f;    // How quickly scale returns to normal
 float scorePopAmount_ = 0.0022f;    // How much to “pop” the score on change
+
 void Renderer::updateCollision() {
     for (auto &bullet: bullets_) {
         if (!bullet.active) continue;
@@ -1783,12 +1890,15 @@ void Renderer::updateCollision() {
                 bullet.active = false;   // Destroy bullet
                 actualScore +=100;
                 alienMoveSpeed_ +=0.005f;
+
+                particleSystem_->spawn(glm::vec3(alien.x,alien.y,0.0f),10);
                 // Optionally: score++, play sound, create explosion, etc.
                 break; // Stop checking this bullet (it's now gone)
             }
         }
     }
 }
+
 void Renderer::updateGameState() {
     if (gameState == GameState::Playing) {
         // --- Game Over: Any alien reaches the bottom (e.g. y < -0.9f)
@@ -1893,8 +2003,13 @@ void Renderer::drawFrame() {
         updateBullet(deltaTime);
         updateAliens(deltaTime);
         updateCollision();
-        updateGameState();
+
         animateScore(deltaTime);
+        particleSystem_->getActiveParticles(liveParticles);
+        particleSystem_->update(deltaTime);
+
+        updateParticleInstances(liveParticles);
+        updateGameState();
     }
 
     recordCommandBuffer(imageIndex);
@@ -1955,6 +2070,35 @@ void Renderer::loadText() {
 }
 
 void Renderer::loadGameObjects() {
+
+    VkDeviceSize particlesBufferSize = sizeof(ParticleInstance);
+    createBuffer(device_,physicalDevice_,particlesBufferSize,
+                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                 particlesVertexBuffer_,particlesVertexBufferMemory_);
+
+    void *particlesData;
+    vkMapMemory(device_,particlesVertexBufferMemory_,0,particlesBufferSize,0,&particlesData);
+    memcpy(particlesData,particleVerts,particlesBufferSize);
+    vkUnmapMemory(device_,particlesVertexBufferMemory_);
+
+    VkDeviceSize particlesIndexSize = MAX_PARTICLES * sizeof(particlesIndexBuffer_);
+    createBuffer(device_,physicalDevice_,particlesIndexSize,
+                 VK_BUFFER_USAGE_INDEX_BUFFER_BIT,VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                 particlesIndexBuffer_,particlesIndexBufferMemory_);
+
+    void *particlesIndexData;
+    vkMapMemory(device_,particlesIndexBufferMemory_,0,particlesIndexSize,0,&particlesIndexData);
+    memcpy(particlesIndexData,particlesIndices,particlesIndexSize);
+    vkUnmapMemory(device_,particlesIndexBufferMemory_);
+
+    VkDeviceSize instanceSize = sizeof(ParticleInstance) * MAX_PARTICLES;
+    createBuffer(device_, physicalDevice_,
+                 instanceSize,
+                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                 particlesInstanceBuffer_, particlesInstanceBufferMemory_);
+
+
     VkDeviceSize bulletBufferSize = sizeof(bulletVerts);
     createBuffer(device_, physicalDevice_, bulletBufferSize,
                  VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
@@ -2018,6 +2162,7 @@ void Renderer::loadGameObjects() {
 
 Renderer::~Renderer() {
     delete(fontManager_);
+    delete(particleSystem_);
 
     vkDestroySampler(device_, fontAtlasSampler_, nullptr);
     vkDestroyImageView(device_, fontAtlasImageView_, nullptr);

@@ -96,6 +96,75 @@ enum class GameTextureType {
     Overlay
 };
 
+enum class GraphicsPipelineType {
+    Main,
+    Overlay,
+    Font,
+    Particles
+};
+
+static const Vertex particleVerts[4] = {
+        {{-0.5f,-0.5f, 1.0f},{1, 1, 0},{0.0f, 0.0f}},
+        {{0.5f,-0.5f, 1.0f},{1, 1, 0},{1.0f, 0.0f}},
+        {{0.5f,0.5f,  1.0f},{1, 1, 0},{0.0f, 1.0f}},
+        {{-0.5f,0.5f, 1.0f},{1, 1, 0},{1.0f, 0.0f}}
+};
+
+static const uint16_t particlesIndices[6] = {0, 1, 2, 2, 3, 0};
+
+// Relative to (0, 0); will offset per-bullet in the shader or CPU
+static const Vertex bulletVerts[6] = {
+        // First triangle
+        {{-0.02f, -0.05f, 1.0f}, {1, 1, 0}, {0.0f, 0.0f}},
+        {{0.02f,  -0.05f, 1.0f}, {1, 1, 0}, {1.0f, 0.0f}},
+        {{-0.02f, 0.00f,  1.0f}, {1, 1, 0}, {0.0f, 1.0f}},
+        // Second triangle
+        {{0.02f,  -0.05f, 1.0f}, {1, 1, 0}, {1.0f, 0.0f}},
+        {{0.02f,  0.00f,  1.0f}, {1, 1, 0}, {1.0f, 1.0f}},
+        {{-0.02f, 0.00f,  1.0f}, {1, 1, 0}, {0.0f, 1.0f}}
+};
+
+static Vertex triangleVerts[3] = {
+        {{0.0f,  -0.5f, 1.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+        {{0.5f,  0.5f,  1.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
+        {{-0.5f, 0.5f,  1.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}}
+};
+
+static OverlayVertex overlayQuadVerts[6] = {
+        {{-0.6f, -0.3f,  1.0f}, {0.0f, 0.0f}}, // bottom-left
+        {{0.6f,  -0.3f,  1.0f}, {1.0f, 0.0f}}, // bottom-right
+        {{-0.6f, -0.05f, 1.0f}, {0.0f, 1.0f}}, // top-left
+
+        {{0.6f,  -0.3f,  1.0f}, {1.0f, 0.0f}}, // bottom-right
+        {{0.6f,  -0.05f, 1.0f}, {1.0f, 1.0f}}, // top-right
+        {{-0.6f, -0.05f, 1.0f}, {0.0f, 1.0f}} // top-left
+
+};
+
+
+// Ship is a rectangle at y = -0.8f, width = 0.2, height = 0.05 (adjust as you like)
+static Vertex shipVerts[6] = {
+        // First triangle
+        {{0.1f,  0.9f, 1.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}}, // bottom left (white)
+        {{-0.1f, 0.9f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f}}, // bottom right (cyan)
+        {{0.1f,  0.8f, 1.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 0.0f}}, // top left (magenta)
+        // Second triangle
+        {{-0.1f, 0.9f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f}}, // bottom right
+        {{-0.1f, 0.8f, 1.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f}}, // top right (blue)
+        {{0.1f,  0.8f, 1.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 0.0f}}  // top left
+};
+
+static const Vertex alienVerts[6] = {
+        // Rectangle centered at (0, 0), width 0.12, height 0.07
+        {{-0.07f, -0.045f, 1.0f}, {0.3f, 1.0f, 0.3f}, {0.0f, 0.0f}}, // green
+        {{0.07f,  -0.045f, 1.0f}, {0.3f, 1.0f, 0.3f}, {1.0f, 0.0f}},
+        {{-0.07f, 0.045f,  1.0f}, {0.6f, 1.0f, 0.6f}, {0.0f, 1.0f}},
+
+        {{0.07f,  -0.045f, 1.0f}, {0.3f, 1.0f, 0.3f}, {1.0f, 0.0f}},
+        {{0.07f,  0.045f,  1.0f}, {0.6f, 1.0f, 0.6f}, {1.0f, 1.0f}},
+        {{-0.07f, 0.045f,  1.0f}, {0.6f, 1.0f, 0.6f}, {0.0f, 1.0f}},
+};
+
 class GameObjectData {
 
 

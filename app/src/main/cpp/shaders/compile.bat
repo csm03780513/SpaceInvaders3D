@@ -6,3 +6,6 @@ C:/VulkanSDK/1.4.309.0/Bin/glslc.exe overlay/overlay.frag -o ../../assets/overla
 
 C:/VulkanSDK/1.4.309.0/Bin/glslc.exe font/font.vert -o ../../assets/font.vert.spv
 C:/VulkanSDK/1.4.309.0/Bin/glslc.exe font/font.frag -o ../../assets/font.frag.spv
+
+C:/VulkanSDK/1.4.309.0/Bin/glslc.exe particles/particles_instanced.vert -o ../../assets/particles_instanced.vert.spv
+C:/VulkanSDK/1.4.309.0/Bin/glslc.exe particles/particles_instanced.frag -o ../../assets/particles_instanced.frag.spv
