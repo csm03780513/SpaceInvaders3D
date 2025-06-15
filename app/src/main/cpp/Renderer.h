@@ -143,7 +143,7 @@ private:
     VkDescriptorPool particlesDescriptorPool_{VK_NULL_HANDLE};
     VkDescriptorSetLayout particlesDescriptorSetLayout_{VK_NULL_HANDLE};
 
-    void recordCommandBuffer(uint32_t imageIndex);
+    void recordCommandBuffer(uint32_t imageIndex, uint32_t particleCount);
     void initVulkan();
     void updateBullet(float deltaTime);
     void updateAliens(float deltaTime);
