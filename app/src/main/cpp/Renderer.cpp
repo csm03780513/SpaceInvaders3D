@@ -465,12 +465,12 @@ void createTextureSampler(VkDevice device, VkSampler &sampler, GameTextureType t
 std::vector<ParticleInstance> liveParticles;
 
 void Renderer::updateParticleInstances(const std::vector<ParticleInstance>& particles) {
-    if(!particles.empty()) {
+    if (!particles.empty()) {
         void *data;
         VkDeviceSize size = particles.size() * sizeof(ParticleInstance);
-        vkMapMemory(device_, particlesIndexBufferMemory_, 0, size, 0, &data);
+        vkMapMemory(device_, particlesInstanceBufferMemory_, 0, size, 0, &data);
         memcpy(data, particles.data(), size);
-        vkUnmapMemory(device_, particlesIndexBufferMemory_);
+        vkUnmapMemory(device_, particlesInstanceBufferMemory_);
     }
 }
 
@@ -1681,7 +1681,7 @@ Renderer::createDescriptorSetLayout(VkDescriptorSetLayoutCreateInfo descriptorSe
     }
 }
 
-void Renderer::recordCommandBuffer(uint32_t imageIndex) {
+void Renderer::recordCommandBuffer(uint32_t imageIndex, uint32_t particleCount) {
     VkCommandBuffer cmd = commandBuffers_[imageIndex];
 
     VkCommandBufferBeginInfo beginInfo = {};
@@ -1778,18 +1778,13 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
         vkCmdDraw(cmd, textData.second.size(), 1, 0, 0);
     }
 
-//    particleSystem_->render(cmd,overlayPipelineLayout_,overlayPipeline_);
-
-    VkBuffer vertexBuffers[] = {particlesVertexBuffer_, particlesInstanceBuffer_};
-    VkDeviceSize particleOffsets[] = {0, 0};
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, particlesPipeline_);
-//    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, particlesPipelineLayout_, 0, 1,
-//                           &particlesDescriptorSet_, 0, nullptr);
-    vkCmdBindVertexBuffers(cmd, 0, 2, vertexBuffers, particleOffsets);
-    vkCmdBindIndexBuffer(cmd, particlesIndexBuffer_, 0, VK_INDEX_TYPE_UINT16);
-
-// For N active particles:
-    vkCmdDrawIndexed(cmd, 6, MAX_PARTICLES, 0, 0, 0);
+    particleSystem_->render(cmd,
+                            particlesPipelineLayout_,
+                            particlesPipeline_,
+                            particlesVertexBuffer_,
+                            particlesIndexBuffer_,
+                            particlesInstanceBuffer_,
+                            particleCount);
 
     vkCmdEndRenderPass(cmd);
     vkEndCommandBuffer(cmd);
@@ -2012,7 +2007,7 @@ void Renderer::drawFrame() {
         updateGameState();
     }
 
-    recordCommandBuffer(imageIndex);
+    recordCommandBuffer(imageIndex, static_cast<uint32_t>(liveParticles.size()));
 
     VkSubmitInfo submitInfo = {};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -2081,7 +2076,7 @@ void Renderer::loadGameObjects() {
     memcpy(particlesData,particleVerts,particlesBufferSize);
     vkUnmapMemory(device_,particlesVertexBufferMemory_);
 
-    VkDeviceSize particlesIndexSize = MAX_PARTICLES * sizeof(particlesIndexBuffer_);
+    VkDeviceSize particlesIndexSize = sizeof(particlesIndices);
     createBuffer(device_,physicalDevice_,particlesIndexSize,
                  VK_BUFFER_USAGE_INDEX_BUFFER_BIT,VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                  particlesIndexBuffer_,particlesIndexBufferMemory_);
@@ -2094,7 +2089,7 @@ void Renderer::loadGameObjects() {
     VkDeviceSize instanceSize = sizeof(ParticleInstance) * MAX_PARTICLES;
     createBuffer(device_, physicalDevice_,
                  instanceSize,
-                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                  particlesInstanceBuffer_, particlesInstanceBufferMemory_);
 
@@ -2198,6 +2193,15 @@ Renderer::~Renderer() {
 
     vkDestroyBuffer(device_, overlayVertexBuffer_, nullptr);
     vkFreeMemory(device_, overlayVertexBufferMemory_, nullptr);
+
+    vkDestroyBuffer(device_, particlesVertexBuffer_, nullptr);
+    vkFreeMemory(device_, particlesVertexBufferMemory_, nullptr);
+
+    vkDestroyBuffer(device_, particlesIndexBuffer_, nullptr);
+    vkFreeMemory(device_, particlesIndexBufferMemory_, nullptr);
+
+    vkDestroyBuffer(device_, particlesInstanceBuffer_, nullptr);
+    vkFreeMemory(device_, particlesInstanceBufferMemory_, nullptr);
 
     if (shipVertexBuffer_ != VK_NULL_HANDLE)
         vkDestroyBuffer(device_, shipVertexBuffer_, nullptr);

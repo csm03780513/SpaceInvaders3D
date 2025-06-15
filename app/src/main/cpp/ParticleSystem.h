@@ -40,7 +40,13 @@ public:
 
     void update(float deltaTime);
 
-    void render(VkCommandBuffer cmd, VkPipelineLayout pipelineLayout, VkPipeline pipeline, ...);
+    void render(VkCommandBuffer cmd,
+                VkPipelineLayout pipelineLayout,
+                VkPipeline pipeline,
+                VkBuffer vertexBuffer,
+                VkBuffer indexBuffer,
+                VkBuffer instanceBuffer,
+                uint32_t activeCount);
 
     void getActiveParticles(std::vector<ParticleInstance> &out) const;
 };
