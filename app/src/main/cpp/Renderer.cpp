@@ -1464,7 +1464,7 @@ void Renderer::createParticlesGraphicsPipeline() {
     VkDescriptorSetLayoutBinding particleInstanceBinding = {};
     particleInstanceBinding.binding = 0;
     particleInstanceBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    particleInstanceBinding.descriptorCount = 1;
+    particleInstanceBinding.descriptorCount = 0;
     particleInstanceBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
     VkDescriptorSetLayoutCreateInfo particlesLayoutInfo = {};
@@ -1493,7 +1493,7 @@ void Renderer::createParticlesGraphicsPipeline() {
 
     std::vector<VkVertexInputAttributeDescription> attributes = {
             // Quad position (location=0)
-            {0, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(Vertex, pos)},
+            {0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, pos)},
             // Instance data (location=1,2,3,4)
             {1, 1, VK_FORMAT_R32G32_SFLOAT, offsetof(ParticleInstance, center)},
             {2, 1, VK_FORMAT_R32_SFLOAT,     offsetof(ParticleInstance, size)},
@@ -1886,7 +1886,7 @@ void Renderer::updateCollision() {
                 actualScore +=100;
                 alienMoveSpeed_ +=0.005f;
 
-                particleSystem_->spawn(glm::vec3(alien.x,alien.y,0.0f),10);
+                particleSystem_->spawn(glm::vec3(alien.x,-alien.y,1.0f),15);
                 // Optionally: score++, play sound, create explosion, etc.
                 break; // Stop checking this bullet (it's now gone)
             }
@@ -2066,7 +2066,7 @@ void Renderer::loadText() {
 
 void Renderer::loadGameObjects() {
 
-    VkDeviceSize particlesBufferSize = sizeof(ParticleInstance);
+    VkDeviceSize particlesBufferSize = sizeof(particleVerts);
     createBuffer(device_,physicalDevice_,particlesBufferSize,
                  VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                  particlesVertexBuffer_,particlesVertexBufferMemory_);

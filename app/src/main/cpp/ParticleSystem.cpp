@@ -15,8 +15,8 @@ void ParticleSystem::spawn(const glm::vec3 &pos, int count) {
         p.velocity = glm::vec3(cos(angle), sin(angle),0.0f) * speed;
         p.acceleration = glm::vec3(0.0f);
         p.life = p.maxLife = 0.5f + ((float)rand() / RAND_MAX) * 0.3f;
-        p.color = glm::vec4(1, 1, 0, 1); // yellowish, can randomize
-        p.size = 0.025f + ((float)rand() / RAND_MAX) * 0.025f;
+        p.color = glm::vec4(1, 0.5, 0, 1); // yellowish, can randomize
+        p.size = 0.005f + ((float)rand() / RAND_MAX) * 0.005f;
         p.center = pos;
         p.rotation = 0.0f;
         p.active = true;
@@ -49,6 +49,8 @@ void ParticleSystem::render(VkCommandBuffer cmd,
     vkCmdBindVertexBuffers(cmd, 0, 2, vertexBuffers, offsets);
     vkCmdBindIndexBuffer(cmd, indexBuffer, 0, VK_INDEX_TYPE_UINT16);
     vkCmdDrawIndexed(cmd, 6, activeCount, 0, 0, 0);
+//    vkCmdDraw(cmd, 4, 1, 0, 0);
+
 }
 
 ParticleSystem::ParticleSystem() {

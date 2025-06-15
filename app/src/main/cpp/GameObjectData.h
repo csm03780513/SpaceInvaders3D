@@ -106,8 +106,8 @@ enum class GraphicsPipelineType {
 static const Vertex particleVerts[4] = {
         {{-0.5f,-0.5f, 1.0f},{1.0f,1.0f,0.0f},{0.0f, 0.0f}},
         {{0.5f,-0.5f, 1.0f},{1.0f,1.0f,0.0f},{1.0f, 0.0f}},
-        {{0.5f,0.5f,  1.0f},{1.0f,0.5f,0.0f},{0.0f, 1.0f}},
-        {{-0.5f,0.5f, 1.0f},{0.0f,1.0f,0.0f},{1.0f, 0.0f}}
+        {{0.5f,0.5f,  1.0f},{1.0f,0.5f,0.0f},{1.0f, 1.0f}},
+        {{-0.5f,0.5f, 1.0f},{0.0f,1.0f,0.0f},{0.0f, 1.0f}}
 };
 
 static const uint16_t particlesIndices[6] = {0, 1, 2, 2, 3, 0};

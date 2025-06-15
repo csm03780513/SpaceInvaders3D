@@ -21,6 +21,13 @@ struct ParticleInstance {
     glm::vec4 color;    // RGBA
 };
 
+struct ParticleRenderInstance {
+    glm::vec3 center;    // or glm::vec2 if Z is not used
+    float size;
+    float rotation;
+    glm::vec4 color;
+};
+
 constexpr int MAX_PARTICLES = 512;
 
 class ParticleSystem {
