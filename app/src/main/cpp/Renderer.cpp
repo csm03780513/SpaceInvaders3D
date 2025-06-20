@@ -1483,28 +1483,18 @@ void Renderer::createParticlesGraphicsPipeline() {
     particlesPipelineLayoutInfo.pPushConstantRanges = nullptr;
 
     createPipelineLayout(particlesPipelineLayoutInfo, graphicsPipelineData);
-
-    // Vertex input: just position
-    VkVertexInputBindingDescription bindings[2] = {
-            { 0, sizeof(Vertex), VK_VERTEX_INPUT_RATE_VERTEX },
-            { 1, sizeof(ParticleInstance),   VK_VERTEX_INPUT_RATE_INSTANCE }
-    };
+    std::vector<VkVertexInputBindingDescription> bindings ;
+    std::vector<VkVertexInputAttributeDescription> attributes;
 
 
-    std::vector<VkVertexInputAttributeDescription> attributes = {
-            // Quad position (location=0)
-            {0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, pos)},
-            // Instance data (location=1,2,3,4)
-            {1, 1, VK_FORMAT_R32G32_SFLOAT, offsetof(ParticleInstance, center)},
-            {2, 1, VK_FORMAT_R32_SFLOAT,     offsetof(ParticleInstance, size)},
-            {3, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(ParticleInstance, color)}
-    };
+    bindings = ParticleInstance::getBindingDescriptions();
+    attributes = ParticleInstance::getAttributeDescriptions();
 
 
     VkPipelineVertexInputStateCreateInfo particlesVertexInputInfo = {};
     particlesVertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    particlesVertexInputInfo.vertexBindingDescriptionCount = 2;
-    particlesVertexInputInfo.pVertexBindingDescriptions = bindings;
+    particlesVertexInputInfo.vertexBindingDescriptionCount = bindings.size();
+    particlesVertexInputInfo.pVertexBindingDescriptions = bindings.data();
     particlesVertexInputInfo.vertexAttributeDescriptionCount = attributes.size();
     particlesVertexInputInfo.pVertexAttributeDescriptions = attributes.data();
 
