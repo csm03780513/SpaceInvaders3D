@@ -31,14 +31,6 @@ void ParticleSystem::spawn(const glm::vec3 &pos, int count) {
     }
 }
 
-void ParticleSystem::getActiveParticles(std::vector<ParticleInstance> &out) const {
-    for (int i = 0; i < MAX_PARTICLES; ++i) {
-        if (particles[i].active) {
-            out.push_back(particles[i]);
-        }
-    }
-}
-
 
 void ParticleSystem::render(VkCommandBuffer cmd,
                             VkPipelineLayout pipelineLayout,
@@ -101,9 +93,9 @@ void ParticleSystem::updateExplosionParticles(float deltaTime, VkDeviceMemory pa
 
 void ParticleSystem::updateStarField(float deltaTime, VkDeviceMemory starInstanceBufferMemory) {
     for (auto& star : starInstances) {
-        star.position.y -= star.speed * deltaTime;
-        if (star.position.y < -1.1f) { // Slightly below bottom, wrap to top
-            star.position.y = 1.1f;
+        star.position.y += star.speed * deltaTime;
+        if (star.position.y > 1.1f) { // Slightly below bottom, wrap to top
+            star.position.y = -1.1f;
             // Optionally randomize X/speed/size/brightness for more variation
             star.position.x = xDist(rng);
             star.speed = speedDist(rng);
@@ -144,7 +136,7 @@ void ParticleSystem::initStarField() {
     starInstances.clear();
     for (int i = 0; i < NUM_STARS; ++i) {
         starInstances.push_back({
-            {xDist(rng), yDist(rng), 1.0f},
+            {xDist(rng), yDist(rng), 0.0f},
             speedDist(rng),
             sizeDist(rng),
             brightDist(rng)

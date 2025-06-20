@@ -75,7 +75,7 @@ struct ParticleInstance {
 
 
 constexpr int MAX_PARTICLES = 512;
-constexpr int NUM_STARS = 512;
+constexpr int NUM_STARS = 256;
 class ParticleSystem {
 
 private:
@@ -105,8 +105,6 @@ public:
                 VkBuffer indexBuffer,
                 VkBuffer instanceBuffer,
                 GraphicsPipelineType graphicsPipelineType);
-
-    void getActiveParticles(std::vector<ParticleInstance> &out) const;
 
     void initExplosionParticles();
 

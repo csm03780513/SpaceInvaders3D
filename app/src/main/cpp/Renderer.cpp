@@ -1699,7 +1699,7 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     vkBeginCommandBuffer(cmd, &beginInfo);
 
-    VkClearValue clearColor = {{0.1f, 0.2f, 0.3f, 1.0f}};
+    VkClearValue clearColor = {{0.0f, 0.0f, 0.0f, 1.0f}};
     VkRenderPassBeginInfo renderBeginPassInfo = {};
     renderBeginPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     renderBeginPassInfo.renderPass = renderPass_;
@@ -1710,19 +1710,26 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
     renderBeginPassInfo.pClearValues = &clearColor;
 
     vkCmdBeginRenderPass(cmd, &renderBeginPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+    particleSystem_->render(cmd,
+                            particlesPipelineLayout_,
+                            starParticlesPipeline_,
+                            starVertsBuffer_,
+                            starIndexBuffer_,
+                            starInstanceBuffer_,
+                            GraphicsPipelineType::StarParticles);
+
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipeline_);
-
-
     VkDeviceSize offsets[] = {0};
     // --- Draw triangle (or any background)
-    float trianglePos[2] = {0.0, 0.0};
+//    float trianglePos[2] = {0.0, 0.0};
 
-    vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(trianglePos),
-                       trianglePos);
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineLayout_, 0, 1,
-                            &shipDescriptorSet_, 0, nullptr);
-    vkCmdBindVertexBuffers(cmd, 0, 1, &vertexBuffer_, offsets);
-    vkCmdDraw(cmd, 3, 1, 0, 0);
+//    vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(trianglePos),trianglePos);
+//    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineLayout_, 0, 1,&shipDescriptorSet_, 0, nullptr);
+//    vkCmdBindVertexBuffers(cmd, 0, 1, &vertexBuffer_, offsets);
+//    vkCmdDraw(cmd, 3, 1, 0, 0);
+
+
 
     // --- Draw ship
     float shipPos[2] = {shipX_, ship_.y};
@@ -1744,6 +1751,7 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
         vkCmdBindVertexBuffers(cmd, 0, 1, &bulletVertexBuffer_, offsets);
         vkCmdDraw(cmd, 6, 1, 0, 0);
     }
+
 
     for (int i = 0; i < MAX_ALIENS; ++i) {
         if (!aliens_[i].active) continue;
@@ -1781,6 +1789,7 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
         vkCmdDraw(cmd, 6, 1, 0, 0);
     }
 
+
     for (const auto &[textName,textData]: allTextVertices) {
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, fontPipeline_);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, fontPipelineLayout_, 0, 1,
@@ -1789,13 +1798,7 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
         vkCmdDraw(cmd, textData.second.size(), 1, 0, 0);
     }
 
-    particleSystem_->render(cmd,
-                            particlesPipelineLayout_,
-                            starParticlesPipeline_,
-                            starVertsBuffer_,
-                            starIndexBuffer_,
-                            starInstanceBuffer_,
-                            GraphicsPipelineType::StarParticles);
+
 
     particleSystem_->render(cmd,
                             particlesPipelineLayout_,
@@ -2096,7 +2099,7 @@ void Renderer::loadGameObjects() {
                  starIndexBuffer_, starIndexMemory_);
     uploadDataBuffer(device_, (void *) particlesIndices, starIndexSize, starIndexMemory_);
 
-    VkDeviceSize starInstanceSize = sizeof(StarInstance) * MAX_PARTICLES;
+    VkDeviceSize starInstanceSize = sizeof(StarInstance) * NUM_STARS;
     createBuffer(device_, physicalDevice_,
                  starInstanceSize,
                  VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
