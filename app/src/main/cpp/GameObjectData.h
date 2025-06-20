@@ -27,6 +27,8 @@
 #include <android/log.h>
 #include <chrono>
 #include <unordered_map>
+#include <random>
+#include <cmath>
 
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "Vulkan", __VA_ARGS__)
 

@@ -124,6 +124,15 @@ private:
     VkBuffer particlesInstanceBuffer_;
     VkDeviceMemory particlesInstanceBufferMemory_;
 
+    VkBuffer starVertsBuffer_;
+    VkDeviceMemory starVertsMemory_;
+
+    VkBuffer starIndexBuffer_;
+    VkDeviceMemory starIndexMemory_;
+
+    VkBuffer starInstanceBuffer_;
+    VkDeviceMemory starInstanceBufferMemory_;
+
 
     VkImage fontAtlasImage_;
     VkDeviceMemory fontAtlasImageDeviceMemory_;
@@ -137,13 +146,15 @@ private:
     VkDescriptorSetLayout fontDescriptorSetLayout_{VK_NULL_HANDLE};
 
 
-    VkPipeline particlesPipeline_{VK_NULL_HANDLE};
+    VkPipeline explosionParticlesPipeline_{VK_NULL_HANDLE};
     VkPipelineLayout particlesPipelineLayout_{VK_NULL_HANDLE};
     VkDescriptorSet particlesDescriptorSet_{VK_NULL_HANDLE};
     VkDescriptorPool particlesDescriptorPool_{VK_NULL_HANDLE};
     VkDescriptorSetLayout particlesDescriptorSetLayout_{VK_NULL_HANDLE};
 
-    void recordCommandBuffer(uint32_t imageIndex, uint32_t particleCount);
+    VkPipeline starParticlesPipeline_{VK_NULL_HANDLE};
+
+    void recordCommandBuffer(uint32_t imageIndex);
     void initVulkan();
     void updateBullet(float deltaTime);
     void updateAliens(float deltaTime);
@@ -193,9 +204,10 @@ private:
 
     void updateParticleInstances(const std::vector<ParticleInstance> &particles);
 
-    void createParticlesGraphicsPipeline();
+    void createParticlesGraphicsPipeline(VkPipeline pipeline,GraphicsPipelineType graphicsPipelineType);
 
     void createParticleDescriptor(GraphicsPipelineData &graphicsPipelineData);
 
     void createDescriptorSetLayout();
+
 };

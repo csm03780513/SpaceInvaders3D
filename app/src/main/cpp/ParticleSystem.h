@@ -73,47 +73,30 @@ struct ParticleInstance {
 
 };
 
-struct p {
-    // Vertex input: just position
-    static std::vector<VkVertexInputBindingDescription> getBindingDescriptions() {
-        std::vector<VkVertexInputBindingDescription> bindings = {
-                {0, sizeof(Vertex),           VK_VERTEX_INPUT_RATE_VERTEX},
-                {1, sizeof(ParticleInstance), VK_VERTEX_INPUT_RATE_INSTANCE}
-        };
-        return bindings;
-    }
-
-    static std::vector<VkVertexInputAttributeDescription> getAttributeDescriptions() {
-        std::vector<VkVertexInputAttributeDescription> attributes = {
-                // Quad position (location=0)
-                {0, 0, VK_FORMAT_R32G32B32_SFLOAT,    offsetof(Vertex, pos)},
-                // Instance data (location=1,2,3,4)
-                {1, 1, VK_FORMAT_R32G32B32_SFLOAT,       offsetof(ParticleInstance, center)},
-                {2, 1, VK_FORMAT_R32_SFLOAT,          offsetof(ParticleInstance, size)},
-                {3, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(ParticleInstance, color)}
-        };
-        return attributes;
-    }
-};
 
 constexpr int MAX_PARTICLES = 512;
-
+constexpr int NUM_STARS = 512;
 class ParticleSystem {
 
 private:
-
+    VkDevice device_;
+    std::vector<ParticleInstance> liveParticles;
     int firstFree = 0;
+    std::vector<StarInstance> starInstances;
+    void initStarField();
 
 public:
-    ParticleSystem();
+    ParticleSystem(VkDevice device);
 
     ~ParticleSystem();
 
     ParticleInstance particles[MAX_PARTICLES];
 
+
     void spawn(const glm::vec3 &pos, int count);
 
-    void update(float deltaTime);
+    void updateExplosionParticles(float deltaTime,VkDeviceMemory particlesInstanceBufferMemory);
+    void updateStarField(float deltaTime,VkDeviceMemory starInstanceBufferMemory);
 
     void render(VkCommandBuffer cmd,
                 VkPipelineLayout pipelineLayout,
@@ -121,9 +104,13 @@ public:
                 VkBuffer vertexBuffer,
                 VkBuffer indexBuffer,
                 VkBuffer instanceBuffer,
-                uint32_t activeCount);
+                GraphicsPipelineType graphicsPipelineType);
 
     void getActiveParticles(std::vector<ParticleInstance> &out) const;
+
+    void initExplosionParticles();
+
+
 };
 
 

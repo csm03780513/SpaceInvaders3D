@@ -36,7 +36,7 @@ static int32_t handle_input(struct android_app *app, AInputEvent *event) {
             } else if (g_renderer && g_renderer->gameState != GameState::Playing) {
                 // TAP = RESTART GAME when game over/won
                 if (AMotionEvent_getAction(event) == AMOTION_EVENT_ACTION_DOWN) {
-                    g_pendingRestart = true; // Set a flag to restart in the update loop
+                    g_pendingRestart = true; // Set a flag to restart in the updateExplosionParticles loop
                 }
             }
         }
