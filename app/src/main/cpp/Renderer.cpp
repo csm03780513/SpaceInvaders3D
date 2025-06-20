@@ -2083,12 +2083,12 @@ void Renderer::loadText() {
 }
 
 void Renderer::loadGameObjects() {
-    VkDeviceSize starBufferSize = sizeof(particleVerts);
+    VkDeviceSize starBufferSize = sizeof(starVerts);
     createBuffer(device_, physicalDevice_, starBufferSize,
                  VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                  starVertsBuffer_, starVertsMemory_);
 
-    uploadDataBuffer(device_, (void *) particleVerts, starBufferSize, starVertsMemory_);
+    uploadDataBuffer(device_, (void *) starVerts, starBufferSize, starVertsMemory_);
 
     VkDeviceSize starIndexSize = sizeof(particlesIndices);
     createBuffer(device_, physicalDevice_, starIndexSize,

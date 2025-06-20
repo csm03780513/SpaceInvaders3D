@@ -115,6 +115,15 @@ static const Vertex particleVerts[4] = {
         {{-0.5f,0.5f, 1.0f},{0.0f,1.0f,0.0f},{0.0f, 1.0f}}
 };
 
+// Quad for background stars.  Z is 0 so stars remain within the clip space
+// when scaled and offset in the vertex shader.
+static const Vertex starVerts[4] = {
+        {{-0.5f,-0.5f, 0.0f},{1.0f,1.0f,0.0f},{0.0f, 0.0f}},
+        {{0.5f,-0.5f, 0.0f},{1.0f,1.0f,0.0f},{1.0f, 0.0f}},
+        {{0.5f,0.5f,  0.0f},{1.0f,0.5f,0.0f},{1.0f, 1.0f}},
+        {{-0.5f,0.5f, 0.0f},{0.0f,1.0f,0.0f},{0.0f, 1.0f}}
+};
+
 static const uint16_t particlesIndices[6] = {0, 1, 2, 2, 3, 0};
 
 // Relative to (0, 0); will offset per-bullet in the shader or CPU
