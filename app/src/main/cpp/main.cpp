@@ -40,8 +40,10 @@ static int32_t handle_input(struct android_app *app, AInputEvent *event) {
                 }
             }
         }
+        return 1; // Handled touch events
     }
-    return 1; // Event handled
+    // For all other events (including volume keys), return 0 (not handled)
+    return 0;
 }
 
 void set_ship_x(float x, float y) {
@@ -51,9 +53,45 @@ void set_ship_x(float x, float y) {
     }
 }
 
+
+
+void handle_cmd(android_app *app, int32_t cmd) {
+
+    switch (cmd) {
+        case APP_CMD_CONFIG_CHANGED:
+            LOGI("Config changed (orientation)");
+
+            break;
+        case APP_CMD_WINDOW_RESIZED:
+            LOGI("Window resized");
+
+            break;
+        case APP_CMD_INIT_WINDOW:
+            if (app->window != nullptr) {
+
+            }
+            break;
+        case APP_CMD_TERM_WINDOW:
+            LOGI("Window terminated");
+            break;
+        case APP_CMD_LOST_FOCUS:
+            g_renderer->stopAudioPlayer();
+            LOGI("Lost focus");
+            break;
+        case APP_CMD_GAINED_FOCUS:
+            g_renderer->resumeAudioPlayer();
+            break;
+        case APP_CMD_DESTROY:
+            LOGI("APP GETTING DESTROYED:::");
+            break;
+    }
+}
+
+
 void android_main(struct android_app *app) {
     Renderer *renderer = nullptr;
     app->onInputEvent = handle_input;
+    app->onAppCmd = handle_cmd;
 
     while (true) {
         int events;
@@ -77,4 +115,6 @@ void android_main(struct android_app *app) {
         if (renderer) renderer->drawFrame();
     }
 }
+
+
 

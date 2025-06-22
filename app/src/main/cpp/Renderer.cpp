@@ -1,5 +1,14 @@
 #include "Renderer.h"
+#include "SimpleSFXPlayer.h"
+#include "SFXMixer.h"
 
+#define DR_WAV_IMPLEMENTATION
+
+#include <dr_wav.h>
+
+#define DR_MP3_IMPLEMENTATION
+
+#include <dr_mp3.h>
 
 
 #define STB_IMAGE_IMPLEMENTATION
@@ -10,7 +19,7 @@
 
 std::unordered_map<GameText, std::pair<VkBuffer, std::vector<Vertex>>> allTextVertices;
 
-const std::vector<const char*> validationLayers = {
+const std::vector<const char *> validationLayers = {
         "VK_LAYER_KHRONOS_validation"
 };
 
@@ -24,6 +33,8 @@ const bool enableValidationLayers = false;
 const bool enableValidationLayers = true;
 #endif
 
+constexpr int SFX_SAMPLE_RATE = 44100;
+constexpr int SFX_CHANNELS = 1;
 
 static constexpr int MAX_BULLETS = 32;
 Bullet bullets_[MAX_BULLETS] = {};
@@ -45,7 +56,7 @@ const float BULLET_SIZE = 0.05f; // world units, adjust as needed
 using Clock = std::chrono::high_resolution_clock;
 auto lastFrameTime = Clock::now();
 
-std::vector<char> loadAsset(AAssetManager *mgr, const char *filename);
+std::vector<char> loadShaderAsset(AAssetManager *mgr, const char *filename);
 
 VkShaderModule createShaderModule(VkDevice device, const std::vector<char> &code);
 
@@ -87,13 +98,27 @@ void setRasterizer(GraphicsPipelineData &graphicsPipelineData);
 
 void setSampling(GraphicsPipelineData &graphicsPipelineData);
 
-void updateFontBuffer(VkDevice device,std::vector<Vertex> textVertices, VkDeviceMemory fontVertexBufferMemory_);
-void uploadDataBuffer(VkDevice device,void* dataToUpload,VkDeviceSize sizeOfData,VkDeviceMemory bufferMemory);
+void updateFontBuffer(VkDevice device, std::vector<Vertex> textVertices,
+                      VkDeviceMemory fontVertexBufferMemory_);
 
-VkResult CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT *pCreateInfo,
+void uploadDataBuffer(VkDevice device, void *dataToUpload, VkDeviceSize sizeOfData,
+                      VkDeviceMemory bufferMemory);
+
+std::vector<float>
+decodeWAV(const std::vector<uint8_t> &wavBytes, int &outChannels, int &outSampleRate);
+
+std::vector<float>
+decodeMP3(const std::vector<uint8_t> &mp3Bytes, int &outChannels, int &outSampleRate);
+
+std::vector<uint8_t> loadMusicAssetToMemory(AAssetManager *mgr, const char *filename);
+
+
+VkResult CreateDebugUtilsMessengerEXT(VkInstance instance,
+                                      const VkDebugUtilsMessengerCreateInfoEXT *pCreateInfo,
                                       const VkAllocationCallbacks *pAllocator,
                                       VkDebugUtilsMessengerEXT *pDebugMessenger) {
-    auto func = (PFN_vkCreateDebugUtilsMessengerEXT) vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT");
+    auto func = (PFN_vkCreateDebugUtilsMessengerEXT) vkGetInstanceProcAddr(instance,
+                                                                           "vkCreateDebugUtilsMessengerEXT");
     if (func != nullptr) {
         return func(instance, pCreateInfo, pAllocator, pDebugMessenger);
     } else {
@@ -132,8 +157,9 @@ inline bool isCollision(const Alien &alien, const Bullet &bullet) {
            std::abs(alien.y - bullet.y) < (halfAlien + halfBullet);
 }
 
-std::vector<char> loadAsset(AAssetManager *mgr, const char *filename) {
-    AAsset *asset = AAssetManager_open(mgr, filename, AASSET_MODE_STREAMING);
+std::vector<char> loadShaderAsset(AAssetManager *mgr, const char *filename) {
+    std::string fullPath = "shaders/" + std::string(filename);
+    AAsset *asset = AAssetManager_open(mgr, fullPath.c_str(), AASSET_MODE_STREAMING);
     size_t size = AAsset_getLength(asset);
     std::vector<char> buffer(size);
     AAsset_read(asset, buffer.data(), size);
@@ -141,19 +167,86 @@ std::vector<char> loadAsset(AAssetManager *mgr, const char *filename) {
     return buffer;
 }
 
-void Renderer::loadTexture(const char *filename, VkImage &vkImage, VkDeviceMemory &vkDeviceMemory,
-                           VkImageView &imageView, VkSampler &vkSampler,GameTextureType gameTextureType) {
 
+std::vector<uint8_t> loadMusicAssetToMemory(AAssetManager *mgr, const char *filename) {
+    std::string fullPath = "audio/" + std::string(filename);
+    AAsset *asset = AAssetManager_open(mgr, fullPath.c_str(), AASSET_MODE_STREAMING);
+    if (!asset) throw std::runtime_error("Asset not found!");
+    size_t fileSize = AAsset_getLength(asset);
+    std::vector<uint8_t> data(fileSize);
+    AAsset_read(asset, data.data(), fileSize);
+    AAsset_close(asset);
+    LOGE("Asset size: %zu", data.size());
+    return data;
+}
+
+std::vector<float>
+decodeWAV(const std::vector<uint8_t> &wavBytes, int &outChannels, int &outSampleRate) {
+    drwav wav;
+    if (!drwav_init_memory(&wav, wavBytes.data(), wavBytes.size(), nullptr))
+        throw std::runtime_error("Failed to decode WAV");
+    outChannels = wav.channels;
+    outSampleRate = wav.sampleRate;
+    size_t totalSamples = wav.totalPCMFrameCount * wav.channels;
+    std::vector<float> samples(totalSamples);
+    drwav_read_pcm_frames_f32(&wav, wav.totalPCMFrameCount, samples.data());
+    drwav_uninit(&wav);
+    return samples;
+}
+
+std::vector<float>
+decodeMP3(const std::vector<uint8_t> &mp3Bytes, int &outChannels, int &outSampleRate) {
+    drmp3 mp3;
+
+    LOGE("mp3Bytes.size() = %zu", mp3Bytes.size());
+    if (mp3Bytes.empty()) {
+        LOGE("MP3 asset not loaded!");
+        throw std::runtime_error("MP3 asset not loaded!");
+    }
+
+    if (!drmp3_init_memory(&mp3, mp3Bytes.data(), mp3Bytes.size(), nullptr)) {
+        LOGE("Failed to decode MP3");
+        throw std::runtime_error("Failed to decode MP3");
+    }
+
+    outChannels = mp3.channels;
+    outSampleRate = mp3.sampleRate;
+    drmp3_uint64 totalFrames = mp3.totalPCMFrameCount;
+
+    std::vector<float> samples(totalFrames * outChannels); // CORRECT!
+    drmp3_read_pcm_frames_f32(&mp3, totalFrames, samples.data());
+    drmp3_uninit(&mp3);
+
+    return samples;
+}
+
+
+void Renderer::loadTexture(const char *filename, VkImage &vkImage, VkDeviceMemory &vkDeviceMemory,
+                           VkImageView &imageView, VkSampler &vkSampler,
+                           GameTextureType gameTextureType) {
+    std::string fullPath;
+    if (gameTextureType == GameTextureType::FontAtlas) {
+        fullPath = "fonts/" + std::string(filename);
+    } else {
+        fullPath = "textures/" + std::string(filename);
+    }
+
+    LOGE("file path:%s", fullPath.c_str());
     std::vector<uint8_t> pixelData;
     int textureWidth, textureHeight;
-    AAsset *asset = AAssetManager_open(assetManager_, filename, AASSET_MODE_STREAMING);
+//    AAsset *asset = AAssetManager_open(assetManager_, "textures/alien_ship_1.png", AASSET_MODE_STREAMING);
+    AAsset *asset = AAssetManager_open(assetManager_, fullPath.c_str(), AASSET_MODE_STREAMING);
     bool imageIsLoaded = true;
-    if (!asset) imageIsLoaded = false;
+    if (!asset) {
+        LOGE("failed to load assset: %s", fullPath.c_str());
+        imageIsLoaded = false;
+    }
 
     size_t fileLength = AAsset_getLength(asset);
     std::vector<uint8_t> fileData(fileLength);
     AAsset_read(asset, fileData.data(), fileLength);
     AAsset_close(asset);
+
 
     int channels;
     unsigned char *decoded = stbi_load_from_memory(fileData.data(), fileLength, &textureWidth,
@@ -166,18 +259,18 @@ void Renderer::loadTexture(const char *filename, VkImage &vkImage, VkDeviceMemor
 
     stbi_image_free(decoded);
 
-    if(gameTextureType == GameTextureType::FontAtlas) {
+    if (gameTextureType == GameTextureType::FontAtlas) {
         // 2. Describe your atlas grid
         int cellW = 32, cellH = 32, cols = 16, rows = 16;
 
 // 3. Auto-scan metrics:
-        LOGE("width:%i x hieght:%i",textureWidth,textureHeight);
-         fontManager_->autoPackFontAtlas(pixelData, textureWidth,textureHeight,
-                                                                         cellW, cellH, cols, rows);
+        LOGE("width:%i x hieght:%i", textureWidth, textureHeight);
+        fontManager_->autoPackFontAtlas(pixelData, textureWidth, textureHeight,
+                                        cellW, cellH, cols, rows);
     }
 
     if (imageIsLoaded) {
-        LOGE("loading image asset:%s",filename);
+        LOGE("loading image asset:%s", filename);
         VkBuffer stagingBuffer{VK_NULL_HANDLE};
         VkDeviceMemory stagingBufferMemory{VK_NULL_HANDLE};
         // 1. Create staging buffer & copy image data
@@ -442,7 +535,7 @@ void createImageView(VkDevice device, VkImage image, VkFormat format, VkImageVie
 void createTextureSampler(VkDevice device, VkSampler &sampler, GameTextureType type) {
     VkSamplerCreateInfo samplerInfo = {};
     samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-    if(type == GameTextureType::FontAtlas){
+    if (type == GameTextureType::FontAtlas) {
         samplerInfo.magFilter = VK_FILTER_LINEAR;
         samplerInfo.minFilter = VK_FILTER_LINEAR;
 
@@ -463,24 +556,86 @@ void createTextureSampler(VkDevice device, VkSampler &sampler, GameTextureType t
     vkCreateSampler(device, &samplerInfo, nullptr, &sampler);
 }
 
+SimpleSFXPlayer player;
+SFXMixer sfxMixer;
+
+
+void Renderer::stopAudioPlayer() {
+    sfxMixer.stream->stop();
+    if (player.stream) {
+        player.stream->stop();
+    }
+}
+
+void Renderer::resumeAudioPlayer() {
+    sfxMixer.stream->start();
+    if (player.stream) {
+        player.stream->start();
+    }
+}
+
+std::vector<float> shootSFXSample, explodeSFXSample1, explodeSFXSample2;
+std::unordered_map<uint, std::vector<float>> explosionSFXMap;
 
 Renderer::Renderer(android_app *app) : app_(app) {
     assetManager_ = app_->activity->assetManager;
     fontManager_ = new FontManager();
     initVulkan();
     particleSystem_ = new ParticleSystem(device_);
+    // 1. Load file from assets
+    std::vector<uint8_t> shootSFX = loadMusicAssetToMemory(assetManager_, "shoot.wav");
+    std::vector<uint8_t> bgMusicBytes = loadMusicAssetToMemory(assetManager_, "space-invaders.mp3");
+    std::vector<uint8_t> explosionBytes1 = loadMusicAssetToMemory(assetManager_, "explode_1.wav");
+    std::vector<uint8_t> explosionBytes2 = loadMusicAssetToMemory(assetManager_, "explode_2.wav");
+
+
+// 2. Decode WAV to float samples
+    int channels, sampleRate;
+    auto bgSamples = decodeMP3(bgMusicBytes, channels, sampleRate);
+    if (sampleRate != SFX_SAMPLE_RATE || channels != SFX_CHANNELS) {
+        LOGE("bgSamples SFX file must be 44100 Hz mono!");
+    }
+
+    shootSFXSample = decodeWAV(shootSFX, channels, sampleRate);
+    if (sampleRate != SFX_SAMPLE_RATE || channels != SFX_CHANNELS) {
+        LOGE("channels=%d, sampleRate=%d", channels, sampleRate);
+        LOGE("shootSFXSample SFX file must be 44100 Hz mono!");
+    }
+    explodeSFXSample1 = decodeWAV(explosionBytes1, channels, sampleRate);
+    if (sampleRate != SFX_SAMPLE_RATE || channels != SFX_CHANNELS) {
+        LOGE("channels=%d, sampleRate=%d", channels, sampleRate);
+        LOGE("explodeSFXSample1 SFX file must be 44100 Hz mono!");
+    }
+    explodeSFXSample2 = decodeWAV(explosionBytes2, channels, sampleRate);
+    if (sampleRate != SFX_SAMPLE_RATE || channels != SFX_CHANNELS) {
+        LOGE("channels=%d, sampleRate=%d", channels, sampleRate);
+        LOGE("explodeSFXSample2 SFX file must be 44100 Hz mono!");
+    }
+    explosionSFXMap[0] = explodeSFXSample1;
+    explosionSFXMap[1] = explodeSFXSample2;
+
+    sfxMixer.start(SFX_SAMPLE_RATE, SFX_CHANNELS);
+
+    player.buffer = std::move(bgSamples);
+    player.start(sampleRate);
+
+    player.play();
+
+
 }
 
 void Renderer::loadAllTextures() {
 
-    loadTexture("ke_ship_1.png", shipImage_, shipImageDeviceMemory_, shipImageView_, shipSampler_,GameTextureType::Ship);
+    loadTexture("ke_ship_1.png", shipImage_, shipImageDeviceMemory_, shipImageView_, shipSampler_,
+                GameTextureType::Ship);
     loadTexture("alien_ship_1.png", alienImage_, alienImageDeviceMemory_, alienImageView_,
-                alienSampler_,GameTextureType::Alien);
+                alienSampler_, GameTextureType::Alien);
     loadTexture("laser_2.png", shipBulletImage_, shipBulletImageDeviceMemory_, shipBulletImageView_,
-                shipBulletSampler_,GameTextureType::ShipBullet);
+                shipBulletSampler_, GameTextureType::ShipBullet);
     loadTexture("tap_to_restart_2.png", overlayImage_, overlayImageDeviceMemory_, overlayImageView_,
-                overlaySampler_,GameTextureType::Overlay);
-    loadTexture("8bitOperatorBold.png", fontAtlasImage_, fontAtlasImageDeviceMemory_, fontAtlasImageView_,fontAtlasSampler_,
+                overlaySampler_, GameTextureType::Overlay);
+    loadTexture("8bitOperatorBold.png", fontAtlasImage_, fontAtlasImageDeviceMemory_,
+                fontAtlasImageView_, fontAtlasSampler_,
                 GameTextureType::FontAtlas);
 
 }
@@ -557,7 +712,7 @@ void Renderer::createImageOverlayDescriptor(GraphicsPipelineData &graphicsPipeli
     vkUpdateDescriptorSets(device_, 1, &descriptorWrite, 0, nullptr);
 }
 
-void Renderer::createFontDescriptor(GraphicsPipelineData &graphicsPipelineData){
+void Renderer::createFontDescriptor(GraphicsPipelineData &graphicsPipelineData) {
 
 
     VkDescriptorSetLayoutBinding layoutBinding = {};
@@ -603,7 +758,7 @@ void Renderer::createFontDescriptor(GraphicsPipelineData &graphicsPipelineData){
     pipelineLayoutCreateInfo.pPushConstantRanges = &pushConstantRange;
 
     createPipelineLayout(pipelineLayoutCreateInfo, graphicsPipelineData);
-    LOGE("font pipelineLayout:%llu",graphicsPipelineData.pipelineLayout);
+    LOGE("font pipelineLayout:%llu", graphicsPipelineData.pipelineLayout);
 
     VkDescriptorSetAllocateInfo allocInfo = {};
     allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -876,8 +1031,8 @@ void Renderer::createParticleDescriptor(GraphicsPipelineData &graphicsPipelineDa
 VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
         VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
         VkDebugUtilsMessageTypeFlagsEXT messageType,
-        const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
-        void* pUserData) {
+        const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData,
+        void *pUserData) {
 
     LOGE("Vulkan Validation: %s", pCallbackData->pMessage);
     return VK_FALSE;
@@ -889,9 +1044,9 @@ bool checkValidationLayerSupport() {
     std::vector<VkLayerProperties> availableLayers(layerCount);
     vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
 
-    for (const char* layerName : validationLayers) {
+    for (const char *layerName: validationLayers) {
         bool found = false;
-        for (const auto& layerProperties : availableLayers) {
+        for (const auto &layerProperties: availableLayers) {
             if (strcmp(layerName, layerProperties.layerName) == 0) {
                 found = true;
                 break;
@@ -903,7 +1058,7 @@ bool checkValidationLayerSupport() {
 }
 
 
-void Renderer::createInstance(){
+void Renderer::createInstance() {
     //    volkInitialize();
     if (enableValidationLayers && !checkValidationLayerSupport()) {
         LOGE("Validation layers requested, but not available!");
@@ -939,7 +1094,7 @@ void Renderer::createInstance(){
         abort();
     }
 
-    if(enableValidationLayers) {
+    if (enableValidationLayers) {
         VkDebugUtilsMessengerEXT debugMessenger;
 
         VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo = {};
@@ -961,6 +1116,7 @@ void Renderer::createInstance(){
 // check result...
 
 }
+
 void Renderer::createSurface() {
     // Create Android surface from ANativeWindow
     VkAndroidSurfaceCreateInfoKHR surfInfo = {};
@@ -977,6 +1133,7 @@ void Renderer::createSurface() {
         abort();
     }
 }
+
 void Renderer::getPhysicalDevice() {
     // 1. Enumerate physical devices
     uint32_t deviceCount = 0;
@@ -1012,10 +1169,11 @@ void Renderer::getPhysicalDevice() {
     LOGE("Physical device and graphics queue family selected: %u", graphicsQueueFamily_);
 
 }
+
 void Renderer::initVulkan() {// Load Vulkan functions using volk
-     createInstance();
-     createSurface();
-     getPhysicalDevice();
+    createInstance();
+    createSurface();
+    getPhysicalDevice();
 
     float queuePriority = 1.0f;
     VkDeviceQueueCreateInfo queueCreateInfo = {};
@@ -1204,23 +1362,27 @@ void Renderer::initVulkan() {// Load Vulkan functions using volk
     createMainGraphicsPipeline();
     createOverlayGraphicsPipeline();
     createFontGraphicsPipeline();
-    createParticlesGraphicsPipeline(explosionParticlesPipeline_,GraphicsPipelineType::ExplosionParticles);
-    createParticlesGraphicsPipeline(explosionParticlesPipeline_,GraphicsPipelineType::StarParticles);
+    createParticlesGraphicsPipeline(explosionParticlesPipeline_,
+                                    GraphicsPipelineType::ExplosionParticles);
+    createParticlesGraphicsPipeline(explosionParticlesPipeline_,
+                                    GraphicsPipelineType::StarParticles);
 
 }
 
-void updateFontBuffer(VkDevice device,std::vector<Vertex> textVertices,VkDeviceMemory fontVertexBufferMemory) {
+void updateFontBuffer(VkDevice device, std::vector<Vertex> textVertices,
+                      VkDeviceMemory fontVertexBufferMemory) {
     VkDeviceSize textBufferSize = textVertices.size() * sizeof(Vertex);
     void *fontData;
     vkMapMemory(device, fontVertexBufferMemory, 0, textBufferSize, 0, &fontData);
-    memcpy(fontData, textVertices.data(),(size_t) textBufferSize);
+    memcpy(fontData, textVertices.data(), (size_t) textBufferSize);
     vkUnmapMemory(device, fontVertexBufferMemory);
 }
 
-void uploadDataBuffer(VkDevice device,void* dataToUpload,VkDeviceSize sizeOfData,VkDeviceMemory bufferMemory) {
+void uploadDataBuffer(VkDevice device, void *dataToUpload, VkDeviceSize sizeOfData,
+                      VkDeviceMemory bufferMemory) {
     void *fontData;
     vkMapMemory(device, bufferMemory, 0, sizeOfData, 0, &fontData);
-    memcpy(fontData, dataToUpload,(size_t) sizeOfData);
+    memcpy(fontData, dataToUpload, (size_t) sizeOfData);
     vkUnmapMemory(device, bufferMemory);
 }
 
@@ -1325,7 +1487,7 @@ void Renderer::createMainGraphicsPipeline() {
 void Renderer::createOverlayGraphicsPipeline() {
 
     GraphicsPipelineData graphicsPipelineData{
-        .pipeline = overlayPipeline_,
+            .pipeline = overlayPipeline_,
             .viewport {.x=0.0, .y=0.0f, .width=(float) swapchainExtent_.width, .height=(float) swapchainExtent_.height, .minDepth=0.0f, .maxDepth=1.0f},
             .scissor {.offset{0, 0}, .extent = swapchainExtent_}
     };
@@ -1438,19 +1600,20 @@ void Renderer::createFontGraphicsPipeline() {
     createPipeline(graphicsPipelineData, GraphicsPipelineType::Font);
 
 
-
 }
-void Renderer::createParticlesGraphicsPipeline(VkPipeline pipeline, GraphicsPipelineType graphicsPipelineType) {
-    std::vector<VkVertexInputBindingDescription> bindings ;
+
+void Renderer::createParticlesGraphicsPipeline(VkPipeline pipeline,
+                                               GraphicsPipelineType graphicsPipelineType) {
+    std::vector<VkVertexInputBindingDescription> bindings;
     std::vector<VkVertexInputAttributeDescription> attributes;
 
-    GraphicsPipelineData graphicsPipelineData {
+    GraphicsPipelineData graphicsPipelineData{
             .pipeline = pipeline,
             .viewport {.x=0.0, .y=0.0f, .width=(float) swapchainExtent_.width, .height=(float) swapchainExtent_.height, .minDepth=0.0f, .maxDepth=1.0f},
             .scissor {.offset{0, 0}, .extent = swapchainExtent_}
     };
 
-    if(graphicsPipelineType == GraphicsPipelineType::ExplosionParticles) {
+    if (graphicsPipelineType == GraphicsPipelineType::ExplosionParticles) {
         setShaderStages(device_, assetManager_, "particles_instanced.vert.spv",
                         "particles_instanced.frag.spv",
                         graphicsPipelineData);
@@ -1470,7 +1633,7 @@ void Renderer::createParticlesGraphicsPipeline(VkPipeline pipeline, GraphicsPipe
         graphicsPipelineData.vertexInputState = particlesVertexInputInfo;
     }
 
-    if(graphicsPipelineType == GraphicsPipelineType::StarParticles) {
+    if (graphicsPipelineType == GraphicsPipelineType::StarParticles) {
         setShaderStages(device_, assetManager_, "stars_instanced.vert.spv",
                         "stars_instanced.frag.spv",
                         graphicsPipelineData);
@@ -1538,11 +1701,11 @@ void setRasterizer(GraphicsPipelineData &graphicsPipelineData) {
 }
 
 void setShaderStages(VkDevice device, AAssetManager *assetManager, const char *spirvVertexFilename,
-                const char *spirvFragmentFilename,
-                GraphicsPipelineData &graphicsPipelineData) {
+                     const char *spirvFragmentFilename,
+                     GraphicsPipelineData &graphicsPipelineData) {
 
-    auto vertShaderCode = loadAsset(assetManager, spirvVertexFilename);
-    auto fragShaderCode = loadAsset(assetManager, spirvFragmentFilename);
+    auto vertShaderCode = loadShaderAsset(assetManager, spirvVertexFilename);
+    auto fragShaderCode = loadShaderAsset(assetManager, spirvFragmentFilename);
     VkShaderModule vertShaderModule = createShaderModule(device, vertShaderCode);
     VkShaderModule fragShaderModule = createShaderModule(device, fragShaderCode);
 
@@ -1613,8 +1776,10 @@ void setSampling(GraphicsPipelineData &graphicsPipelineData) {
     multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
 }
 
-void Renderer::createPipelineLayout(VkPipelineLayoutCreateInfo &pipelineLayoutInfo,GraphicsPipelineData &graphicsPipelineData) {
-    VkResult res = vkCreatePipelineLayout(device_, &pipelineLayoutInfo, nullptr, &graphicsPipelineData.pipelineLayout);
+void Renderer::createPipelineLayout(VkPipelineLayoutCreateInfo &pipelineLayoutInfo,
+                                    GraphicsPipelineData &graphicsPipelineData) {
+    VkResult res = vkCreatePipelineLayout(device_, &pipelineLayoutInfo, nullptr,
+                                          &graphicsPipelineData.pipelineLayout);
     if (res != VK_SUCCESS) {
         LOGE("Failed to create pipeline layout! error code:%d", res);
         abort();
@@ -1623,7 +1788,8 @@ void Renderer::createPipelineLayout(VkPipelineLayoutCreateInfo &pipelineLayoutIn
 }
 
 void
-Renderer::createPipeline(GraphicsPipelineData &graphicsPipelineData, GraphicsPipelineType graphicsPipelineType) {
+Renderer::createPipeline(GraphicsPipelineData &graphicsPipelineData,
+                         GraphicsPipelineType graphicsPipelineType) {
 
     VkGraphicsPipelineCreateInfo pipelineCreateInfo = graphicsPipelineData.pipelineCreateInfo;
     pipelineCreateInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -1790,14 +1956,13 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
     }
 
 
-    for (const auto &[textName,textData]: allTextVertices) {
+    for (const auto &[textName, textData]: allTextVertices) {
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, fontPipeline_);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, fontPipelineLayout_, 0, 1,
                                 &fontDescriptorSet_, 0, nullptr);
         vkCmdBindVertexBuffers(cmd, 0, 1, &textData.first, offsets);
         vkCmdDraw(cmd, textData.second.size(), 1, 0, 0);
     }
-
 
 
     particleSystem_->render(cmd,
@@ -1832,9 +1997,12 @@ void Renderer::restartGame() {
 }
 
 void Renderer::spawnBullet() {
-    if (gameState == GameState::Playing)
+    if (gameState == GameState::Playing) {
         for (int i = 0; i < MAX_BULLETS; ++i) {
             if (!bullets_[i].active) {
+//                player.play();
+                sfxMixer.playSFX(shootSFXSample.data(), shootSFXSample.size(), 0.05f);
+
                 // Spawn at ship position (x, just above ship)
                 bullets_[i].x = shipX_;
                 bullets_[i].y = -0.8f; // Start just above ship
@@ -1842,6 +2010,7 @@ void Renderer::spawnBullet() {
                 break;
             }
         }
+    }
 }
 
 void Renderer::updateShipBuffer() {
@@ -1895,6 +2064,8 @@ float scoreScaleTarget_ = 0.002f;   // Where we're scaling toward
 float scoreScaleSpeed_ = 6.0f;    // How quickly scale returns to normal
 float scorePopAmount_ = 0.0022f;    // How much to “pop” the score on change
 
+uint i = 0;
+
 void Renderer::updateCollision() {
     for (auto &bullet: bullets_) {
         if (!bullet.active) continue;
@@ -1905,10 +2076,16 @@ void Renderer::updateCollision() {
             if (isCollision(alien, bullet)) {
                 alien.active = false;    // Destroy alien
                 bullet.active = false;   // Destroy bullet
-                actualScore +=100;
-                alienMoveSpeed_ +=0.005f;
+                actualScore += 100;
+                alienMoveSpeed_ += 0.005f;
 
-                particleSystem_->spawn(glm::vec3(alien.x,-alien.y,1.0f),15);
+                particleSystem_->spawn(glm::vec3(alien.x, -alien.y, 1.0f), 15);
+
+                sfxMixer.playSFX(explosionSFXMap[i].data(), explosionSFXMap[i].size(), 0.3f);
+                i++;
+                i == explosionSFXMap.size() ? i = 0 : i;
+
+
                 // Optionally: score++, play sound, create explosion, etc.
                 break; // Stop checking this bullet (it's now gone)
             }
@@ -1974,8 +2151,9 @@ void Renderer::animateScore(float deltaTime) {
         scoreText_ = buf;
 
         std::vector<Vertex> scoreVertices;
-        scoreVertices = fontManager_->buildTextVertices(scoreText_,-0.95f, -0.80f, 1.0f,scoreScale_);
-        allTextVertices[GameText::Score] = {scoreTextVertexBuffer_,scoreVertices};
+        scoreVertices = fontManager_->buildTextVertices(scoreText_, -0.95f, -0.80f, 1.0f,
+                                                        scoreScale_);
+        allTextVertices[GameText::Score] = {scoreTextVertexBuffer_, scoreVertices};
         updateFontBuffer(device_, scoreVertices, scoreTextVertexBufferMemory_);
 
         // POP! Trigger the scale effect
@@ -1997,8 +2175,9 @@ void Renderer::animateScore(float deltaTime) {
         snprintf(buf, sizeof(buf), "Score:%d", nowDisplay);
         scoreText_ = buf;
         std::vector<Vertex> scoreVertices;
-        scoreVertices = fontManager_->buildTextVertices(scoreText_,-0.95f, -0.80f, 1.0f,scoreScale_);
-        allTextVertices[GameText::Score] = {scoreTextVertexBuffer_,scoreVertices};
+        scoreVertices = fontManager_->buildTextVertices(scoreText_, -0.95f, -0.80f, 1.0f,
+                                                        scoreScale_);
+        allTextVertices[GameText::Score] = {scoreTextVertexBuffer_, scoreVertices};
         updateFontBuffer(device_, scoreVertices, scoreTextVertexBufferMemory_);
     }
 }
@@ -2017,13 +2196,13 @@ void Renderer::drawFrame() {
         deltaTime = std::min(deltaTime, 0.0167f);
         updateUniformBuffer(deltaTime);
         updateShipBuffer();
-        updateBullet(deltaTime);
+
         updateAliens(deltaTime);
         updateCollision();
         animateScore(deltaTime);
         updateGameState();
     }
-
+    updateBullet(deltaTime);
     particleSystem_->updateStarField(deltaTime, starInstanceBufferMemory_);
     particleSystem_->updateExplosionParticles(deltaTime, particlesInstanceBufferMemory_);
 
@@ -2056,10 +2235,10 @@ void Renderer::drawFrame() {
 }
 
 
-
 void Renderer::loadText() {
     std::vector<Vertex> titleVertices;
-    titleVertices = fontManager_->buildTextVertices("Nairobi Space Force 2030",-0.95f, -0.85f,0.0f, 0.002f);
+    titleVertices = fontManager_->buildTextVertices("Nairobi Space Force 2030", -0.95f, -0.85f,
+                                                    0.0f, 0.002f);
 
     VkDeviceSize titleTextBufferSize = titleVertices.size() * sizeof(Vertex);
     createBuffer(device_, physicalDevice_,
@@ -2068,18 +2247,18 @@ void Renderer::loadText() {
                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                  titleTextVertexBuffer_, titleTextVertexBufferMemory_);
     updateFontBuffer(device_, titleVertices, titleTextVertexBufferMemory_);
-    allTextVertices[GameText::Title] = {titleTextVertexBuffer_,titleVertices};
+    allTextVertices[GameText::Title] = {titleTextVertexBuffer_, titleVertices};
 
     std::vector<Vertex> scoreVertices;
-    scoreVertices = fontManager_->buildTextVertices("Score:99999999",-0.95f, -0.8f,0.0f, 0.002f);
+    scoreVertices = fontManager_->buildTextVertices("Score:99999999", -0.95f, -0.8f, 0.0f, 0.002f);
     VkDeviceSize scoreTextBufferSize = scoreVertices.size() * sizeof(Vertex);
     createBuffer(device_, physicalDevice_,
                  scoreTextBufferSize,
                  VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                  scoreTextVertexBuffer_, scoreTextVertexBufferMemory_);
-    scoreVertices = fontManager_->buildTextVertices("Score:0",-0.95f, -0.8f,0.0f, 0.002f);
-    allTextVertices[GameText::Score] = {scoreTextVertexBuffer_,scoreVertices};
+    scoreVertices = fontManager_->buildTextVertices("Score:0", -0.95f, -0.8f, 0.0f, 0.002f);
+    allTextVertices[GameText::Score] = {scoreTextVertexBuffer_, scoreVertices};
     updateFontBuffer(device_, scoreVertices, scoreTextVertexBufferMemory_);
 
 
@@ -2088,14 +2267,16 @@ void Renderer::loadText() {
 void Renderer::loadGameObjects() {
     VkDeviceSize starBufferSize = sizeof(starVerts);
     createBuffer(device_, physicalDevice_, starBufferSize,
-                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                  starVertsBuffer_, starVertsMemory_);
 
     uploadDataBuffer(device_, (void *) starVerts, starBufferSize, starVertsMemory_);
 
     VkDeviceSize starIndexSize = sizeof(particlesIndices);
     createBuffer(device_, physicalDevice_, starIndexSize,
-                 VK_BUFFER_USAGE_INDEX_BUFFER_BIT,VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                 VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                  starIndexBuffer_, starIndexMemory_);
     uploadDataBuffer(device_, (void *) particlesIndices, starIndexSize, starIndexMemory_);
 
@@ -2107,18 +2288,22 @@ void Renderer::loadGameObjects() {
                  starInstanceBuffer_, starInstanceBufferMemory_);
 
     VkDeviceSize particlesBufferSize = sizeof(particleVerts);
-    createBuffer(device_,physicalDevice_,particlesBufferSize,
-                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                 particlesVertexBuffer_,particlesVertexBufferMemory_);
+    createBuffer(device_, physicalDevice_, particlesBufferSize,
+                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                 particlesVertexBuffer_, particlesVertexBufferMemory_);
 
-    uploadDataBuffer(device_, (void *) particleVerts, particlesBufferSize, particlesVertexBufferMemory_);
+    uploadDataBuffer(device_, (void *) particleVerts, particlesBufferSize,
+                     particlesVertexBufferMemory_);
 
     VkDeviceSize particlesIndexSize = sizeof(particlesIndices);
-    createBuffer(device_,physicalDevice_,particlesIndexSize,
-                 VK_BUFFER_USAGE_INDEX_BUFFER_BIT,VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                 particlesIndexBuffer_,particlesIndexBufferMemory_);
+    createBuffer(device_, physicalDevice_, particlesIndexSize,
+                 VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                 particlesIndexBuffer_, particlesIndexBufferMemory_);
 
-    uploadDataBuffer(device_, (void *) particlesIndices, particlesIndexSize, particlesIndexBufferMemory_);
+    uploadDataBuffer(device_, (void *) particlesIndices, particlesIndexSize,
+                     particlesIndexBufferMemory_);
 
     VkDeviceSize instanceSize = sizeof(ParticleInstance) * MAX_PARTICLES;
     createBuffer(device_, physicalDevice_,
@@ -2169,14 +2354,15 @@ void Renderer::loadGameObjects() {
                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                  overlayVertexBuffer_, overlayVertexBufferMemory_);
 
-    uploadDataBuffer(device_, (void *) overlayQuadVerts, overlayBufferSize, overlayVertexBufferMemory_);
+    uploadDataBuffer(device_, (void *) overlayQuadVerts, overlayBufferSize,
+                     overlayVertexBufferMemory_);
 
 
 }
 
 Renderer::~Renderer() {
-    delete(fontManager_);
-    delete(particleSystem_);
+    delete (fontManager_);
+    delete (particleSystem_);
 
     vkDestroySampler(device_, fontAtlasSampler_, nullptr);
     vkDestroyImageView(device_, fontAtlasImageView_, nullptr);
@@ -2236,7 +2422,7 @@ Renderer::~Renderer() {
         vkDestroyBuffer(device_, uniformBuffer_, nullptr);
 
     if (uniformBufferMemory_ != VK_NULL_HANDLE) {
-        if (uniformBuffersData){
+        if (uniformBuffersData) {
             vkUnmapMemory(device_, uniformBufferMemory_);
         }
         vkFreeMemory(device_, uniformBufferMemory_, nullptr);

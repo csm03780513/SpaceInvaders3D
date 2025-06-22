@@ -17,6 +17,8 @@ public:
 
 
     void restartGame();
+    void stopAudioPlayer();
+    void resumeAudioPlayer();
 
 private:
     FontManager *fontManager_;
