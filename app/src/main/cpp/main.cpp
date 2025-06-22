@@ -83,6 +83,10 @@ void handle_cmd(android_app *app, int32_t cmd) {
             break;
         case APP_CMD_DESTROY:
             LOGI("APP GETTING DESTROYED:::");
+            if (g_renderer) {
+                delete g_renderer;
+                g_renderer = nullptr;
+            }
             break;
     }
 }
@@ -98,7 +102,14 @@ void android_main(struct android_app *app) {
         android_poll_source *source;
         while (ALooper_pollOnce(0, nullptr, &events, (void **) &source) >= 0) {
             if (source) source->process(app, source);
-            if (app->destroyRequested) return;
+            if (app->destroyRequested) {
+                if (renderer) {
+                    delete renderer;
+                    renderer = nullptr;
+                    g_renderer = nullptr;
+                }
+                return;
+            }
 
             // Only create Renderer once window is valid
             if (!renderer && app->window) {
