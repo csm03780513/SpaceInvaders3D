@@ -2390,6 +2390,19 @@ Renderer::~Renderer() {
     vkFreeMemory(device_, overlayImageDeviceMemory_, nullptr);
     vkDestroyImage(device_, overlayImage_, nullptr);
 
+    vkDestroyBuffer(device_, starVertsBuffer_, nullptr);
+    vkFreeMemory(device_, starVertsMemory_, nullptr);
+    vkDestroyBuffer(device_, starIndexBuffer_, nullptr);
+    vkFreeMemory(device_, starIndexMemory_, nullptr);
+    vkDestroyBuffer(device_, starInstanceBuffer_, nullptr);
+    vkFreeMemory(device_, starInstanceBufferMemory_, nullptr);
+
+    vkDestroyBuffer(device_, titleTextVertexBuffer_, nullptr);
+    vkFreeMemory(device_, titleTextVertexBufferMemory_, nullptr);
+
+    vkDestroyBuffer(device_, scoreTextVertexBuffer_, nullptr);
+    vkFreeMemory(device_, scoreTextVertexBufferMemory_, nullptr);
+
     vkDestroyBuffer(device_, alienVertexBuffer_, nullptr);
     vkFreeMemory(device_, alienVertexBufferMemory_, nullptr);
 
