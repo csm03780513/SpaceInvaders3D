@@ -580,9 +580,9 @@ std::unordered_map<uint, std::vector<float>> explosionSFXMap;
 
 Renderer::Renderer(android_app *app) : app_(app) {
     assetManager_ = app_->activity->assetManager;
-    fontManager_ = new FontManager();
+    fontManager_ = std::make_unique<FontManager>();
     initVulkan();
-    particleSystem_ = new ParticleSystem(device_);
+    particleSystem_ = std::make_unique<ParticleSystem>(device_);
     // 1. Load file from assets
     std::vector<uint8_t> shootSFX = loadMusicAssetToMemory(assetManager_, "shoot.wav");
     std::vector<uint8_t> bgMusicBytes = loadMusicAssetToMemory(assetManager_, "space-invaders.mp3");
@@ -2354,8 +2354,6 @@ void Renderer::loadGameObjects() {
 }
 
 Renderer::~Renderer() {
-    delete (fontManager_);
-    delete (particleSystem_);
 
     vkDestroySampler(device_, fontAtlasSampler_, nullptr);
     vkDestroyImageView(device_, fontAtlasImageView_, nullptr);
