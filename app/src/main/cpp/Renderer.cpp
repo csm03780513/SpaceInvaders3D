@@ -1404,7 +1404,8 @@ void Renderer::updateUniformBuffer(float deltaTime) {
     ubo_.proj = glm::perspective(glm::radians(45.0f),
                                  swapchainExtent_.width / (float) swapchainExtent_.height, 0.1f,
                                  10.0f);
-    ubo_.proj[1][1] *= 1;
+    // Flip the Y coordinate for Vulkan's coordinate system
+    ubo_.proj[1][1] *= -1;
 
     memcpy(uniformBuffersData, &ubo_, sizeof(ubo_));
 }
