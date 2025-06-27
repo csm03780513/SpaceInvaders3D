@@ -3,6 +3,7 @@
 #include <android/log.h>
 #include <android/input.h>
 #include "Renderer.h"
+#include <stdexcept>
 
 
 #define LOGI(...) __android_log_print(ANDROID_LOG_ERROR, "Vulkan", __VA_ARGS__)
@@ -114,8 +115,13 @@ void android_main(struct android_app *app) {
             // Only create Renderer once window is valid
             if (!renderer && app->window) {
                 LOGI("app here:=>");
-                renderer = new Renderer(app);
-                g_renderer = renderer;
+                try {
+                    renderer = new Renderer(app);
+                    g_renderer = renderer;
+                } catch (const std::exception &e) {
+                    LOGI("Renderer initialization failed: %s", e.what());
+                    return;
+                }
             }
         }
         if (g_pendingRestart) {
