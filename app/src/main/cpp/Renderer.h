@@ -2,6 +2,7 @@
 
 #include "FontManager.h"
 #include "ParticleSystem.h"
+#include <memory>
 
 class Renderer {
 public:
@@ -21,8 +22,8 @@ public:
     void resumeAudioPlayer();
 
 private:
-    FontManager *fontManager_;
-    ParticleSystem *particleSystem_;
+    std::unique_ptr<FontManager> fontManager_;
+    std::unique_ptr<ParticleSystem> particleSystem_;
     UniformBufferObject ubo_;
     android_app* app_;
     AAssetManager* assetManager_; // assetmgr
