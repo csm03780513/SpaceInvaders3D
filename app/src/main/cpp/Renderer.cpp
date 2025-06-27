@@ -16,6 +16,7 @@
 #include <stb_image.h>
 #include <android/native_window.h>
 #include <vector>
+#include <stdexcept>
 
 std::unordered_map<GameText, std::pair<VkBuffer, std::vector<Vertex>>> allTextVertices;
 
@@ -144,7 +145,7 @@ VkShaderModule createShaderModule(VkDevice device, const std::vector<char> &code
     VkShaderModule shaderModule;
     if (vkCreateShaderModule(device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {
         LOGE("Failed to create shader module");
-        abort();
+        throw std::runtime_error("Failed to create shader module");
     }
     return shaderModule;
 }
@@ -330,7 +331,7 @@ void createBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkDeviceSize
 
     if (vkCreateBuffer(device, &bufferInfo, nullptr, &buffer) != VK_SUCCESS) {
         LOGE("Failed to create buffer");
-        abort();
+        throw std::runtime_error("Failed to create buffer");
     }
 
     VkMemoryRequirements memRequirements;
@@ -353,7 +354,7 @@ void createBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkDeviceSize
 
     if (vkAllocateMemory(device, &allocInfo, nullptr, &bufferMemory) != VK_SUCCESS) {
         LOGE("Failed to allocate buffer memory");
-        abort();
+        throw std::runtime_error("Failed to allocate buffer memory");
     }
 
     vkBindBufferMemory(device, buffer, bufferMemory, 0);
@@ -669,7 +670,7 @@ void Renderer::createImageOverlayDescriptor(GraphicsPipelineData &graphicsPipeli
                                            &overlayDescriptorPool_);
     if (res1 != VK_SUCCESS) {
         LOGE("Failed to create overlay descriptor pool at: %d", res1);
-        abort();
+        throw std::runtime_error("Failed to create overlay descriptor pool");
     }
 
     VkPushConstantRange overlayPushConstantRange = {};
@@ -742,7 +743,7 @@ void Renderer::createFontDescriptor(GraphicsPipelineData &graphicsPipelineData) 
                                            &fontDescriptorPool_);
     if (res1 != VK_SUCCESS) {
         LOGE("Failed to create font descriptor pool at: %d", res1);
-        abort();
+        throw std::runtime_error("Failed to create font descriptor pool");
     }
 
     VkPushConstantRange pushConstantRange = {};
@@ -859,7 +860,7 @@ void Renderer::createMainDescriptor(GraphicsPipelineData &graphicsPipelineData) 
     LOGE("vkCreateDescriptorPool returned %d", res);
     if (res != VK_SUCCESS) {
         LOGE("Failed to create descriptor pool: %d", res);
-        abort();
+        throw std::runtime_error("Failed to create descriptor pool");
     }
     LOGE("Descriptor pool created");
 
@@ -873,8 +874,8 @@ void Renderer::createMainDescriptor(GraphicsPipelineData &graphicsPipelineData) 
     LOGE("About to create descriptor sets");
     VkResult res1 = vkAllocateDescriptorSets(device_, &descAllocInfo, descriptorSets.data());
     if (res1 != VK_SUCCESS) {
-        LOGE("Failed to create descriptor set: %d", res);
-        abort();
+        LOGE("Failed to create descriptor set: %d", res1);
+        throw std::runtime_error("Failed to create descriptor set");
     }
 
     shipDescriptorSet_ = descriptorSets[0];
@@ -985,7 +986,7 @@ void Renderer::createParticleDescriptor(GraphicsPipelineData &graphicsPipelineDa
                                            &particlesDescriptorPool_);
     if (res1 != VK_SUCCESS) {
         LOGE("Failed to create overlay descriptor pool at: %d", res1);
-        abort();
+        throw std::runtime_error("Failed to create overlay descriptor pool");
     }
 
     VkPushConstantRange particlesPushConstantRange = {};
@@ -1091,7 +1092,7 @@ void Renderer::createInstance() {
 
     if (vkCreateInstance(&instanceInfo, nullptr, &instance_) != VK_SUCCESS) {
         LOGE("Failed to create Vulkan instance");
-        abort();
+        throw std::runtime_error("Failed to create Vulkan instance");
     }
 
     if (enableValidationLayers) {
@@ -1110,7 +1111,7 @@ void Renderer::createInstance() {
                                                        &debugMessenger);
         if (result != VK_SUCCESS) {
             LOGE("Failed to set up debug messenger!");
-            abort();
+            throw std::runtime_error("Failed to set up debug messenger");
         }
     }
 // check result...
@@ -1130,7 +1131,7 @@ void Renderer::createSurface() {
     VkResult surfaceResult = vkCreateAndroidSurfaceKHR(instance_, &surfInfo, nullptr, &surface_);
     if (surfaceResult != VK_SUCCESS) {
         LOGE("Failed to create Android Vulkan surface, error code: %d", surfaceResult);
-        abort();
+        throw std::runtime_error("Failed to create Android Vulkan surface");
     }
 }
 
@@ -1140,7 +1141,7 @@ void Renderer::getPhysicalDevice() {
     vkEnumeratePhysicalDevices(instance_, &deviceCount, nullptr);
     if (deviceCount == 0) {
         LOGE("No Vulkan physical devices found");
-        abort();
+        throw std::runtime_error("No Vulkan physical devices found");
     }
     std::__ndk1::vector<VkPhysicalDevice> devices(deviceCount);
     vkEnumeratePhysicalDevices(instance_, &deviceCount, devices.data());
@@ -1164,7 +1165,7 @@ void Renderer::getPhysicalDevice() {
     }
     if (physicalDevice_ == VK_NULL_HANDLE) {
         LOGE("No suitable Vulkan physical device/queue family found!");
-        abort();
+        throw std::runtime_error("No suitable Vulkan physical device found");
     }
     LOGE("Physical device and graphics queue family selected: %u", graphicsQueueFamily_);
 
@@ -1195,7 +1196,7 @@ void Renderer::initVulkan() {// Load Vulkan functions using volk
 
     if (vkCreateDevice(physicalDevice_, &deviceCreateInfo, nullptr, &device_) != VK_SUCCESS) {
         LOGE("Failed to create Vulkan logical device!");
-        abort();
+        throw std::runtime_error("Failed to create Vulkan logical device");
     }
     vkGetDeviceQueue(device_, graphicsQueueFamily_, 0, &graphicsQueue_);
     LOGE("Logical device and graphics queue created");
@@ -1248,7 +1249,7 @@ void Renderer::initVulkan() {// Load Vulkan functions using volk
 // 7. Create the swapchain
     if (vkCreateSwapchainKHR(device_, &swapInfo, nullptr, &swapchain_) != VK_SUCCESS) {
         LOGE("Failed to create Vulkan swapchain!");
-        abort();
+        throw std::runtime_error("Failed to create Vulkan swapchain");
     }
 
 // 8. Get swapchain images
@@ -1277,7 +1278,7 @@ void Renderer::initVulkan() {// Load Vulkan functions using volk
         if (vkCreateImageView(device_, &viewInfo, nullptr, &swapchainImageViews_[i]) !=
             VK_SUCCESS) {
             LOGE("Failed to create image view for swapchain image %d", (int) i);
-            abort();
+            throw std::runtime_error("Failed to create image view");
         }
     }
 
@@ -1309,7 +1310,7 @@ void Renderer::initVulkan() {// Load Vulkan functions using volk
 
     if (vkCreateRenderPass(device_, &renderPassInfo, nullptr, &renderPass_) != VK_SUCCESS) {
         LOGE("Failed to create render pass");
-        abort();
+        throw std::runtime_error("Failed to create render pass");
     }
 
     framebuffers_.resize(swapchainImageViews_.size());
@@ -1326,7 +1327,7 @@ void Renderer::initVulkan() {// Load Vulkan functions using volk
 
         if (vkCreateFramebuffer(device_, &fbInfo, nullptr, &framebuffers_[i]) != VK_SUCCESS) {
             LOGE("Failed to create framebuffer %d", (int) i);
-            abort();
+            throw std::runtime_error("Failed to create framebuffer");
         }
     }
 
@@ -1338,7 +1339,7 @@ void Renderer::initVulkan() {// Load Vulkan functions using volk
 
     if (vkCreateCommandPool(device_, &poolInfo, nullptr, &commandPool_) != VK_SUCCESS) {
         LOGE("Failed to create command pool");
-        abort();
+        throw std::runtime_error("Failed to create command pool");
     }
 
 // Command buffers
@@ -1351,7 +1352,7 @@ void Renderer::initVulkan() {// Load Vulkan functions using volk
 
     if (vkAllocateCommandBuffers(device_, &allocInfo, commandBuffers_.data()) != VK_SUCCESS) {
         LOGE("Failed to allocate command buffers");
-        abort();
+        throw std::runtime_error("Failed to allocate command buffers");
     }
 
     loadAllTextures();
@@ -1783,7 +1784,7 @@ void Renderer::createPipelineLayout(VkPipelineLayoutCreateInfo &pipelineLayoutIn
                                           &graphicsPipelineData.pipelineLayout);
     if (res != VK_SUCCESS) {
         LOGE("Failed to create pipeline layout! error code:%d", res);
-        abort();
+        throw std::runtime_error("Failed to create pipeline layout");
     }
 
 }
@@ -1810,7 +1811,7 @@ Renderer::createPipeline(GraphicsPipelineData &graphicsPipelineData,
                                              &graphicsPipelineData.pipeline);
     if (res != VK_SUCCESS) {
         LOGE("Failed to create graphics pipeline! error code:%d", res);
-        abort();
+        throw std::runtime_error("Failed to create graphics pipeline");
     }
 
     switch (graphicsPipelineType) {
@@ -1855,7 +1856,7 @@ Renderer::createDescriptorSetLayout(VkDescriptorSetLayoutCreateInfo descriptorSe
                                                &descriptorSetLayout);
     if (res != VK_SUCCESS) {
         LOGE("Failed to create descriptor layout! error code:%d", res);
-        abort();
+        throw std::runtime_error("Failed to create descriptor layout");
     }
 }
 
