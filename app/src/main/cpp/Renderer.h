@@ -2,6 +2,7 @@
 
 #include "FontManager.h"
 #include "ParticleSystem.h"
+#include <string>
 
 class Renderer {
 public:
@@ -116,6 +117,17 @@ private:
 
     VkBuffer scoreTextVertexBuffer_;
     VkDeviceMemory scoreTextVertexBufferMemory_;
+
+    // Score tracking and animation
+    int actualScore = 0;            // Game logic value
+    float displayedScore_ = 0.0f;   // Smoothed UI value
+    float scoreAnimSpeed_ = 400.0f; // Units per second (tune for effect)
+    std::string scoreText_;         // Current display string, e.g. "Score: 1234"
+
+    float scoreScale_ = 0.002f;        // Current scale for the pop effect
+    float scoreScaleTarget_ = 0.002f;  // Where we're scaling toward
+    float scoreScaleSpeed_ = 6.0f;     // How quickly scale returns to normal
+    float scorePopAmount_ = 0.0022f;   // How much to “pop” the score on change
 
     VkBuffer particlesVertexBuffer_{VK_NULL_HANDLE};
     VkDeviceMemory particlesVertexBufferMemory_{VK_NULL_HANDLE};
