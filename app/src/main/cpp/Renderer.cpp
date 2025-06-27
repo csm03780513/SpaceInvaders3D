@@ -2457,7 +2457,6 @@ Renderer::~Renderer() {
     }
 
     vkDestroyCommandPool(device_, commandPool_, nullptr);
-    vkDestroySwapchainKHR(device_, swapchain_, nullptr);
 
     if (surface_ != VK_NULL_HANDLE) {
         vkDestroySurfaceKHR(instance_, surface_, nullptr);
