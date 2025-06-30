@@ -34,17 +34,9 @@ const bool enableValidationLayers = false;
 const bool enableValidationLayers = true;
 #endif
 
-constexpr int SFX_SAMPLE_RATE = 44100;
-constexpr int SFX_CHANNELS = 1;
 
-static constexpr int MAX_BULLETS = 32;
 Bullet bullets_[MAX_BULLETS] = {};
 Ship ship_ = {};
-
-
-static constexpr int NUM_ALIENS_X = 8;
-static constexpr int NUM_ALIENS_Y = 3;
-static constexpr int MAX_ALIENS = NUM_ALIENS_X * NUM_ALIENS_Y;
 Alien aliens_[MAX_ALIENS] = {};
 
 float alienMoveSpeed_ = 0.3f;
@@ -112,7 +104,7 @@ std::vector<float>
 decodeMP3(const std::vector<uint8_t> &mp3Bytes, int &outChannels, int &outSampleRate);
 
 std::vector<uint8_t> loadMusicAssetToMemory(AAssetManager *mgr, const char *filename);
-
+void computeDeltaTime();
 
 VkResult CreateDebugUtilsMessengerEXT(VkInstance instance,
                                       const VkDebugUtilsMessengerCreateInfoEXT *pCreateInfo,
@@ -751,6 +743,7 @@ void Renderer::createFontDescriptor(GraphicsPipelineData &graphicsPipelineData) 
     pushConstantRange.offset = 0;
     pushConstantRange.size = sizeof(float) * 4; // For vec4 offset
 
+
     VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = {};
     pipelineLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     pipelineLayoutCreateInfo.setLayoutCount = 1;
@@ -819,12 +812,13 @@ void Renderer::createMainDescriptor(GraphicsPipelineData &graphicsPipelineData) 
                                                                alienDescriptorSetLayout_,
                                                                shipBulletDescriptorSetLayout_};
 
-    VkPushConstantRange vkPushConstantRange = {};
-    vkPushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-    vkPushConstantRange.offset = 0;
-    vkPushConstantRange.size = sizeof(float) * 2; // For vec2 offset
+    VkPushConstantRange mainPC = {};
+    mainPC.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    mainPC.offset = 0;
+    mainPC.size = sizeof(MainPushConstants);
 
-    std::vector<VkPushConstantRange> pushConstantRanges = {vkPushConstantRange};
+
+    std::vector<VkPushConstantRange> pushConstantRanges = {mainPC};
 
     VkPipelineLayoutCreateInfo mainPipelineLayoutInfo = {};
     mainPipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -1395,7 +1389,7 @@ void Renderer::createUniformBuffer() {
     vkMapMemory(device_, uniformBufferMemory_, 0, bufferSize, 0, &uniformBuffersData);
 }
 
-void Renderer::updateUniformBuffer(float deltaTime) {
+void Renderer::updateUniformBuffer() {
 
 
     //UniformBufferObject ubo{};
@@ -1422,6 +1416,7 @@ void Renderer::initAliens() {
             aliens_[idx].x = startX + x * dx;
             aliens_[idx].y = startY - y * dy;
             aliens_[idx].active = true;
+            aliens_[idx].life = 3;
         }
     }
 }
@@ -1900,35 +1895,46 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
 
 
     // --- Draw ship
-    float shipPos[2] = {shipX_, ship_.y};
+//    float shipPos[2] = {shipX_, ship_.y};
+    float flashAmount = {0.0f};
+
+    shipPC_.pos = {shipX_, ship_.y};
+    shipPC_.shakeOffset = shakeOffset;
+
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineLayout_, 0, 1,
                             &shipDescriptorSet_, 0, nullptr);
-    vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(shipPos),
-                       &shipPos);
+    vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(MainPushConstants),
+                       &shipPC_);
+
     vkCmdBindVertexBuffers(cmd, 0, 1, &shipVertexBuffer_, offsets);
     vkCmdDraw(cmd, 6, 1, 0, 0);
 
     // --- Draw bullets (for each active bullet, updateExplosionParticles buffer and draw)
     for (int i = 0; i < MAX_BULLETS; ++i) {
         if (!bullets_[i].active) continue;
-        float bulletPos[2] = {bullets_[i].x, -bullets_[i].y};
+//        float bulletPos[2] = {bullets_[i].x, -bullets_[i].y};
+
+        bulletPC_[i].pos = {bullets_[i].x, -bullets_[i].y};
+        bulletPC_[i].shakeOffset = shakeOffset;
+
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineLayout_, 0, 1,
                                 &shipBulletDescriptorSet_, 0, nullptr);
         vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
-                           sizeof(bulletPos), bulletPos);
+                           sizeof(MainPushConstants), &bulletPC_[i]);
         vkCmdBindVertexBuffers(cmd, 0, 1, &bulletVertexBuffer_, offsets);
         vkCmdDraw(cmd, 6, 1, 0, 0);
     }
 
-
     for (int i = 0; i < MAX_ALIENS; ++i) {
         if (!aliens_[i].active) continue;
-        float offset[2] = {aliens_[i].x, -aliens_[i].y};
+        alienPC_[i].pos = {aliens_[i].x, -aliens_[i].y};
+        alienPC_[i].shakeOffset = shakeOffset;
+
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineLayout_, 0, 1,
                                 &alienDescriptorSet_, 0, nullptr);
         vkCmdBindVertexBuffers(cmd, 0, 1, &alienVertexBuffer_, offsets);
-        vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(offset),
-                           offset);
+        vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(MainPushConstants),
+                           &alienPC_[i]);
         vkCmdDraw(cmd, 6, 1, 0, 0);
 
     }
@@ -2021,7 +2027,7 @@ void Renderer::updateShipBuffer() {
     ship_.color[0] = shipX_;
 }
 
-void Renderer::updateBullet(float deltaTime) {
+void Renderer::updateBullet() {
     for (int i = 0; i < MAX_BULLETS; ++i) {
         if (bullets_[i].active) {
             bullets_[i].y += bulletMoveSpeed_ * deltaTime; // Move up
@@ -2032,10 +2038,15 @@ void Renderer::updateBullet(float deltaTime) {
 
 }
 
-void Renderer::updateAliens(float deltaTime) {
+void Renderer::updateAliens() {
     bool hitEdge = false;
     for (int i = 0; i < MAX_ALIENS; ++i) {
         if (!aliens_[i].active) continue;
+
+        // update flash amount (fade in/out) smoothly
+        alienPC_[i].flashAmount -= deltaTime * 5.0f; // fade speed (0.2s)
+        if (alienPC_[i].flashAmount < 0.0f) alienPC_[i].flashAmount = 0.0f;
+
         // Clamp X position just inside the edge
         if (aliens_[i].x > 0.85f) aliens_[i].x = 0.85f;
         if (aliens_[i].x < -0.85f) aliens_[i].x = -0.85f;
@@ -2057,26 +2068,32 @@ void Renderer::updateAliens(float deltaTime) {
 }
 
 
-uint i = 0;
+uint x = 0;
 
 void Renderer::updateCollision() {
     for (auto &bullet: bullets_) {
         if (!bullet.active) continue;
 
-        for (auto &alien: aliens_) {
-            if (!alien.active) continue;
+        for (int i=0; i<MAX_ALIENS; i++) {
+            if (!aliens_[i].active) continue;
 
-            if (isCollision(alien, bullet)) {
-                alien.active = false;    // Destroy alien
+            if (isCollision(aliens_[i], bullet)) {
                 bullet.active = false;   // Destroy bullet
-                actualScore += 100;
-                alienMoveSpeed_ += 0.005f;
+                aliens_[i].life--;
+                // On hit:
+                alienPC_[i].flashAmount = 1.0f;
+                particleSystem_->spawn(glm::vec3(aliens_[i].x, -aliens_[i].y, 1.0f), 15);
+                if(aliens_[i].life<=0) {
+                    aliens_[i].active = false;    // Destroy alien
+                    actualScore += 100;
+                    alienMoveSpeed_ += 0.005f;
+                    particleSystem_->spawn(glm::vec3(aliens_[i].x, -aliens_[i].y, 1.0f), 60);
+                    sfxMixer.playSFX(explosionSFXMap[x].data(), explosionSFXMap[x].size(), 0.3f);
+                    x++;
+                    x == explosionSFXMap.size() ? x = 0 : x;
+                    shakeTimer = 0.2f;
+                }
 
-                particleSystem_->spawn(glm::vec3(alien.x, -alien.y, 1.0f), 15);
-
-                sfxMixer.playSFX(explosionSFXMap[i].data(), explosionSFXMap[i].size(), 0.3f);
-                i++;
-                i == explosionSFXMap.size() ? i = 0 : i;
 
 
                 // Optionally: score++, play sound, create explosion, etc.
@@ -2120,7 +2137,7 @@ void Renderer::updateGameState() {
 }
 
 
-void Renderer::animateScore(float deltaTime) {
+void Renderer::animateScore() {
     int newScore = actualScore; // (set by your gameplay logic elsewhere)
     int prevDisplay = static_cast<int>(displayedScore_);
 
@@ -2175,30 +2192,41 @@ void Renderer::animateScore(float deltaTime) {
     }
 }
 
+void Renderer::computeDeltaTime() {
+    auto now = Clock::now();
+    float actualDeltaTime = std::chrono::duration<float>(now - lastFrameTime).count();
+    actualDeltaTime = std::min(actualDeltaTime, 0.0167f);
+    lastFrameTime = now;
+    deltaTime = actualDeltaTime;
+}
 
 void Renderer::drawFrame() {
+    computeDeltaTime();
     uint32_t imageIndex;
     vkAcquireNextImageKHR(device_, swapchain_, UINT64_MAX, imageAvailableSemaphore_, VK_NULL_HANDLE,
                           &imageIndex);
-
-    auto now = Clock::now();
-    float deltaTime = std::chrono::duration<float>(now - lastFrameTime).count();
-    lastFrameTime = now;
-
     if (gameState == GameState::Playing) {
-        deltaTime = std::min(deltaTime, 0.0167f);
-        updateUniformBuffer(deltaTime);
+
+        updateUniformBuffer();
         updateShipBuffer();
 
-        updateAliens(deltaTime);
+        updateAliens();
         updateCollision();
-        animateScore(deltaTime);
+        animateScore();
         updateGameState();
     }
-    updateBullet(deltaTime);
+
+    updateBullet();
     particleSystem_->updateStarField(deltaTime, starInstanceBufferMemory_);
     particleSystem_->updateExplosionParticles(deltaTime, particlesInstanceBufferMemory_);
 
+// Each frame:
+    shakeOffset = {0.0f,0.0f};
+    if (shakeTimer > 0.0f) {
+        shakeOffset.x = (rand() / (float)RAND_MAX - 0.5f) * 2.0f * shakeMagnitude;
+        shakeOffset.y = (rand() / (float)RAND_MAX - 0.5f) * 2.0f * shakeMagnitude;
+        shakeTimer -= deltaTime;
+    }
 
     recordCommandBuffer(imageIndex);
 

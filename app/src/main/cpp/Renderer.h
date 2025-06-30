@@ -5,6 +5,14 @@
 #include <memory>
 #include <string>
 
+static constexpr int NUM_ALIENS_X = 8;
+static constexpr int NUM_ALIENS_Y = 3;
+static constexpr int MAX_ALIENS = NUM_ALIENS_X * NUM_ALIENS_Y;
+constexpr int SFX_SAMPLE_RATE = 44100;
+constexpr int SFX_CHANNELS = 1;
+
+static constexpr int MAX_BULLETS = 32;
+
 
 class Renderer {
 public:
@@ -15,6 +23,14 @@ public:
     void spawnBullet();
     float shipX_ = 0.0f;
     float shipY_ = 0.0f;
+    MainPushConstants shipPC_ = {};
+    MainPushConstants bulletPC_[MAX_BULLETS] = {};
+    MainPushConstants alienPC_[MAX_ALIENS] = {};
+    float deltaTime;
+    // In your renderer, have a shake timer and amplitude:
+    float shakeTimer = 0.0f;   // seconds remaining
+    float shakeMagnitude = 0.025f; // NDC units (tune as desired)
+    glm::vec2 shakeOffset{0.0f};
 
     GameState gameState;
 
@@ -172,9 +188,9 @@ private:
 
     void recordCommandBuffer(uint32_t imageIndex);
     void initVulkan();
-    void updateBullet(float deltaTime);
-    void updateAliens(float deltaTime);
-    void updateUniformBuffer(float deltaTime);
+    void updateBullet();
+    void updateAliens();
+    void updateUniformBuffer();
 
     void updateCollision();
 
@@ -210,7 +226,7 @@ private:
     void loadText();
     void loadGameObjects();
 
-    void animateScore(float deltaTime);
+    void animateScore();
 
     void createInstance();
 
@@ -225,5 +241,7 @@ private:
     void createParticleDescriptor(GraphicsPipelineData &graphicsPipelineData);
 
     void createDescriptorSetLayout();
+    void computeShakerTimer();
 
+    void computeDeltaTime();
 };

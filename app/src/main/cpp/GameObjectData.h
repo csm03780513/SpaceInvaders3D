@@ -6,6 +6,7 @@
 #define SPACEINVADERS3D_GAMEOBJECTDATA_H
 
 #define VK_USE_PLATFORM_ANDROID_KHR
+
 #include <android_native_app_glue.h>
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_android.h>
@@ -19,9 +20,12 @@
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #define GLM_FORCE_DEFAULT_ALIGNED_GENTYPES
+
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+
 #define GLM_ENABLE_EXPERIMENTAL
+
 #include <glm/gtx/hash.hpp>
 #include <glm/glm.hpp>
 #include <android/log.h>
@@ -59,7 +63,15 @@ struct Ship {
 struct Alien {
     float x, y;
     bool active;
+    uint life{3};
 };
+
+struct MainPushConstants {
+    glm::vec2 pos{0.0f, 0.0f};
+    glm::vec2 shakeOffset{0.0f, 0.0f};
+    float flashAmount {0.0f};
+};
+
 
 struct GraphicsPipelineData {
     VkPipeline pipeline{VK_NULL_HANDLE};
@@ -108,19 +120,19 @@ enum class GraphicsPipelineType {
 
 
 static const Vertex particleVerts[4] = {
-        {{-0.5f,-0.5f, 0.0f},{1.0f,1.0f,0.0f},{0.0f, 0.0f}},
-        {{0.5f,-0.5f, 0.0f},{1.0f,1.0f,0.0f},{1.0f, 0.0f}},
-        {{0.5f,0.5f,  0.0f},{1.0f,0.5f,0.0f},{1.0f, 1.0f}},
-        {{-0.5f,0.5f, 0.0f},{0.0f,1.0f,0.0f},{0.0f, 1.0f}}
+        {{-0.5f, -0.5f, 0.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
+        {{0.5f,  -0.5f, 0.0f}, {1.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
+        {{0.5f,  0.5f,  0.0f}, {1.0f, 0.5f, 0.0f}, {1.0f, 1.0f}},
+        {{-0.5f, 0.5f,  0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 1.0f}}
 };
 
 // Quad for background stars.  Z is 0 so stars remain within the clip space
 // when scaled and offset in the vertex shader.
 static const Vertex starVerts[4] = {
-        {{-0.5f,-0.5f, 0.0f},{1.0f,1.0f,0.0f},{0.0f, 0.0f}},
-        {{0.5f,-0.5f, 0.0f},{1.0f,1.0f,0.0f},{1.0f, 0.0f}},
-        {{0.5f,0.5f,  0.0f},{1.0f,0.5f,0.0f},{1.0f, 1.0f}},
-        {{-0.5f,0.5f, 0.0f},{0.0f,1.0f,0.0f},{0.0f, 1.0f}}
+        {{-0.5f, -0.5f, 0.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
+        {{0.5f,  -0.5f, 0.0f}, {1.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
+        {{0.5f,  0.5f,  0.0f}, {1.0f, 0.5f, 0.0f}, {1.0f, 1.0f}},
+        {{-0.5f, 0.5f,  0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 1.0f}}
 };
 
 static const uint16_t particlesIndices[6] = {0, 1, 2, 2, 3, 0};
