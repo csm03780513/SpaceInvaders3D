@@ -86,13 +86,14 @@ void PowerUpManager::updatePowerUpExpiry() {
 void PowerUpManager::checkIfPowerUpCollected(Ship ship) {
     for (auto& p : powerUps_) {
         if (!p.active) continue;
-        // Rectangle bounds for ship
-        float shipHalfW = ship.size * 0.5f;   // or whatever your ship uses
-        float shipHalfH = ship.size * 0.5f;   // use separate var if ship is not square
+        // Rectangle bounds for ship. Adjust these if the actual ship geometry
+        // differs from Ship::size.
+        float shipHalfW = ship.size * 0.5f;
+        float shipHalfH = ship.size * 0.5f;
 
-// Rectangle bounds for powerup (from your quadVerts)
-        float puHalfW = 0.07f;
-        float puHalfH = 0.045f;
+        // Rectangle bounds for powerup based on its defined size
+        float puHalfW = p.size * 0.5f;
+        float puHalfH = p.size * 0.5f;
 
         if (fabs(ship.x - p.pos.x) < (shipHalfW + puHalfW) &&
             fabs(ship.y - p.pos.y) < (shipHalfH + puHalfH)) {
