@@ -37,8 +37,8 @@ void PowerUpManager::recordCommandBuffer(VkCommandBuffer cmd, VkPipelineLayout p
                                          glm::vec2 shakeOffset) {
 
     for (auto powerUp:powerUps_) {
-        MainPushConstants pushConstants ={};
-        pushConstants.pos = {powerUp.pos.x, powerUp.pos.y};
+        MainPushConstants pushConstants = {};
+        pushConstants.pos = {powerUp.pos.x, -powerUp.pos.y};
         pushConstants.shakeOffset = shakeOffset;
 
         VkDeviceSize offsets[] = {0};
