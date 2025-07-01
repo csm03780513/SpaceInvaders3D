@@ -32,13 +32,13 @@ void ParticleSystem::spawn(const glm::vec3 &pos, int count) {
 }
 
 
-void ParticleSystem::render(VkCommandBuffer cmd,
-                            VkPipelineLayout pipelineLayout,
-                            VkPipeline pipeline,
-                            VkBuffer vertexBuffer,
-                            VkBuffer indexBuffer,
-                            VkBuffer instanceBuffer,
-                            GraphicsPipelineType graphicsPipelineType) {
+void ParticleSystem::recordCommandBuffer(VkCommandBuffer cmd,
+                                         VkPipelineLayout pipelineLayout,
+                                         VkPipeline pipeline,
+                                         VkBuffer vertexBuffer,
+                                         VkBuffer indexBuffer,
+                                         VkBuffer instanceBuffer,
+                                         GraphicsPipelineType graphicsPipelineType) {
     if(graphicsPipelineType == GraphicsPipelineType::ExplosionParticles) {
         if (liveParticles.empty()) return;
 
@@ -67,15 +67,15 @@ void ParticleSystem::render(VkCommandBuffer cmd,
 
 }
 
-void ParticleSystem::updateExplosionParticles(float deltaTime, VkDeviceMemory particlesInstanceBufferMemory) {
+void ParticleSystem::updateExplosionParticles(VkDeviceMemory particlesInstanceBufferMemory) {
     liveParticles.clear();
     for (int i = 0; i < MAX_PARTICLES; ++i) {
         ParticleInstance &p = particles[i];
         if (!p.active) continue;
-        p.velocity += p.acceleration * deltaTime;
-        p.position += p.velocity * deltaTime;
+        p.velocity += p.acceleration * Time::deltaTime;
+        p.position += p.velocity * Time::deltaTime;
         p.center = p.position;
-        p.life -= deltaTime;
+        p.life -= Time::deltaTime;
         liveParticles.push_back(p);
         p.color.a = glm::clamp(p.life / p.maxLife, 0.0f, 1.0f); // Fade out
         if (p.life <= 0) p.active = false;
@@ -91,9 +91,9 @@ void ParticleSystem::updateExplosionParticles(float deltaTime, VkDeviceMemory pa
 
 }
 
-void ParticleSystem::updateStarField(float deltaTime, VkDeviceMemory starInstanceBufferMemory) {
+void ParticleSystem::updateStarField(VkDeviceMemory starInstanceBufferMemory) {
     for (auto& star : starInstances) {
-        star.position.y += star.speed * deltaTime;
+        star.position.y += star.speed * Time::deltaTime;
         if (star.position.y > 1.1f) { // Slightly below bottom, wrap to top
             star.position.y = -1.1f;
             // Optionally randomize X/speed/size/brightness for more variation

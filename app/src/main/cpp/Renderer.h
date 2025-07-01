@@ -4,6 +4,8 @@
 #include "ParticleSystem.h"
 #include <memory>
 #include <string>
+#include "Time.h"
+#include "PowerUpManager.h"
 
 static constexpr int NUM_ALIENS_X = 8;
 static constexpr int NUM_ALIENS_Y = 3;
@@ -16,17 +18,21 @@ static constexpr int MAX_BULLETS = 32;
 
 class Renderer {
 public:
-    Renderer(android_app* app);
+    Renderer(android_app *app);
+
     ~Renderer();
+
     void drawFrame();
-    void updateShipBuffer();
-    void spawnBullet();
+
+    void updateShipBuffer() const;
+
+    void spawnBullet() const;
+
     float shipX_ = 0.0f;
     float shipY_ = 0.0f;
     MainPushConstants shipPC_ = {};
     MainPushConstants bulletPC_[MAX_BULLETS] = {};
     MainPushConstants alienPC_[MAX_ALIENS] = {};
-    float deltaTime;
     // In your renderer, have a shake timer and amplitude:
     float shakeTimer = 0.0f;   // seconds remaining
     float shakeMagnitude = 0.025f; // NDC units (tune as desired)
@@ -36,15 +42,18 @@ public:
 
 
     void restartGame();
+
     void stopAudioPlayer();
+
     void resumeAudioPlayer();
 
 private:
     std::unique_ptr<FontManager> fontManager_;
     std::unique_ptr<ParticleSystem> particleSystem_;
+    std::unique_ptr<PowerUpManager> powerUpManager_;
     UniformBufferObject ubo_;
-    android_app* app_;
-    AAssetManager* assetManager_; // assetmgr
+    android_app *app_;
+    AAssetManager *assetManager_; // assetmgr
     VkInstance instance_{VK_NULL_HANDLE};
     VkSurfaceKHR surface_{VK_NULL_HANDLE};
     VkPhysicalDevice physicalDevice_{VK_NULL_HANDLE};
@@ -75,7 +84,6 @@ private:
     VkPipeline overlayPipeline_{VK_NULL_HANDLE};
 
 
-
     VkDescriptorPool overlayDescriptorPool_ = {VK_NULL_HANDLE};
     VkDescriptorSet overlayDescriptorSet_{VK_NULL_HANDLE};
 
@@ -103,7 +111,7 @@ private:
     VkBuffer alienVertexBuffer_{VK_NULL_HANDLE};
     VkDeviceMemory alienVertexBufferMemory_{VK_NULL_HANDLE};
 
-    void* uniformBuffersData{nullptr};
+    void *uniformBuffersData{nullptr};
 
     VkImage overlayImage_{VK_NULL_HANDLE};
     VkDeviceMemory overlayImageDeviceMemory_{VK_NULL_HANDLE};
@@ -187,23 +195,30 @@ private:
     VkPipeline starParticlesPipeline_{VK_NULL_HANDLE};
 
     void recordCommandBuffer(uint32_t imageIndex);
+
     void initVulkan();
-    void updateBullet();
+
+    static void updateBullet();
+
     void updateAliens();
+
     void updateUniformBuffer();
 
     void updateCollision();
 
     void updateGameState();
 
-    void createPipeline(GraphicsPipelineData &graphicsPipelineData, GraphicsPipelineType graphicsPipelineType);
+    void createPipeline(GraphicsPipelineData &graphicsPipelineData,
+                        GraphicsPipelineType graphicsPipelineType);
 
     void createPipelineLayout(VkPipelineLayoutCreateInfo &pipelineLayoutInfo,
                               GraphicsPipelineData &graphicsPipelineData);
 
-    void createDescriptorSetLayout(VkDescriptorSetLayoutCreateInfo info, VkDescriptorSetLayout &layout);
+    void
+    createDescriptorSetLayout(VkDescriptorSetLayoutCreateInfo info, VkDescriptorSetLayout &layout);
 
     void createMainGraphicsPipeline();
+
     void initAliens();
 
 
@@ -211,7 +226,8 @@ private:
 
     void createImageOverlayDescriptor(GraphicsPipelineData &graphicsPipelineData);
 
-    void loadTexture(const char *filename, VkImage &vkImage, VkDeviceMemory &vkDeviceMemory, VkImageView &imageView, VkSampler &vkSampler,GameTextureType gameTextureType);
+    void loadTexture(const char *filename, VkImage &vkImage, VkDeviceMemory &vkDeviceMemory,
+                     VkImageView &imageView, VkSampler &vkSampler, GameTextureType gameTextureType);
 
     void createOverlayGraphicsPipeline();
 
@@ -224,6 +240,7 @@ private:
     void createFontDescriptor(GraphicsPipelineData &graphicsPipelineData);
 
     void loadText();
+
     void loadGameObjects();
 
     void animateScore();
@@ -234,14 +251,8 @@ private:
 
     void getPhysicalDevice();
 
-    void updateParticleInstances(const std::vector<ParticleInstance> &particles);
+    void
+    createParticlesGraphicsPipeline(VkPipeline pipeline, GraphicsPipelineType graphicsPipelineType);
 
-    void createParticlesGraphicsPipeline(VkPipeline pipeline,GraphicsPipelineType graphicsPipelineType);
 
-    void createParticleDescriptor(GraphicsPipelineData &graphicsPipelineData);
-
-    void createDescriptorSetLayout();
-    void computeShakerTimer();
-
-    void computeDeltaTime();
 };

@@ -43,11 +43,6 @@ float alienMoveSpeed_ = 0.3f;
 float bulletMoveSpeed_ = 2.0f;
 int alienDirection_ = 1; // 1 = right, -1 = left
 
-const float ALIEN_SIZE = 0.1f;   // world units, adjust as needed
-const float BULLET_SIZE = 0.05f; // world units, adjust as needed
-
-using Clock = std::chrono::high_resolution_clock;
-auto lastFrameTime = Clock::now();
 
 std::vector<char> loadShaderAsset(AAssetManager *mgr, const char *filename);
 
@@ -104,7 +99,6 @@ std::vector<float>
 decodeMP3(const std::vector<uint8_t> &mp3Bytes, int &outChannels, int &outSampleRate);
 
 std::vector<uint8_t> loadMusicAssetToMemory(AAssetManager *mgr, const char *filename);
-void computeDeltaTime();
 
 VkResult CreateDebugUtilsMessengerEXT(VkInstance instance,
                                       const VkDebugUtilsMessengerCreateInfoEXT *pCreateInfo,
@@ -143,8 +137,8 @@ VkShaderModule createShaderModule(VkDevice device, const std::vector<char> &code
 }
 
 inline bool isCollision(const Alien &alien, const Bullet &bullet) {
-    float halfAlien = ALIEN_SIZE * 0.5f;
-    float halfBullet = BULLET_SIZE * 0.5f;
+    float halfAlien = alien.size * 0.5f;
+    float halfBullet = bullet.size * 0.5f;
 
     return std::abs(alien.x - bullet.x) < (halfAlien + halfBullet) &&
            std::abs(alien.y - bullet.y) < (halfAlien + halfBullet);
@@ -573,8 +567,10 @@ std::unordered_map<uint, std::vector<float>> explosionSFXMap;
 Renderer::Renderer(android_app *app) : app_(app) {
     assetManager_ = app_->activity->assetManager;
     fontManager_ = std::make_unique<FontManager>();
+    powerUpManager_ = std::make_unique<PowerUpManager>();
     initVulkan();
     particleSystem_ = std::make_unique<ParticleSystem>(device_);
+
     // 1. Load file from assets
     std::vector<uint8_t> shootSFX = loadMusicAssetToMemory(assetManager_, "shoot.wav");
     std::vector<uint8_t> bgMusicBytes = loadMusicAssetToMemory(assetManager_, "space-invaders.mp3");
@@ -803,14 +799,16 @@ void Renderer::createMainDescriptor(GraphicsPipelineData &graphicsPipelineData) 
     layoutInfo.pBindings = bindings.data();
 
 
-    //setLayouts for ship and alien
+    //setLayouts for ship,alien,shipBullet,powerUp
     createDescriptorSetLayout(layoutInfo, shipDescriptorSetLayout_);
     createDescriptorSetLayout(layoutInfo, alienDescriptorSetLayout_);
     createDescriptorSetLayout(layoutInfo, shipBulletDescriptorSetLayout_);
+    createDescriptorSetLayout(layoutInfo, powerUpManager_->doubleShotDescriptorSetLayout);
 
     std::vector<VkDescriptorSetLayout> descriptorSetLayouts = {shipDescriptorSetLayout_,
                                                                alienDescriptorSetLayout_,
-                                                               shipBulletDescriptorSetLayout_};
+                                                               shipBulletDescriptorSetLayout_,
+                                                               powerUpManager_->doubleShotDescriptorSetLayout};
 
     VkPushConstantRange mainPC = {};
     mainPC.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
@@ -831,7 +829,7 @@ void Renderer::createMainDescriptor(GraphicsPipelineData &graphicsPipelineData) 
     LOGE("main pipelineLayout gd: %llu", graphicsPipelineData.pipelineLayout);
 
     std::vector<VkDescriptorSet> descriptorSets{shipDescriptorSet_, alienDescriptorSet_,
-                                                shipBulletDescriptorSet_};
+                                                shipBulletDescriptorSet_,powerUpManager_->doubleShotDescriptorSet};
 
     VkDescriptorPoolSize uboPoolSize = {};
     uboPoolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -875,6 +873,7 @@ void Renderer::createMainDescriptor(GraphicsPipelineData &graphicsPipelineData) 
     shipDescriptorSet_ = descriptorSets[0];
     alienDescriptorSet_ = descriptorSets[1];
     shipBulletDescriptorSet_ = descriptorSets[2];
+    powerUpManager_->doubleShotDescriptorSet = descriptorSets[3];
 
     LOGE("Descriptor set created");
     VkDescriptorBufferInfo bufferInfo = {};
@@ -952,75 +951,32 @@ void Renderer::createMainDescriptor(GraphicsPipelineData &graphicsPipelineData) 
     alienSamplerDescriptorWrite.pImageInfo = &alienImageInfo;
 
 
+    VkDescriptorImageInfo doubleShotImageInfo = {};
+    doubleShotImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    doubleShotImageInfo.imageView = shipImageView_;
+    doubleShotImageInfo.sampler = shipSampler_;
+
+    VkWriteDescriptorSet doubleShotSamplerDescriptorWrite = {};
+    doubleShotSamplerDescriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    doubleShotSamplerDescriptorWrite.dstSet = powerUpManager_->doubleShotDescriptorSet;
+    doubleShotSamplerDescriptorWrite.dstBinding = 1;
+    doubleShotSamplerDescriptorWrite.dstArrayElement = 0;
+    doubleShotSamplerDescriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    doubleShotSamplerDescriptorWrite.descriptorCount = 1;
+    doubleShotSamplerDescriptorWrite.pImageInfo = &doubleShotImageInfo;
+
+
     std::vector<VkWriteDescriptorSet> writeDescriptorSets = {shipBulletsSamplerDescriptorWrite,
                                                              shipBulletBufferDescriptorWrite,
                                                              shipBufferDescriptorWrite,
                                                              shipSamplerDescriptorWrite,
                                                              alienBufferDescriptorWrite,
-                                                             alienSamplerDescriptorWrite};
+                                                             alienSamplerDescriptorWrite,
+                                                             doubleShotSamplerDescriptorWrite};
 
 
     vkUpdateDescriptorSets(device_, writeDescriptorSets.size(), writeDescriptorSets.data(), 0,
                            nullptr);
-}
-
-void Renderer::createParticleDescriptor(GraphicsPipelineData &graphicsPipelineData) {
-
-    VkDescriptorPoolSize vkDescriptorPoolSize = {};
-    vkDescriptorPoolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    vkDescriptorPoolSize.descriptorCount = 1;
-
-    VkDescriptorPoolCreateInfo particlesDescriptorPoolInfo = {};
-    particlesDescriptorPoolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    particlesDescriptorPoolInfo.maxSets = 1;
-    particlesDescriptorPoolInfo.poolSizeCount = 1;
-    particlesDescriptorPoolInfo.pPoolSizes = &vkDescriptorPoolSize;
-
-    VkResult res1 = vkCreateDescriptorPool(device_, &particlesDescriptorPoolInfo, nullptr,
-                                           &particlesDescriptorPool_);
-    if (res1 != VK_SUCCESS) {
-        LOGE("Failed to create overlay descriptor pool at: %d", res1);
-        throw std::runtime_error("Failed to create overlay descriptor pool");
-    }
-
-    VkPushConstantRange particlesPushConstantRange = {};
-    particlesPushConstantRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-    particlesPushConstantRange.offset = 0;
-    particlesPushConstantRange.size = sizeof(float) * 4; // For vec4 offset
-
-    VkPipelineLayoutCreateInfo particlesPipelineLayoutInfo = {};
-    particlesPipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    particlesPipelineLayoutInfo.setLayoutCount = 1;
-    particlesPipelineLayoutInfo.pSetLayouts = &particlesDescriptorSetLayout_;
-    particlesPipelineLayoutInfo.pushConstantRangeCount = 1;
-    particlesPipelineLayoutInfo.pPushConstantRanges = &particlesPushConstantRange;
-
-    createPipelineLayout(particlesPipelineLayoutInfo, graphicsPipelineData);
-
-    VkDescriptorSetAllocateInfo allocInfo = {};
-    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    allocInfo.descriptorPool = overlayDescriptorPool_;
-    allocInfo.descriptorSetCount = 1;
-    allocInfo.pSetLayouts = &particlesDescriptorSetLayout_;
-
-
-    vkAllocateDescriptorSets(device_, &allocInfo, &particlesDescriptorSet_);
-
-    VkDescriptorImageInfo imageInfo = {};
-    imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    imageInfo.imageView = overlayImageView_;
-    imageInfo.sampler = overlaySampler_;
-
-    VkWriteDescriptorSet descriptorWrite = {};
-    descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptorWrite.dstSet = particlesDescriptorSet_;
-    descriptorWrite.dstBinding = 0;
-    descriptorWrite.dstArrayElement = 0;
-    descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    descriptorWrite.descriptorCount = 1;
-    descriptorWrite.pImageInfo = &imageInfo;
-
-    vkUpdateDescriptorSets(device_, 1, &descriptorWrite, 0, nullptr);
 }
 
 VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
@@ -1303,8 +1259,8 @@ void Renderer::initVulkan() {// Load Vulkan functions using volk
     renderPassInfo.pSubpasses = &subpass;
 
     if (vkCreateRenderPass(device_, &renderPassInfo, nullptr, &renderPass_) != VK_SUCCESS) {
-        LOGE("Failed to create render pass");
-        throw std::runtime_error("Failed to create render pass");
+        LOGE("Failed to create recordCommandBuffer pass");
+        throw std::runtime_error("Failed to create recordCommandBuffer pass");
     }
 
     framebuffers_.resize(swapchainImageViews_.size());
@@ -1348,7 +1304,7 @@ void Renderer::initVulkan() {// Load Vulkan functions using volk
         LOGE("Failed to allocate command buffers");
         throw std::runtime_error("Failed to allocate command buffers");
     }
-
+    powerUpManager_->device = device_;
     loadAllTextures();
     loadText();
     loadGameObjects();
@@ -1874,13 +1830,13 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
 
     vkCmdBeginRenderPass(cmd, &renderBeginPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-    particleSystem_->render(cmd,
-                            particlesPipelineLayout_,
-                            starParticlesPipeline_,
-                            starVertsBuffer_,
-                            starIndexBuffer_,
-                            starInstanceBuffer_,
-                            GraphicsPipelineType::StarParticles);
+    particleSystem_->recordCommandBuffer(cmd,
+                                         particlesPipelineLayout_,
+                                         starParticlesPipeline_,
+                                         starVertsBuffer_,
+                                         starIndexBuffer_,
+                                         starInstanceBuffer_,
+                                         GraphicsPipelineType::StarParticles);
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipeline_);
     VkDeviceSize offsets[] = {0};
@@ -1893,7 +1849,7 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
 //    vkCmdDraw(cmd, 3, 1, 0, 0);
 
 
-
+         powerUpManager_->recordCommandBuffer(cmd,mainPipelineLayout_,mainPipeline_,shakeOffset);
     // --- Draw ship
 //    float shipPos[2] = {shipX_, ship_.y};
     float flashAmount = {0.0f};
@@ -1973,13 +1929,13 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
     }
 
 
-    particleSystem_->render(cmd,
-                            particlesPipelineLayout_,
-                            explosionParticlesPipeline_,
-                            particlesVertexBuffer_,
-                            particlesIndexBuffer_,
-                            particlesInstanceBuffer_,
-                            GraphicsPipelineType::ExplosionParticles);
+    particleSystem_->recordCommandBuffer(cmd,
+                                         particlesPipelineLayout_,
+                                         explosionParticlesPipeline_,
+                                         particlesVertexBuffer_,
+                                         particlesIndexBuffer_,
+                                         particlesInstanceBuffer_,
+                                         GraphicsPipelineType::ExplosionParticles);
 
     vkCmdEndRenderPass(cmd);
     vkEndCommandBuffer(cmd);
@@ -1999,29 +1955,45 @@ void Renderer::restartGame() {
     // Reset score, level, etc.
 
     // ---- FIX: Reset frame timer ----
-    lastFrameTime = Clock::now();
+//    lastFrameTime = Clock::now();
 
     gameState = GameState::Playing;
 }
-
-void Renderer::spawnBullet() {
+void Renderer::spawnBullet() const {
     if (gameState == GameState::Playing) {
+        int spawned = 0;
+        bool doubleShot = powerUpManager_->doubleShotActive;
         for (int i = 0; i < MAX_BULLETS; ++i) {
             if (!bullets_[i].active) {
-//                player.play();
-                sfxMixer.playSFX(shootSFXSample.data(), shootSFXSample.size(), 0.05f);
-
-                // Spawn at ship position (x, just above ship)
-                bullets_[i].x = shipX_;
-                bullets_[i].y = -0.8f; // Start just above ship
-                bullets_[i].active = true;
-                break;
+                if (doubleShot && spawned == 0) {
+                    // Left bullet
+                    bullets_[i].x = shipX_ - 0.05f;
+                    bullets_[i].y = -0.8f;
+                    bullets_[i].active = true;
+                    sfxMixer.playSFX(shootSFXSample.data(), shootSFXSample.size(), 0.05f);
+                    spawned++;
+                } else if (doubleShot && spawned == 1) {
+                    // Right bullet
+                    bullets_[i].x = shipX_ + 0.05f;
+                    bullets_[i].y = -0.8f;
+                    bullets_[i].active = true;
+                    sfxMixer.playSFX(shootSFXSample.data(), shootSFXSample.size(), 0.05f);
+                    spawned++;
+                    break; // Spawned both bullets
+                } else if (!doubleShot) {
+                    // Normal shot: center
+                    bullets_[i].x = shipX_;
+                    bullets_[i].y = -0.8f;
+                    bullets_[i].active = true;
+                    sfxMixer.playSFX(shootSFXSample.data(), shootSFXSample.size(), 0.05f);
+                    break;
+                }
             }
         }
     }
 }
 
-void Renderer::updateShipBuffer() {
+void Renderer::updateShipBuffer() const {
     ship_.x = shipX_;
     //ship_.y = shipY_;
     ship_.color[0] = shipX_;
@@ -2030,7 +2002,7 @@ void Renderer::updateShipBuffer() {
 void Renderer::updateBullet() {
     for (int i = 0; i < MAX_BULLETS; ++i) {
         if (bullets_[i].active) {
-            bullets_[i].y += bulletMoveSpeed_ * deltaTime; // Move up
+            bullets_[i].y += bulletMoveSpeed_ * Time::deltaTime; // Move up
             if (bullets_[i].y > 1.0f)
                 bullets_[i].active = false; // Off screen
         }
@@ -2044,14 +2016,14 @@ void Renderer::updateAliens() {
         if (!aliens_[i].active) continue;
 
         // update flash amount (fade in/out) smoothly
-        alienPC_[i].flashAmount -= deltaTime * 5.0f; // fade speed (0.2s)
+        alienPC_[i].flashAmount -= Time::deltaTime * 5.0f; // fade speed (0.2s)
         if (alienPC_[i].flashAmount < 0.0f) alienPC_[i].flashAmount = 0.0f;
 
         // Clamp X position just inside the edge
         if (aliens_[i].x > 0.85f) aliens_[i].x = 0.85f;
         if (aliens_[i].x < -0.85f) aliens_[i].x = -0.85f;
 
-        aliens_[i].x += alienMoveSpeed_ * alienDirection_ * deltaTime;
+        aliens_[i].x += alienMoveSpeed_ * alienDirection_ * Time::deltaTime;
 
         // Check if any alien hits the left or right edge
         if (aliens_[i].x > 0.85f || aliens_[i].x < -0.85f)
@@ -2082,7 +2054,8 @@ void Renderer::updateCollision() {
                 aliens_[i].life--;
                 // On hit:
                 alienPC_[i].flashAmount = 1.0f;
-                particleSystem_->spawn(glm::vec3(aliens_[i].x, -aliens_[i].y, 1.0f), 15);
+                particleSystem_->spawn(glm::vec3(aliens_[i].x, -aliens_[i].y, 0.0f), 15);
+                powerUpManager_->spawnPowerUp(PowerUpType::DoubleShot, {aliens_[i].x, aliens_[i].y});
                 if(aliens_[i].life<=0) {
                     aliens_[i].active = false;    // Destroy alien
                     actualScore += 100;
@@ -2144,7 +2117,7 @@ void Renderer::animateScore() {
     // Roll toward actualScore_
     if (displayedScore_ != newScore) {
         float diff = newScore - displayedScore_;
-        float step = scoreAnimSpeed_ * deltaTime;
+        float step = scoreAnimSpeed_ * Time::deltaTime;
 
         if (fabs(diff) < step)
             displayedScore_ = static_cast<float>(newScore);
@@ -2174,7 +2147,7 @@ void Renderer::animateScore() {
     // Animate the scale back to normal (damped spring)
     if (scoreScale_ != scoreScaleTarget_) {
         float delta = scoreScaleTarget_ - scoreScale_;
-        float snap = scoreScaleSpeed_ * deltaTime;
+        float snap = scoreScaleSpeed_ * Time::deltaTime;
         if (fabs(delta) < 0.0001f)
             scoreScale_ = scoreScaleTarget_;
         else
@@ -2192,16 +2165,9 @@ void Renderer::animateScore() {
     }
 }
 
-void Renderer::computeDeltaTime() {
-    auto now = Clock::now();
-    float actualDeltaTime = std::chrono::duration<float>(now - lastFrameTime).count();
-    actualDeltaTime = std::min(actualDeltaTime, 0.0167f);
-    lastFrameTime = now;
-    deltaTime = actualDeltaTime;
-}
 
 void Renderer::drawFrame() {
-    computeDeltaTime();
+    //computeDeltaTime();
     uint32_t imageIndex;
     vkAcquireNextImageKHR(device_, swapchain_, UINT64_MAX, imageAvailableSemaphore_, VK_NULL_HANDLE,
                           &imageIndex);
@@ -2212,20 +2178,22 @@ void Renderer::drawFrame() {
 
         updateAliens();
         updateCollision();
+        powerUpManager_->updatePowerUpData();
+        powerUpManager_->checkIfPowerUpCollected(ship_);
         animateScore();
         updateGameState();
     }
 
     updateBullet();
-    particleSystem_->updateStarField(deltaTime, starInstanceBufferMemory_);
-    particleSystem_->updateExplosionParticles(deltaTime, particlesInstanceBufferMemory_);
+    particleSystem_->updateStarField(starInstanceBufferMemory_);
+    particleSystem_->updateExplosionParticles(particlesInstanceBufferMemory_);
 
 // Each frame:
     shakeOffset = {0.0f,0.0f};
     if (shakeTimer > 0.0f) {
         shakeOffset.x = (rand() / (float)RAND_MAX - 0.5f) * 2.0f * shakeMagnitude;
         shakeOffset.y = (rand() / (float)RAND_MAX - 0.5f) * 2.0f * shakeMagnitude;
-        shakeTimer -= deltaTime;
+        shakeTimer -= Time::deltaTime;
     }
 
     recordCommandBuffer(imageIndex);
@@ -2286,6 +2254,15 @@ void Renderer::loadText() {
 }
 
 void Renderer::loadGameObjects() {
+
+    VkDeviceSize quadBufferSize = sizeof(quadVerts);
+    createBuffer(device_, physicalDevice_, quadBufferSize,
+                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                 powerUpManager_->powerUpBuffer, powerUpManager_->powerUpBufferMemory);
+    uploadDataBuffer(device_, (void *) quadVerts, quadBufferSize,
+                     powerUpManager_->powerUpBufferMemory);
+
     VkDeviceSize starBufferSize = sizeof(starVerts);
     createBuffer(device_, physicalDevice_, starBufferSize,
                  VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,

@@ -21,6 +21,8 @@ add_library(SpaceInvaders3D SHARED
         ParticleSystem.cpp
         SimpleSFXPlayer.h
         SimpleSFXPlayer.cpp
+        PowerUpManager.cpp
+        Time.cpp
         #        volk/volk.c
 )
 target_include_directories(SpaceInvaders3D PRIVATE

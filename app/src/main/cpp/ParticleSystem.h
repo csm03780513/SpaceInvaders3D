@@ -5,6 +5,7 @@
 #ifndef SPACEINVADERS3D_PARTICLESYSTEM_H
 #define SPACEINVADERS3D_PARTICLESYSTEM_H
 
+#include "Time.h"
 #include "GameObjectData.h"
 
 
@@ -95,16 +96,16 @@ public:
 
     void spawn(const glm::vec3 &pos, int count);
 
-    void updateExplosionParticles(float deltaTime,VkDeviceMemory particlesInstanceBufferMemory);
-    void updateStarField(float deltaTime,VkDeviceMemory starInstanceBufferMemory);
+    void updateExplosionParticles(VkDeviceMemory particlesInstanceBufferMemory);
+    void updateStarField(VkDeviceMemory starInstanceBufferMemory);
 
-    void render(VkCommandBuffer cmd,
-                VkPipelineLayout pipelineLayout,
-                VkPipeline pipeline,
-                VkBuffer vertexBuffer,
-                VkBuffer indexBuffer,
-                VkBuffer instanceBuffer,
-                GraphicsPipelineType graphicsPipelineType);
+    void recordCommandBuffer(VkCommandBuffer cmd,
+                             VkPipelineLayout pipelineLayout,
+                             VkPipeline pipeline,
+                             VkBuffer vertexBuffer,
+                             VkBuffer indexBuffer,
+                             VkBuffer instanceBuffer,
+                             GraphicsPipelineType graphicsPipelineType);
 
     void initExplosionParticles();
 

@@ -36,7 +36,6 @@
 
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "Vulkan", __VA_ARGS__)
 
-
 struct UniformBufferObject {
     alignas(16) glm::mat4 model;
     alignas(16) glm::mat4 view;
@@ -53,23 +52,28 @@ struct OverlayVertex {
     float uv[2];
 };
 struct Bullet {
-    float x, y;
-    bool active;
+    float x{}, y{};
+    bool active{};
+    float size = 0.05f;
 };
 struct Ship {
-    float x, y;
-    float color[3];
-};
-struct Alien {
-    float x, y;
-    bool active;
+    float x{}, y{};
+    float color[3]{};
+    float size = 0.1f;
     uint life{3};
 };
+struct Alien {
+    float x{}, y{};
+    bool active{};
+    const float size = 0.1f;
+    uint life{3};
+};
+
 
 struct MainPushConstants {
     glm::vec2 pos{0.0f, 0.0f};
     glm::vec2 shakeOffset{0.0f, 0.0f};
-    float flashAmount {0.0f};
+    float flashAmount{0.0f};
 };
 
 
@@ -119,6 +123,9 @@ enum class GraphicsPipelineType {
 };
 
 
+
+
+
 static const Vertex particleVerts[4] = {
         {{-0.5f, -0.5f, 0.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
         {{0.5f,  -0.5f, 0.0f}, {1.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
@@ -164,6 +171,17 @@ static OverlayVertex overlayQuadVerts[6] = {
         {{0.6f,  -0.05f, 0.0f}, {1.0f, 1.0f}}, // top-right
         {{-0.6f, -0.05f, 0.0f}, {0.0f, 1.0f}} // top-left
 
+};
+
+static Vertex quadVerts[6] = {
+        // Rectangle centered at (0, 0), width 0.12, height 0.07
+        {{-0.07f, -0.045f, 0.0f}, {0.3f, 1.0f, 0.3f}, {0.0f, 0.0f}}, // green
+        {{0.07f,  -0.045f, 0.0f}, {0.3f, 1.0f, 0.3f}, {1.0f, 0.0f}},
+        {{-0.07f, 0.045f,  0.0f}, {0.6f, 1.0f, 0.6f}, {0.0f, 1.0f}},
+
+        {{0.07f,  -0.045f, 0.0f}, {0.3f, 1.0f, 0.3f}, {1.0f, 0.0f}},
+        {{0.07f,  0.045f,  0.0f}, {0.6f, 1.0f, 0.6f}, {1.0f, 1.0f}},
+        {{-0.07f, 0.045f,  0.0f}, {0.6f, 1.0f, 0.6f}, {0.0f, 1.0f}},
 };
 
 

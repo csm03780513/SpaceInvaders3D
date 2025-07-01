@@ -3,6 +3,7 @@
 #include <android/log.h>
 #include <android/input.h>
 #include "Renderer.h"
+#include "Time.h"
 #include <stdexcept>
 
 
@@ -69,7 +70,6 @@ void handle_cmd(android_app *app, int32_t cmd) {
             break;
         case APP_CMD_INIT_WINDOW:
             if (app->window != nullptr) {
-
             }
             break;
         case APP_CMD_TERM_WINDOW:
@@ -95,6 +95,7 @@ void handle_cmd(android_app *app, int32_t cmd) {
 
 void android_main(struct android_app *app) {
     Renderer *renderer = nullptr;
+    std::shared_ptr<Time> time = std::make_shared<Time>();
     app->onInputEvent = handle_input;
     app->onAppCmd = handle_cmd;
 
@@ -124,6 +125,7 @@ void android_main(struct android_app *app) {
                 }
             }
         }
+        Time::updateTime();
         if (g_pendingRestart) {
             g_renderer->restartGame();
             g_pendingRestart = false;

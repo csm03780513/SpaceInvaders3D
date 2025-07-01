@@ -1,0 +1,49 @@
+//
+// Created by carlo on 01/07/2025.
+//
+
+#ifndef SPACEINVADERS3D_POWERUPMANAGER_H
+#define SPACEINVADERS3D_POWERUPMANAGER_H
+
+#include "GameObjectData.h"
+#include "Time.h"
+constexpr int MAX_POWERUPS = 10;
+enum class PowerUpType {
+    DoubleShot,
+    Shield,
+    Life
+};
+
+struct PowerUpData {
+    PowerUpType type;
+    glm::vec2 pos;      // NDC or world units
+    const float size = 0.05f;         // e.g., 0.05f
+    float fallSpeed;    // e.g., 0.5f per sec
+    float timeLeft;     // for active power-ups, e.g. 5.0f
+    bool active;
+};
+
+class PowerUpManager {
+private:
+    void updatePowerUpExpiry();
+    void activatePowerUp(PowerUpType type);
+    std::vector<PowerUpData> powerUps_;
+public:
+    VkDevice device;
+    bool doubleShotActive = false;
+    float doubleShotTimer = 0.0f;
+    bool shieldActive = false;
+    float shieldTimer = 0.0f;
+    VkBuffer powerUpBuffer;
+    VkDeviceMemory powerUpBufferMemory;
+    VkDescriptorSet doubleShotDescriptorSet;
+    VkDescriptorSetLayout doubleShotDescriptorSetLayout;
+    explicit PowerUpManager();
+    void spawnPowerUp(PowerUpType type, const glm::vec2& pos);
+    void updatePowerUpData();
+    void checkIfPowerUpCollected(Ship ship);
+    void recordCommandBuffer(VkCommandBuffer cmd, VkPipelineLayout pipelineLayout,VkPipeline pipeline,glm::vec2 shakeOffset);
+};
+
+
+#endif //SPACEINVADERS3D_POWERUPMANAGER_H
