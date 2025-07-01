@@ -1995,7 +1995,7 @@ void Renderer::spawnBullet() const {
 
 void Renderer::updateShipBuffer() const {
     ship_.x = shipX_;
-    //ship_.y = shipY_;
+    ship_.y = shipY_;
     ship_.color[0] = shipX_;
 }
 
