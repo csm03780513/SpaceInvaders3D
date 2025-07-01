@@ -10,7 +10,7 @@ void PowerUpManager::spawnPowerUp(PowerUpType type, const glm::vec2 &pos) {
     if (randomChance < 0.1f) { // 10% chance
         PowerUpData p{};
         p.type = (rand() % 2 == 0) ? PowerUpType::DoubleShot : PowerUpType::Shield;
-        p.pos = glm::vec2(pos.x, -pos.y); // Spawn at alien’s last position
+        p.pos = glm::vec2(pos.x, pos.y); // Spawn at alien’s last position
         p.fallSpeed = 0.3f + 0.2f * (rand() / float(RAND_MAX)); // vary slightly
         p.active = true;
         powerUps_.push_back(p);
@@ -21,7 +21,7 @@ void PowerUpManager::updatePowerUpData() {
     updatePowerUpExpiry();
     for (auto& p : powerUps_) {
         if (!p.active) continue;
-        p.pos.y += p.fallSpeed * Time::deltaTime; // Move downwards
+        p.pos.y -= p.fallSpeed * Time::deltaTime; // Move downwards
         // Deactivate if off-screen
         if (p.pos.y < -1.1f) p.active = false;
     }
