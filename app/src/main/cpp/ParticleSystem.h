@@ -105,7 +105,7 @@ public:
                              VkBuffer vertexBuffer,
                              VkBuffer indexBuffer,
                              VkBuffer instanceBuffer,
-                             GraphicsPipelineType graphicsPipelineType);
+                             GfxPipelineType gfxPipelineType);
 
     void initExplosionParticles();
 

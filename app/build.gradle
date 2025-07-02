@@ -4,12 +4,13 @@ plugins {
 
 android {
     namespace 'com.csm.spaceinvaders3d'
-    compileSdk 35
+    compileSdk 36
 
     defaultConfig {
         applicationId "com.csm.spaceinvaders3d"
         minSdk 24
-        targetSdk 35
+        targetSdk 36
+        //noinspection OldTargetApi
         versionCode 1
         versionName "1.0"
 
@@ -57,6 +58,6 @@ android {
 }
 
 dependencies {
-    implementation 'com.google.oboe:oboe:1.9.3'
+    implementation libs.oboe
     // (empty!)
 }

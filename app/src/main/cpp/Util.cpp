@@ -1,0 +1,35 @@
+//
+// Created by carlo on 02/07/2025.
+//
+
+#include "Util.h"
+
+std::array<float, 2> Util::getQuadWidthHeight(const Vertex *verts, size_t vertsCount) {
+    float minX = verts[0].pos[0], maxX = verts[0].pos[0];
+    float minY = verts[0].pos[1], maxY = verts[0].pos[1];
+    for (size_t i = 1; i < vertsCount; ++i) {
+        if (verts[i].pos[0] < minX) minX = verts[i].pos[0];
+        if (verts[i].pos[0] > maxX) maxX = verts[i].pos[0];
+        if (verts[i].pos[1] < minY) minY = verts[i].pos[1];
+        if (verts[i].pos[1] > maxY) maxY = verts[i].pos[1];
+    }
+    return {maxX - minX, maxY - minY};
+}
+
+void Util::recordDrawBoundingBox(VkCommandBuffer cmd, const AABB& box, const glm::vec3& color, VkPipeline linePipeline, VkPipelineLayout pipelineLayout, VkBuffer vtxBuffer, VkDeviceSize vtxOffset)
+{
+    Vertex verts[5] = {
+            { {box.minX, box.minY}, {color.r, color.g, color.b} },
+            { {box.maxX, box.minY}, {color.r, color.g, color.b} },
+            { {box.maxX, box.maxY}, {color.r, color.g, color.b} },
+            { {box.minX, box.maxY}, {color.r, color.g, color.b} },
+            { {box.minX, box.minY}, {color.r, color.g, color.b} } // close loop
+    };
+    // Upload `verts` to a mapped staging buffer, then to GPU (or use persistently mapped buffer for debug overlays)
+
+    // Assuming vtxBuffer is ready and contains verts...
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, linePipeline);
+    VkDeviceSize offsets[] = { vtxOffset };
+    vkCmdBindVertexBuffers(cmd, 0, 1, &vtxBuffer, offsets);
+    vkCmdDraw(cmd, 5, 1, 0, 0); // 5 vertices, 1 instance
+}

@@ -6,6 +6,7 @@
 #include <string>
 #include "Time.h"
 #include "PowerUpManager.h"
+#include "Util.h"
 
 static constexpr int NUM_ALIENS_X = 8;
 static constexpr int NUM_ALIENS_Y = 3;
@@ -18,7 +19,7 @@ static constexpr int MAX_BULLETS = 32;
 
 class Renderer {
 public:
-    Renderer(android_app *app);
+    explicit Renderer(android_app *app);
 
     ~Renderer();
 
@@ -208,36 +209,33 @@ private:
 
     void updateGameState();
 
-    void createPipeline(GraphicsPipelineData &graphicsPipelineData,
-                        GraphicsPipelineType graphicsPipelineType);
+    void createPipeline(GfxPipelineData &gfxPipelineData,GfxPipelineType gfxPipelineType);
 
-    void createPipelineLayout(VkPipelineLayoutCreateInfo &pipelineLayoutInfo,
-                              GraphicsPipelineData &graphicsPipelineData);
+    void createPipelineLayout(VkPipelineLayoutCreateInfo &pipelineLayoutInfo,GfxPipelineData &gfxPipelineData);
 
-    void
-    createDescriptorSetLayout(VkDescriptorSetLayoutCreateInfo info, VkDescriptorSetLayout &layout);
+    void createDescriptorSetLayout(VkDescriptorSetLayoutCreateInfo info, VkDescriptorSetLayout &layout);
 
-    void createMainGraphicsPipeline();
+    void createMainGfxPipeline();
 
     void initAliens();
 
 
     void createUniformBuffer();
 
-    void createImageOverlayDescriptor(GraphicsPipelineData &graphicsPipelineData);
+    void createImageOverlayDescriptor(GfxPipelineData &gfxPipelineData);
 
     void loadTexture(const char *filename, VkImage &vkImage, VkDeviceMemory &vkDeviceMemory,
                      VkImageView &imageView, VkSampler &vkSampler, GameTextureType gameTextureType);
 
-    void createOverlayGraphicsPipeline();
+    void createOverlayGfxPipeline();
 
     void loadAllTextures();
 
-    void createMainDescriptor(GraphicsPipelineData &graphicsPipelineData);
+    void createMainDescriptor(GfxPipelineData &gfxPipelineData);
 
-    void createFontGraphicsPipeline();
+    void createFontGfxPipeline();
 
-    void createFontDescriptor(GraphicsPipelineData &graphicsPipelineData);
+    void createFontDescriptor(GfxPipelineData &gfxPipelineData);
 
     void loadText();
 
@@ -251,8 +249,8 @@ private:
 
     void getPhysicalDevice();
 
-    void
-    createParticlesGraphicsPipeline(VkPipeline pipeline, GraphicsPipelineType graphicsPipelineType);
+    void createParticlesGfxPipeline(VkPipeline pipeline, GfxPipelineType graphicsPipelineType);
 
 
+    void createAABBGfxPipeline(VkPipeline pipeline, GfxPipelineType gfxPipelineType);
 };

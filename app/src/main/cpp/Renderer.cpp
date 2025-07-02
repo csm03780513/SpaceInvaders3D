@@ -36,7 +36,10 @@ const bool enableValidationLayers = true;
 
 
 Bullet bullets_[MAX_BULLETS] = {};
-Ship ship_ = {};
+Ship ship_ = {
+        .width=Util::getQuadWidthHeight(shipVerts,6)[0],
+        .height=Util::getQuadWidthHeight(shipVerts,6)[1]
+};
 Alien aliens_[MAX_ALIENS] = {};
 
 float alienMoveSpeed_ = 0.3f;
@@ -74,17 +77,17 @@ void createTextureSampler(VkDevice device, VkSampler &sampler, GameTextureType t
 void
 setShaderStages(VkDevice device, AAssetManager *assetManager, const char *spirvVertexFilename,
                 const char *spirvFragmentFilename,
-                GraphicsPipelineData &graphicsPipelineData);
+                GfxPipelineData &graphicsPipelineData);
 
-void setColorBlending(GraphicsPipelineData &graphicsPipelineData);
+void setColorBlending(GfxPipelineData &graphicsPipelineData);
 
-void setViewPortState(GraphicsPipelineData &graphicsPipelineData);
+void setViewPortState(GfxPipelineData &graphicsPipelineData);
 
-void setInputAssembly(GraphicsPipelineData &graphicsPipelineData);
+void setInputAssembly(GfxPipelineData &graphicsPipelineData);
 
-void setRasterizer(GraphicsPipelineData &graphicsPipelineData);
+void setRasterizer(GfxPipelineData &graphicsPipelineData);
 
-void setSampling(GraphicsPipelineData &graphicsPipelineData);
+void setSampling(GfxPipelineData &graphicsPipelineData);
 
 void updateFontBuffer(VkDevice device, std::vector<Vertex> textVertices,
                       VkDeviceMemory fontVertexBufferMemory_);
@@ -184,8 +187,6 @@ decodeWAV(const std::vector<uint8_t> &wavBytes, int &outChannels, int &outSample
 std::vector<float>
 decodeMP3(const std::vector<uint8_t> &mp3Bytes, int &outChannels, int &outSampleRate) {
     drmp3 mp3;
-
-    LOGE("mp3Bytes.size() = %zu", mp3Bytes.size());
     if (mp3Bytes.empty()) {
         LOGE("MP3 asset not loaded!");
         throw std::runtime_error("MP3 asset not loaded!");
@@ -629,7 +630,7 @@ void Renderer::loadAllTextures() {
 
 }
 
-void Renderer::createImageOverlayDescriptor(GraphicsPipelineData &graphicsPipelineData) {
+void Renderer::createImageOverlayDescriptor(GfxPipelineData &gfxPipelineData) {
 
     VkDescriptorSetLayoutBinding overlaySamplerLayoutBinding = {};
     overlaySamplerLayoutBinding.binding = 0;
@@ -673,7 +674,7 @@ void Renderer::createImageOverlayDescriptor(GraphicsPipelineData &graphicsPipeli
     overlayPipelineLayoutInfo.pushConstantRangeCount = 1;
     overlayPipelineLayoutInfo.pPushConstantRanges = &overlayPushConstantRange;
 
-    createPipelineLayout(overlayPipelineLayoutInfo, graphicsPipelineData);
+    createPipelineLayout(overlayPipelineLayoutInfo, gfxPipelineData);
 
     VkDescriptorSetAllocateInfo allocInfo = {};
     allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -701,7 +702,7 @@ void Renderer::createImageOverlayDescriptor(GraphicsPipelineData &graphicsPipeli
     vkUpdateDescriptorSets(device_, 1, &descriptorWrite, 0, nullptr);
 }
 
-void Renderer::createFontDescriptor(GraphicsPipelineData &graphicsPipelineData) {
+void Renderer::createFontDescriptor(GfxPipelineData &gfxPipelineData) {
 
 
     VkDescriptorSetLayoutBinding layoutBinding = {};
@@ -747,8 +748,8 @@ void Renderer::createFontDescriptor(GraphicsPipelineData &graphicsPipelineData) 
     pipelineLayoutCreateInfo.pushConstantRangeCount = 1;
     pipelineLayoutCreateInfo.pPushConstantRanges = &pushConstantRange;
 
-    createPipelineLayout(pipelineLayoutCreateInfo, graphicsPipelineData);
-    LOGE("font pipelineLayout:%llu", graphicsPipelineData.pipelineLayout);
+    createPipelineLayout(pipelineLayoutCreateInfo, gfxPipelineData);
+    LOGE("font pipelineLayout:%llu", gfxPipelineData.pipelineLayout);
 
     VkDescriptorSetAllocateInfo allocInfo = {};
     allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -777,7 +778,7 @@ void Renderer::createFontDescriptor(GraphicsPipelineData &graphicsPipelineData) 
 
 }
 
-void Renderer::createMainDescriptor(GraphicsPipelineData &graphicsPipelineData) {
+void Renderer::createMainDescriptor(GfxPipelineData &gfxPipelineData) {
 
     VkDescriptorSetLayoutBinding uboLayoutBinding = {};
     uboLayoutBinding.binding = 0;
@@ -825,11 +826,12 @@ void Renderer::createMainDescriptor(GraphicsPipelineData &graphicsPipelineData) 
     mainPipelineLayoutInfo.pushConstantRangeCount = pushConstantRanges.size();
     mainPipelineLayoutInfo.pPushConstantRanges = pushConstantRanges.data();
 
-    createPipelineLayout(mainPipelineLayoutInfo, graphicsPipelineData);
-    LOGE("main pipelineLayout gd: %llu", graphicsPipelineData.pipelineLayout);
+    createPipelineLayout(mainPipelineLayoutInfo, gfxPipelineData);
+    LOGE("main pipelineLayout gd: %llu", gfxPipelineData.pipelineLayout);
 
     std::vector<VkDescriptorSet> descriptorSets{shipDescriptorSet_, alienDescriptorSet_,
-                                                shipBulletDescriptorSet_,powerUpManager_->doubleShotDescriptorSet};
+                                                shipBulletDescriptorSet_,
+                                                powerUpManager_->doubleShotDescriptorSet};
 
     VkDescriptorPoolSize uboPoolSize = {};
     uboPoolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -1259,8 +1261,8 @@ void Renderer::initVulkan() {// Load Vulkan functions using volk
     renderPassInfo.pSubpasses = &subpass;
 
     if (vkCreateRenderPass(device_, &renderPassInfo, nullptr, &renderPass_) != VK_SUCCESS) {
-        LOGE("Failed to create recordCommandBuffer pass");
-        throw std::runtime_error("Failed to create recordCommandBuffer pass");
+        LOGE("Failed to create render pass");
+        throw std::runtime_error("Failed to create render pass");
     }
 
     framebuffers_.resize(swapchainImageViews_.size());
@@ -1310,13 +1312,13 @@ void Renderer::initVulkan() {// Load Vulkan functions using volk
     loadGameObjects();
     createUniformBuffer();
     initAliens();
-    createMainGraphicsPipeline();
-    createOverlayGraphicsPipeline();
-    createFontGraphicsPipeline();
-    createParticlesGraphicsPipeline(explosionParticlesPipeline_,
-                                    GraphicsPipelineType::ExplosionParticles);
-    createParticlesGraphicsPipeline(explosionParticlesPipeline_,
-                                    GraphicsPipelineType::StarParticles);
+    createMainGfxPipeline();
+    createOverlayGfxPipeline();
+    createFontGfxPipeline();
+    createParticlesGfxPipeline(explosionParticlesPipeline_,
+                               GfxPipelineType::ExplosionParticles);
+    createParticlesGfxPipeline(explosionParticlesPipeline_,
+                               GfxPipelineType::StarParticles);
 
 }
 
@@ -1377,7 +1379,7 @@ void Renderer::initAliens() {
     }
 }
 
-void Renderer::createMainGraphicsPipeline() {
+void Renderer::createMainGfxPipeline() {
 
     // One binding (per-vertex data)
     VkVertexInputBindingDescription mainBindingDesc = {};
@@ -1416,7 +1418,7 @@ void Renderer::createMainGraphicsPipeline() {
     mainVertexInputInfo.vertexAttributeDescriptionCount = vertexAttributeDesc.size();
     mainVertexInputInfo.pVertexAttributeDescriptions = vertexAttributeDesc.data();
 
-    GraphicsPipelineData graphicsPipelineData{
+    GfxPipelineData graphicsPipelineData{
             .pipeline = mainPipeline_,
             .vertexInputState = mainVertexInputInfo,
             .pipelineLayout = mainPipelineLayout_,
@@ -1432,14 +1434,14 @@ void Renderer::createMainGraphicsPipeline() {
     setRasterizer(graphicsPipelineData);
     setSampling(graphicsPipelineData);
     createMainDescriptor(graphicsPipelineData);
-    createPipeline(graphicsPipelineData, GraphicsPipelineType::Main);
+    createPipeline(graphicsPipelineData, GfxPipelineType::Main);
 
 
 }
 
-void Renderer::createOverlayGraphicsPipeline() {
+void Renderer::createOverlayGfxPipeline() {
 
-    GraphicsPipelineData graphicsPipelineData{
+    GfxPipelineData graphicsPipelineData{
             .pipeline = overlayPipeline_,
             .viewport {.x=0.0, .y=0.0f, .width=(float) swapchainExtent_.width, .height=(float) swapchainExtent_.height, .minDepth=0.0f, .maxDepth=1.0f},
             .scissor {.offset{0, 0}, .extent = swapchainExtent_}
@@ -1488,13 +1490,13 @@ void Renderer::createOverlayGraphicsPipeline() {
 
     graphicsPipelineData.vertexInputState = overlayVertexInputInfo;
 
-    createPipeline(graphicsPipelineData, GraphicsPipelineType::Overlay);
+    createPipeline(graphicsPipelineData, GfxPipelineType::Overlay);
 
 
 }
 
-void Renderer::createFontGraphicsPipeline() {
-    GraphicsPipelineData graphicsPipelineData{
+void Renderer::createFontGfxPipeline() {
+    GfxPipelineData graphicsPipelineData{
             .pipeline = fontPipeline_,
             .viewport {.x=0.0, .y=0.0f, .width=(float) swapchainExtent_.width, .height=(float) swapchainExtent_.height, .minDepth=0.0f, .maxDepth=1.0f},
             .scissor {.offset{0, 0}, .extent = swapchainExtent_}
@@ -1550,23 +1552,27 @@ void Renderer::createFontGraphicsPipeline() {
 
     graphicsPipelineData.vertexInputState = vertexInputInfo;
 
-    createPipeline(graphicsPipelineData, GraphicsPipelineType::Font);
+    createPipeline(graphicsPipelineData, GfxPipelineType::Font);
 
 
 }
 
-void Renderer::createParticlesGraphicsPipeline(VkPipeline pipeline,
-                                               GraphicsPipelineType graphicsPipelineType) {
+void Renderer::createAABBGfxPipeline(VkPipeline pipeline, GfxPipelineType gfxPipelineType) {
+
+}
+
+void Renderer::createParticlesGfxPipeline(VkPipeline pipeline,
+                                          GfxPipelineType graphicsPipelineType) {
     std::vector<VkVertexInputBindingDescription> bindings;
     std::vector<VkVertexInputAttributeDescription> attributes;
 
-    GraphicsPipelineData graphicsPipelineData{
+    GfxPipelineData graphicsPipelineData{
             .pipeline = pipeline,
             .viewport {.x=0.0, .y=0.0f, .width=(float) swapchainExtent_.width, .height=(float) swapchainExtent_.height, .minDepth=0.0f, .maxDepth=1.0f},
             .scissor {.offset{0, 0}, .extent = swapchainExtent_}
     };
 
-    if (graphicsPipelineType == GraphicsPipelineType::ExplosionParticles) {
+    if (graphicsPipelineType == GfxPipelineType::ExplosionParticles) {
         setShaderStages(device_, assetManager_, "particles_instanced.vert.spv",
                         "particles_instanced.frag.spv",
                         graphicsPipelineData);
@@ -1586,7 +1592,7 @@ void Renderer::createParticlesGraphicsPipeline(VkPipeline pipeline,
         graphicsPipelineData.vertexInputState = particlesVertexInputInfo;
     }
 
-    if (graphicsPipelineType == GraphicsPipelineType::StarParticles) {
+    if (graphicsPipelineType == GfxPipelineType::StarParticles) {
         setShaderStages(device_, assetManager_, "stars_instanced.vert.spv",
                         "stars_instanced.frag.spv",
                         graphicsPipelineData);
@@ -1641,12 +1647,11 @@ void Renderer::createParticlesGraphicsPipeline(VkPipeline pipeline,
 }
 
 
-void setRasterizer(GraphicsPipelineData &graphicsPipelineData) {
+void setRasterizer(GfxPipelineData &graphicsPipelineData) {
     auto &overlayRasterizer = graphicsPipelineData.rasterizationState;
     overlayRasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
     overlayRasterizer.depthClampEnable = VK_FALSE;
     overlayRasterizer.rasterizerDiscardEnable = VK_FALSE;
-    overlayRasterizer.polygonMode = VK_POLYGON_MODE_FILL;
     overlayRasterizer.lineWidth = 1.0f;
     overlayRasterizer.cullMode = VK_CULL_MODE_NONE;
     overlayRasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
@@ -1655,7 +1660,7 @@ void setRasterizer(GraphicsPipelineData &graphicsPipelineData) {
 
 void setShaderStages(VkDevice device, AAssetManager *assetManager, const char *spirvVertexFilename,
                      const char *spirvFragmentFilename,
-                     GraphicsPipelineData &graphicsPipelineData) {
+                     GfxPipelineData &graphicsPipelineData) {
 
     auto vertShaderCode = loadShaderAsset(assetManager, spirvVertexFilename);
     auto fragShaderCode = loadShaderAsset(assetManager, spirvFragmentFilename);
@@ -1678,7 +1683,7 @@ void setShaderStages(VkDevice device, AAssetManager *assetManager, const char *s
                                          fragShaderStageInfo};
 }
 
-void setColorBlending(GraphicsPipelineData &graphicsPipelineData) {
+void setColorBlending(GfxPipelineData &graphicsPipelineData) {
 
     auto &colorBlendAttachment = graphicsPipelineData.colorBlendAttachment;
     colorBlendAttachment.colorWriteMask =
@@ -1705,7 +1710,7 @@ void setColorBlending(GraphicsPipelineData &graphicsPipelineData) {
     graphicsPipelineData.colorBlendState = colorBlending;
 }
 
-void setViewPortState(GraphicsPipelineData &graphicsPipelineData) {
+void setViewPortState(GfxPipelineData &graphicsPipelineData) {
 
     VkPipelineViewportStateCreateInfo &viewportState = graphicsPipelineData.viewportState;
     viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
@@ -1715,14 +1720,13 @@ void setViewPortState(GraphicsPipelineData &graphicsPipelineData) {
     viewportState.pScissors = &graphicsPipelineData.scissor;
 }
 
-void setInputAssembly(GraphicsPipelineData &graphicsPipelineData) {
+void setInputAssembly(GfxPipelineData &graphicsPipelineData) {
     auto &overlayInputAssembly = graphicsPipelineData.inputAssemblyState;
     overlayInputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-    overlayInputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     overlayInputAssembly.primitiveRestartEnable = VK_FALSE;
 }
 
-void setSampling(GraphicsPipelineData &graphicsPipelineData) {
+void setSampling(GfxPipelineData &graphicsPipelineData) {
     VkPipelineMultisampleStateCreateInfo &multisampling = graphicsPipelineData.multisamplingState;
     multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
     multisampling.sampleShadingEnable = VK_FALSE;
@@ -1730,9 +1734,9 @@ void setSampling(GraphicsPipelineData &graphicsPipelineData) {
 }
 
 void Renderer::createPipelineLayout(VkPipelineLayoutCreateInfo &pipelineLayoutInfo,
-                                    GraphicsPipelineData &graphicsPipelineData) {
+                                    GfxPipelineData &gfxPipelineData) {
     VkResult res = vkCreatePipelineLayout(device_, &pipelineLayoutInfo, nullptr,
-                                          &graphicsPipelineData.pipelineLayout);
+                                          &gfxPipelineData.pipelineLayout);
     if (res != VK_SUCCESS) {
         LOGE("Failed to create pipeline layout! error code:%d", res);
         throw std::runtime_error("Failed to create pipeline layout");
@@ -1741,63 +1745,63 @@ void Renderer::createPipelineLayout(VkPipelineLayoutCreateInfo &pipelineLayoutIn
 }
 
 void
-Renderer::createPipeline(GraphicsPipelineData &graphicsPipelineData,
-                         GraphicsPipelineType graphicsPipelineType) {
+Renderer::createPipeline(GfxPipelineData &gfxPipelineData,
+                         GfxPipelineType gfxPipelineType) {
 
-    VkGraphicsPipelineCreateInfo pipelineCreateInfo = graphicsPipelineData.pipelineCreateInfo;
+    VkGraphicsPipelineCreateInfo pipelineCreateInfo = gfxPipelineData.pipelineCreateInfo;
     pipelineCreateInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    pipelineCreateInfo.stageCount = graphicsPipelineData.shaderStages.size();
-    pipelineCreateInfo.pStages = graphicsPipelineData.shaderStages.data();
-    pipelineCreateInfo.pVertexInputState = &graphicsPipelineData.vertexInputState;
-    pipelineCreateInfo.pInputAssemblyState = &graphicsPipelineData.inputAssemblyState;
-    pipelineCreateInfo.pViewportState = &graphicsPipelineData.viewportState;
-    pipelineCreateInfo.pRasterizationState = &graphicsPipelineData.rasterizationState;
-    pipelineCreateInfo.pMultisampleState = &graphicsPipelineData.multisamplingState;
-    pipelineCreateInfo.pColorBlendState = &graphicsPipelineData.colorBlendState;
-    pipelineCreateInfo.layout = graphicsPipelineData.pipelineLayout;
+    pipelineCreateInfo.stageCount = gfxPipelineData.shaderStages.size();
+    pipelineCreateInfo.pStages = gfxPipelineData.shaderStages.data();
+    pipelineCreateInfo.pVertexInputState = &gfxPipelineData.vertexInputState;
+    pipelineCreateInfo.pInputAssemblyState = &gfxPipelineData.inputAssemblyState;
+    pipelineCreateInfo.pViewportState = &gfxPipelineData.viewportState;
+    pipelineCreateInfo.pRasterizationState = &gfxPipelineData.rasterizationState;
+    pipelineCreateInfo.pMultisampleState = &gfxPipelineData.multisamplingState;
+    pipelineCreateInfo.pColorBlendState = &gfxPipelineData.colorBlendState;
+    pipelineCreateInfo.layout = gfxPipelineData.pipelineLayout;
     pipelineCreateInfo.renderPass = renderPass_;
     pipelineCreateInfo.subpass = 0;
     VkResult res = vkCreateGraphicsPipelines(device_, VK_NULL_HANDLE, 1,
                                              &pipelineCreateInfo, nullptr,
-                                             &graphicsPipelineData.pipeline);
+                                             &gfxPipelineData.pipeline);
     if (res != VK_SUCCESS) {
         LOGE("Failed to create graphics pipeline! error code:%d", res);
         throw std::runtime_error("Failed to create graphics pipeline");
     }
 
-    switch (graphicsPipelineType) {
-        case GraphicsPipelineType::Main:
-            mainPipeline_ = graphicsPipelineData.pipeline;
-            mainPipelineLayout_ = graphicsPipelineData.pipelineLayout;
+    switch (gfxPipelineType) {
+        case GfxPipelineType::Main:
+            mainPipeline_ = gfxPipelineData.pipeline;
+            mainPipelineLayout_ = gfxPipelineData.pipelineLayout;
             LOGE("mainPipeline_: %llu", mainPipeline_);
             break;
-        case GraphicsPipelineType::Overlay:
-            overlayPipeline_ = graphicsPipelineData.pipeline;
-            overlayPipelineLayout_ = graphicsPipelineData.pipelineLayout;
+        case GfxPipelineType::Overlay:
+            overlayPipeline_ = gfxPipelineData.pipeline;
+            overlayPipelineLayout_ = gfxPipelineData.pipelineLayout;
             LOGE("overlayPipeline_:  %p", &overlayPipeline_);
             break;
-        case GraphicsPipelineType::Font:
-            fontPipeline_ = graphicsPipelineData.pipeline;
-            fontPipelineLayout_ = graphicsPipelineData.pipelineLayout;
-            LOGE("fontPipeline_: %p", &graphicsPipelineData.pipeline);
+        case GfxPipelineType::Font:
+            fontPipeline_ = gfxPipelineData.pipeline;
+            fontPipelineLayout_ = gfxPipelineData.pipelineLayout;
+            LOGE("fontPipeline_: %p", &gfxPipelineData.pipeline);
             break;
-        case GraphicsPipelineType::ExplosionParticles:
-            explosionParticlesPipeline_ = graphicsPipelineData.pipeline;
-            particlesPipelineLayout_ = graphicsPipelineData.pipelineLayout;
+        case GfxPipelineType::ExplosionParticles:
+            explosionParticlesPipeline_ = gfxPipelineData.pipeline;
+            particlesPipelineLayout_ = gfxPipelineData.pipelineLayout;
             LOGE("explosionParticlesPipeline_: %p", &explosionParticlesPipeline_);
             break;
-        case GraphicsPipelineType::StarParticles:
-            starParticlesPipeline_ = graphicsPipelineData.pipeline;
-            particlesPipelineLayout_ = graphicsPipelineData.pipelineLayout;
+        case GfxPipelineType::StarParticles:
+            starParticlesPipeline_ = gfxPipelineData.pipeline;
+            particlesPipelineLayout_ = gfxPipelineData.pipelineLayout;
             LOGE("starParticlesPipeline_: %p", &starParticlesPipeline_);
             break;
         default:
-            LOGE("Unknown pipeline name: %s", graphicsPipelineType);
+            LOGE("Unknown pipeline name: %s", gfxPipelineType);
             break;
     }
 
-    vkDestroyShaderModule(device_, graphicsPipelineData.shaderStages[0].module, nullptr);
-    vkDestroyShaderModule(device_, graphicsPipelineData.shaderStages[1].module, nullptr);
+    vkDestroyShaderModule(device_, gfxPipelineData.shaderStages[0].module, nullptr);
+    vkDestroyShaderModule(device_, gfxPipelineData.shaderStages[1].module, nullptr);
 }
 
 void
@@ -1836,22 +1840,28 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
                                          starVertsBuffer_,
                                          starIndexBuffer_,
                                          starInstanceBuffer_,
-                                         GraphicsPipelineType::StarParticles);
+                                         GfxPipelineType::StarParticles);
 
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipeline_);
+
     VkDeviceSize offsets[] = {0};
     // --- Draw triangle (or any background)
-//    float trianglePos[2] = {0.0, 0.0};
+    float trianglePos[2] = {0.0, 0.0};
+    MainPushConstants trianglePC;
+    trianglePC.pos = {0.0f,-0.9f};
+    trianglePC.shakeOffset = {0.0f,0.0f};
+    trianglePC.flashAmount = 0.0f;
 
-//    vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(trianglePos),trianglePos);
-//    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineLayout_, 0, 1,&shipDescriptorSet_, 0, nullptr);
-//    vkCmdBindVertexBuffers(cmd, 0, 1, &vertexBuffer_, offsets);
-//    vkCmdDraw(cmd, 3, 1, 0, 0);
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipeline_);
+    vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(MainPushConstants),
+                       &trianglePC);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineLayout_, 0, 1,
+                            &powerUpManager_->doubleShotDescriptorSet, 0, nullptr);
+    vkCmdBindVertexBuffers(cmd, 0, 1, &vertexBuffer_, offsets);
+    vkCmdDraw(cmd, sizeof(quadVerts)/sizeof(Vertex), 1, 0, 0);
 
 
-         powerUpManager_->recordCommandBuffer(cmd,mainPipelineLayout_,mainPipeline_,shakeOffset);
+    powerUpManager_->recordCommandBuffer(cmd, mainPipelineLayout_, mainPipeline_, shakeOffset);
     // --- Draw ship
-//    float shipPos[2] = {shipX_, ship_.y};
     float flashAmount = {0.0f};
 
     shipPC_.pos = {shipX_, ship_.y};
@@ -1859,7 +1869,8 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
 
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineLayout_, 0, 1,
                             &shipDescriptorSet_, 0, nullptr);
-    vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(MainPushConstants),
+    vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
+                       sizeof(MainPushConstants),
                        &shipPC_);
 
     vkCmdBindVertexBuffers(cmd, 0, 1, &shipVertexBuffer_, offsets);
@@ -1889,7 +1900,8 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineLayout_, 0, 1,
                                 &alienDescriptorSet_, 0, nullptr);
         vkCmdBindVertexBuffers(cmd, 0, 1, &alienVertexBuffer_, offsets);
-        vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(MainPushConstants),
+        vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
+                           sizeof(MainPushConstants),
                            &alienPC_[i]);
         vkCmdDraw(cmd, 6, 1, 0, 0);
 
@@ -1935,7 +1947,7 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
                                          particlesVertexBuffer_,
                                          particlesIndexBuffer_,
                                          particlesInstanceBuffer_,
-                                         GraphicsPipelineType::ExplosionParticles);
+                                         GfxPipelineType::ExplosionParticles);
 
     vkCmdEndRenderPass(cmd);
     vkEndCommandBuffer(cmd);
@@ -1959,6 +1971,7 @@ void Renderer::restartGame() {
 
     gameState = GameState::Playing;
 }
+
 void Renderer::spawnBullet() const {
     if (gameState == GameState::Playing) {
         int spawned = 0;
@@ -1995,7 +2008,7 @@ void Renderer::spawnBullet() const {
 
 void Renderer::updateShipBuffer() const {
     ship_.x = shipX_;
-    ship_.y = shipY_;
+    ship_.y = 0.0f;
     ship_.color[0] = shipX_;
 }
 
@@ -2046,7 +2059,7 @@ void Renderer::updateCollision() {
     for (auto &bullet: bullets_) {
         if (!bullet.active) continue;
 
-        for (int i=0; i<MAX_ALIENS; i++) {
+        for (int i = 0; i < MAX_ALIENS; i++) {
             if (!aliens_[i].active) continue;
 
             if (isCollision(aliens_[i], bullet)) {
@@ -2055,8 +2068,9 @@ void Renderer::updateCollision() {
                 // On hit:
                 alienPC_[i].flashAmount = 1.0f;
                 particleSystem_->spawn(glm::vec3(aliens_[i].x, -aliens_[i].y, 0.0f), 15);
-                powerUpManager_->spawnPowerUp(PowerUpType::DoubleShot, {aliens_[i].x, aliens_[i].y});
-                if(aliens_[i].life<=0) {
+                powerUpManager_->spawnPowerUp(PowerUpType::DoubleShot,
+                                              {aliens_[i].x, aliens_[i].y});
+                if (aliens_[i].life <= 0) {
                     aliens_[i].active = false;    // Destroy alien
                     actualScore += 100;
                     alienMoveSpeed_ += 0.005f;
@@ -2189,10 +2203,10 @@ void Renderer::drawFrame() {
     particleSystem_->updateExplosionParticles(particlesInstanceBufferMemory_);
 
 // Each frame:
-    shakeOffset = {0.0f,0.0f};
+    shakeOffset = {0.0f, 0.0f};
     if (shakeTimer > 0.0f) {
-        shakeOffset.x = (rand() / (float)RAND_MAX - 0.5f) * 2.0f * shakeMagnitude;
-        shakeOffset.y = (rand() / (float)RAND_MAX - 0.5f) * 2.0f * shakeMagnitude;
+        shakeOffset.x = (rand() / (float) RAND_MAX - 0.5f) * 2.0f * shakeMagnitude;
+        shakeOffset.y = (rand() / (float) RAND_MAX - 0.5f) * 2.0f * shakeMagnitude;
         shakeTimer -= Time::deltaTime;
     }
 
@@ -2319,13 +2333,13 @@ void Renderer::loadGameObjects() {
 
     uploadDataBuffer(device_, (void *) bulletVerts, bulletBufferSize, bulletVertexBufferMemory_);
 
-    VkDeviceSize bufferSize = sizeof(triangleVerts);
+    VkDeviceSize bufferSize = sizeof(quadVerts);
     createBuffer(device_, physicalDevice_, bufferSize,
                  VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                  vertexBuffer_, vertexBufferMemory_);
 
-    uploadDataBuffer(device_, (void *) triangleVerts, bufferSize, vertexBufferMemory_);
+    uploadDataBuffer(device_, (void *) quadVerts, bufferSize, vertexBufferMemory_);
 
 
     VkDeviceSize shipBufferSize = sizeof(shipVerts);

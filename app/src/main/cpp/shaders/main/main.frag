@@ -10,11 +10,11 @@ layout(location = 0) out vec4 outColor;
 
 void main() {
 //    outColor = vec4(fragColor);
-//    outColor = vec4(inUV,1.0f,1.0f);
+    outColor = vec4(inUV,1.0f,1.0f);
 //    outColor = texture(tex, inUV) * fragColor;
 
-      vec4 texColor = texture(tex, inUV);
-      vec3 color = mix(texColor.rgb, vec3(1.0), clamp(inFlashAmount,0.0f,1.0f));
-      outColor = vec4(color,texColor.a);
+//      vec4 texColor = texture(tex, inUV);
+//      vec3 color = mix(texColor.rgb, vec3(1.0), clamp(inFlashAmount,0.0f,1.0f));
+//      outColor = vec4(color,texColor.a);
 }
 

@@ -38,8 +38,8 @@ void ParticleSystem::recordCommandBuffer(VkCommandBuffer cmd,
                                          VkBuffer vertexBuffer,
                                          VkBuffer indexBuffer,
                                          VkBuffer instanceBuffer,
-                                         GraphicsPipelineType graphicsPipelineType) {
-    if(graphicsPipelineType == GraphicsPipelineType::ExplosionParticles) {
+                                         GfxPipelineType gfxPipelineType) {
+    if(gfxPipelineType == GfxPipelineType::ExplosionParticles) {
         if (liveParticles.empty()) return;
 
         VkDeviceSize offsets[] = {0, 0};
@@ -51,7 +51,7 @@ void ParticleSystem::recordCommandBuffer(VkCommandBuffer cmd,
         vkCmdDrawIndexed(cmd, 6, liveParticles.size(), 0, 0, 0);
 //    vkCmdDraw(cmd, 4, 1, 0, 0);
     }
-    if(graphicsPipelineType == GraphicsPipelineType::StarParticles) {
+    if(gfxPipelineType == GfxPipelineType::StarParticles) {
         if (starInstances.empty()) return;
 
         VkDeviceSize offsets[] = {0, 0};

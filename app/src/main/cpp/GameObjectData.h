@@ -12,7 +12,6 @@
 #include <vulkan/vulkan_android.h>
 //#include <volk.h>
 #include <vector>
-
 #include <android/asset_manager.h>
 #include <android/asset_manager_jni.h>
 #include <vector>
@@ -35,6 +34,7 @@
 #include <cmath>
 
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "Vulkan", __VA_ARGS__)
+constexpr int MAX_POWERUPS = 10;
 
 struct UniformBufferObject {
     alignas(16) glm::mat4 model;
@@ -54,18 +54,29 @@ struct OverlayVertex {
 struct Bullet {
     float x{}, y{};
     bool active{};
-    float size = 0.05f;
+    const float size = 0.05f;
 };
-struct Ship {
-    float x{}, y{};
-    float color[3]{};
-    float size = 0.1f;
-    uint life{3};
-};
+
 struct Alien {
     float x{}, y{};
     bool active{};
     const float size = 0.1f;
+    uint life{3};
+};
+
+enum class PowerUpType {
+    DoubleShot,
+    Shield,
+    Life
+};
+
+
+
+struct Ship {
+    float x{}, y{};
+    float color[3]{};
+    float size = 0.1f;
+    float width,height;
     uint life{3};
 };
 
@@ -77,13 +88,13 @@ struct MainPushConstants {
 };
 
 
-struct GraphicsPipelineData {
+struct GfxPipelineData {
     VkPipeline pipeline{VK_NULL_HANDLE};
     std::vector<VkPipelineShaderStageCreateInfo> shaderStages;
     VkPipelineVertexInputStateCreateInfo vertexInputState;
-    VkPipelineInputAssemblyStateCreateInfo inputAssemblyState;
+    VkPipelineInputAssemblyStateCreateInfo inputAssemblyState{.topology=VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST};
     VkPipelineViewportStateCreateInfo viewportState;
-    VkPipelineRasterizationStateCreateInfo rasterizationState;
+    VkPipelineRasterizationStateCreateInfo rasterizationState{.polygonMode=VK_POLYGON_MODE_FILL};
     VkPipelineMultisampleStateCreateInfo multisamplingState;
     VkPipelineColorBlendStateCreateInfo colorBlendState;
     VkGraphicsPipelineCreateInfo pipelineCreateInfo;
@@ -113,14 +124,16 @@ enum class GameTextureType {
     FontAtlas,
     Overlay
 };
-
-enum class GraphicsPipelineType {
+// Graphics pipeline types
+enum class GfxPipelineType {
     Main,
     Overlay,
     Font,
     ExplosionParticles,
-    StarParticles
+    StarParticles,
+    AxisAlignedBoundingBoxes
 };
+
 
 
 
@@ -156,6 +169,17 @@ static const Vertex bulletVerts[6] = {
         {{-0.02f, 0.00f,  0.0f}, {1, 1, 0}, {0.0f, 1.0f}}
 };
 
+static const Vertex alienVerts[6] = {
+        // Rectangle centered at (0, 0), width 0.12, height 0.07
+        {{-0.07f, -0.045f, 0.0f}, {0.3f, 1.0f, 0.3f}, {0.0f, 0.0f}}, // green
+        {{0.07f,  -0.045f, 0.0f}, {0.3f, 1.0f, 0.3f}, {1.0f, 0.0f}},
+        {{-0.07f, 0.045f,  0.0f}, {0.6f, 1.0f, 0.6f}, {0.0f, 1.0f}},
+
+        {{0.07f,  -0.045f, 0.0f}, {0.3f, 1.0f, 0.3f}, {1.0f, 0.0f}},
+        {{0.07f,  0.045f,  0.0f}, {0.6f, 1.0f, 0.6f}, {1.0f, 1.0f}},
+        {{-0.07f, 0.045f,  0.0f}, {0.6f, 1.0f, 0.6f}, {0.0f, 1.0f}},
+};
+
 static Vertex triangleVerts[3] = {
         {{0.0f,  -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
         {{0.5f,  0.5f,  0.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
@@ -175,17 +199,15 @@ static OverlayVertex overlayQuadVerts[6] = {
 
 static Vertex quadVerts[6] = {
         // Rectangle centered at (0, 0), width 0.12, height 0.07
-        {{-0.07f, -0.045f, 0.0f}, {0.3f, 1.0f, 0.3f}, {0.0f, 0.0f}}, // green
-        {{0.07f,  -0.045f, 0.0f}, {0.3f, 1.0f, 0.3f}, {1.0f, 0.0f}},
-        {{-0.07f, 0.045f,  0.0f}, {0.6f, 1.0f, 0.6f}, {0.0f, 1.0f}},
+        {{-0.07f,-0.045f, 0.0f}, {0.3f, 1.0f, 0.3f}, {0.0f, 0.0f}}, // green
+        {{0.07f,-0.045f, 0.0f}, {0.3f, 1.0f, 0.3f}, {1.0f, 0.0f}},
+        {{-0.07f,0.045f,  0.0f}, {0.6f, 1.0f, 0.6f}, {0.0f, 1.0f}},
 
-        {{0.07f,  -0.045f, 0.0f}, {0.3f, 1.0f, 0.3f}, {1.0f, 0.0f}},
-        {{0.07f,  0.045f,  0.0f}, {0.6f, 1.0f, 0.6f}, {1.0f, 1.0f}},
-        {{-0.07f, 0.045f,  0.0f}, {0.6f, 1.0f, 0.6f}, {0.0f, 1.0f}},
+        {{0.07f,0.045f,0.0f}, {0.3f, 1.0f, 0.3f}, {1.0f, 1.0f}},
+        {{-0.07f,0.045f,0.0f}, {0.6f, 1.0f, 0.6f}, {0.0f, 1.0f}},
+        {{0.07f,-0.045f,0.0f}, {0.6f, 1.0f, 0.6f}, {1.0f, 0.0f}},
 };
 
-
-// Ship is a rectangle at y = -0.8f, width = 0.2, height = 0.05 (adjust as you like)
 static Vertex shipVerts[6] = {
         // First triangle
         {{0.1f,  0.9f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}}, // bottom left (white)
@@ -197,16 +219,7 @@ static Vertex shipVerts[6] = {
         {{0.1f,  0.8f, 0.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 0.0f}}  // top left
 };
 
-static const Vertex alienVerts[6] = {
-        // Rectangle centered at (0, 0), width 0.12, height 0.07
-        {{-0.07f, -0.045f, 0.0f}, {0.3f, 1.0f, 0.3f}, {0.0f, 0.0f}}, // green
-        {{0.07f,  -0.045f, 0.0f}, {0.3f, 1.0f, 0.3f}, {1.0f, 0.0f}},
-        {{-0.07f, 0.045f,  0.0f}, {0.6f, 1.0f, 0.6f}, {0.0f, 1.0f}},
 
-        {{0.07f,  -0.045f, 0.0f}, {0.3f, 1.0f, 0.3f}, {1.0f, 0.0f}},
-        {{0.07f,  0.045f,  0.0f}, {0.6f, 1.0f, 0.6f}, {1.0f, 1.0f}},
-        {{-0.07f, 0.045f,  0.0f}, {0.6f, 1.0f, 0.6f}, {0.0f, 1.0f}},
-};
 
 class GameObjectData {
 

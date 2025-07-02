@@ -7,17 +7,14 @@
 
 #include "GameObjectData.h"
 #include "Time.h"
-constexpr int MAX_POWERUPS = 10;
-enum class PowerUpType {
-    DoubleShot,
-    Shield,
-    Life
-};
+#include "Util.h"
 
 struct PowerUpData {
     PowerUpType type;
     glm::vec2 pos;      // NDC or world units
-    const float size = 0.05f;         // e.g., 0.05f
+    const float size = 0.05f;// e.g., 0.05f
+    float width = Util::getQuadWidthHeight(quadVerts,6)[0];
+    float height = Util::getQuadWidthHeight(quadVerts,6)[1];
     float fallSpeed;    // e.g., 0.5f per sec
     float timeLeft;     // for active power-ups, e.g. 5.0f
     bool active;

@@ -5,6 +5,17 @@
 #include "PowerUpManager.h"
 
 
+AABB getAABB(float cx, float cy, float width, float height) {
+    float halfW = width * 0.5f;
+    float halfH = height * 0.5f;
+    return { cx - halfW, cy - halfH, cx + halfW, cy + halfH };
+}
+
+bool isColliding(const AABB& a, const AABB& b) {
+    return (a.minX < b.maxX && a.maxX > b.minX &&
+            a.minY < b.maxY && a.maxY > b.minY);
+}
+
 void PowerUpManager::spawnPowerUp(PowerUpType type, const glm::vec2 &pos) {
     float randomChance = rand() / float(RAND_MAX);
     if (randomChance < 0.1f) { // 10% chance
@@ -84,23 +95,18 @@ void PowerUpManager::updatePowerUpExpiry() {
 }
 
 void PowerUpManager::checkIfPowerUpCollected(Ship ship) {
-    for (auto& p : powerUps_) {
-        if (!p.active) continue;
-        // Rectangle bounds for ship. Adjust these if the actual ship geometry
-        // differs from Ship::size.
-        float shipHalfW = ship.size * 0.5f;
-        float shipHalfH = ship.size * 0.5f;
+    for (auto& powerup : powerUps_) {
+        if (!powerup.active) continue;
+        // Get sizes from geometry (run once and cache, if shapes are fixed)
+        auto powerUpWH = Util::getQuadWidthHeight(quadVerts, 6);  // [width, height]
+        auto shipWH    = Util::getQuadWidthHeight(shipVerts, 6);  // [width, height]
+        AABB powerupBox = getAABB(powerup.pos.x, powerup.pos.y, powerUpWH[0], powerUpWH[1]);
+        AABB shipBox    = getAABB(ship.x, ship.y, shipWH[0], shipWH[1]);
 
-        // Rectangle bounds for powerup based on its defined size
-        float puHalfW = p.size * 0.5f;
-        float puHalfH = p.size * 0.5f;
-
-        if (fabs(ship.x - p.pos.x) < (shipHalfW + puHalfW) &&
-            fabs(ship.y - p.pos.y) < (shipHalfH + puHalfH)) {
-
-            p.active = false;
+        if (isColliding(powerupBox, shipBox)) {
+            powerup.active = false;
             LOGE("PowerUp collected!");
-            activatePowerUp(p.type);
+            activatePowerUp(powerup.type);
         }
     }
 }
