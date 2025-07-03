@@ -37,8 +37,8 @@ const bool enableValidationLayers = true;
 
 Bullet bullets_[MAX_BULLETS] = {};
 Ship ship_ = {
-        .width=Util::getQuadWidthHeight(shipVerts,6)[0],
-        .height=Util::getQuadWidthHeight(shipVerts,6)[1]
+        .width=Util::getQuadWidthHeight(shipVerts, 6)[0],
+        .height=Util::getQuadWidthHeight(shipVerts, 6)[1]
 };
 Alien aliens_[MAX_ALIENS] = {};
 
@@ -569,8 +569,11 @@ Renderer::Renderer(android_app *app) : app_(app) {
     assetManager_ = app_->activity->assetManager;
     fontManager_ = std::make_unique<FontManager>();
     powerUpManager_ = std::make_unique<PowerUpManager>();
+    util_ = std::make_shared<Util>();
     initVulkan();
+    util_->device = device_;
     particleSystem_ = std::make_unique<ParticleSystem>(device_);
+    powerUpManager_->util = util_;
 
     // 1. Load file from assets
     std::vector<uint8_t> shootSFX = loadMusicAssetToMemory(assetManager_, "shoot.wav");
@@ -606,10 +609,10 @@ Renderer::Renderer(android_app *app) : app_(app) {
 
     sfxMixer.start(SFX_SAMPLE_RATE, SFX_CHANNELS);
 
-    player.buffer = std::move(bgSamples);
-    player.start(sampleRate);
+//    player.buffer = std::move(bgSamples);
+//    player.start(sampleRate);
 
-    player.play();
+//    player.play();
 
 
 }
@@ -1312,6 +1315,7 @@ void Renderer::initVulkan() {// Load Vulkan functions using volk
     loadGameObjects();
     createUniformBuffer();
     initAliens();
+
     createMainGfxPipeline();
     createOverlayGfxPipeline();
     createFontGfxPipeline();
@@ -1319,6 +1323,8 @@ void Renderer::initVulkan() {// Load Vulkan functions using volk
                                GfxPipelineType::ExplosionParticles);
     createParticlesGfxPipeline(explosionParticlesPipeline_,
                                GfxPipelineType::StarParticles);
+    createGfxPipeline(GfxPipelineType::AxisAlignedBoundingBoxes);
+
 
 }
 
@@ -1557,12 +1563,63 @@ void Renderer::createFontGfxPipeline() {
 
 }
 
-void Renderer::createAABBGfxPipeline(VkPipeline pipeline, GfxPipelineType gfxPipelineType) {
+void Renderer::createGfxPipeline(GfxPipelineType gfxPipelineType) {
+    std::vector<VkVertexInputBindingDescription> bindings;
+    std::vector<VkVertexInputAttributeDescription> attributes;
+    VkPipelineVertexInputStateCreateInfo vertexInputInfo = {};
+    VkPipelineLayoutCreateInfo aabbPipelineLayoutInfo = {};
+
+    GfxPipelineData graphicsPipelineData {
+            .inputAssemblyState{.topology=VK_PRIMITIVE_TOPOLOGY_LINE_STRIP},
+            .rasterizationState{.polygonMode=VK_POLYGON_MODE_LINE},
+            .viewport {.x=0.0, .y=0.0f, .width=(float) swapchainExtent_.width, .height=(float) swapchainExtent_.height, .minDepth=0.0f, .maxDepth=1.0f},
+            .scissor {.offset{0, 0}, .extent = swapchainExtent_}
+    };
+
+    switch (gfxPipelineType) {
+        case GfxPipelineType::AxisAlignedBoundingBoxes:
+            setShaderStages(device_, assetManager_, "aabb.vert.spv", "aabb.frag.spv",
+                            graphicsPipelineData);
+            bindings = Vertex::getBindingDescriptions();
+            attributes = Vertex::getAttributeDescriptions();
+
+            vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+            vertexInputInfo.vertexBindingDescriptionCount = bindings.size();
+            vertexInputInfo.pVertexBindingDescriptions = bindings.data();
+            vertexInputInfo.vertexAttributeDescriptionCount = attributes.size();
+            vertexInputInfo.pVertexAttributeDescriptions = attributes.data();
+
+            graphicsPipelineData.vertexInputState = vertexInputInfo;
+
+            setColorBlending(graphicsPipelineData);
+            setViewPortState(graphicsPipelineData);
+            setInputAssembly(graphicsPipelineData);
+            setRasterizer(graphicsPipelineData);
+            setSampling(graphicsPipelineData);
+
+
+            aabbPipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+            aabbPipelineLayoutInfo.setLayoutCount = 0;
+            aabbPipelineLayoutInfo.pSetLayouts = nullptr;
+            aabbPipelineLayoutInfo.pushConstantRangeCount = 0;
+            aabbPipelineLayoutInfo.pPushConstantRanges = nullptr;
+
+            createPipelineLayout(aabbPipelineLayoutInfo, graphicsPipelineData);
+
+
+            createPipeline(graphicsPipelineData, gfxPipelineType);
+
+            break;
+
+        default:
+            LOGE("Unknown graphics pipeline type");
+    }
+
+
 
 }
 
-void Renderer::createParticlesGfxPipeline(VkPipeline pipeline,
-                                          GfxPipelineType graphicsPipelineType) {
+void Renderer::createParticlesGfxPipeline(VkPipeline pipeline,GfxPipelineType gfxPipelineType) {
     std::vector<VkVertexInputBindingDescription> bindings;
     std::vector<VkVertexInputAttributeDescription> attributes;
 
@@ -1572,7 +1629,7 @@ void Renderer::createParticlesGfxPipeline(VkPipeline pipeline,
             .scissor {.offset{0, 0}, .extent = swapchainExtent_}
     };
 
-    if (graphicsPipelineType == GfxPipelineType::ExplosionParticles) {
+    if (gfxPipelineType == GfxPipelineType::ExplosionParticles) {
         setShaderStages(device_, assetManager_, "particles_instanced.vert.spv",
                         "particles_instanced.frag.spv",
                         graphicsPipelineData);
@@ -1587,12 +1644,10 @@ void Renderer::createParticlesGfxPipeline(VkPipeline pipeline,
         particlesVertexInputInfo.vertexAttributeDescriptionCount = attributes.size();
         particlesVertexInputInfo.pVertexAttributeDescriptions = attributes.data();
 
-        LOGE("particles pipelineLayout: %llu", graphicsPipelineData.pipelineLayout);
-
         graphicsPipelineData.vertexInputState = particlesVertexInputInfo;
     }
 
-    if (graphicsPipelineType == GfxPipelineType::StarParticles) {
+    if (gfxPipelineType == GfxPipelineType::StarParticles) {
         setShaderStages(device_, assetManager_, "stars_instanced.vert.spv",
                         "stars_instanced.frag.spv",
                         graphicsPipelineData);
@@ -1606,8 +1661,6 @@ void Renderer::createParticlesGfxPipeline(VkPipeline pipeline,
         particlesVertexInputInfo.pVertexBindingDescriptions = bindings.data();
         particlesVertexInputInfo.vertexAttributeDescriptionCount = attributes.size();
         particlesVertexInputInfo.pVertexAttributeDescriptions = attributes.data();
-
-        LOGE("particles pipelineLayout: %llu", graphicsPipelineData.pipelineLayout);
 
         graphicsPipelineData.vertexInputState = particlesVertexInputInfo;
     }
@@ -1633,15 +1686,15 @@ void Renderer::createParticlesGfxPipeline(VkPipeline pipeline,
 
     VkPipelineLayoutCreateInfo particlesPipelineLayoutInfo = {};
     particlesPipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    particlesPipelineLayoutInfo.setLayoutCount = 1;
-    particlesPipelineLayoutInfo.pSetLayouts = &particlesDescriptorSetLayout_;
+    particlesPipelineLayoutInfo.setLayoutCount = 0;
+    particlesPipelineLayoutInfo.pSetLayouts = nullptr;
     particlesPipelineLayoutInfo.pushConstantRangeCount = 0;
     particlesPipelineLayoutInfo.pPushConstantRanges = nullptr;
 
     createPipelineLayout(particlesPipelineLayoutInfo, graphicsPipelineData);
 
 
-    createPipeline(graphicsPipelineData, graphicsPipelineType);
+    createPipeline(graphicsPipelineData, gfxPipelineType);
 
 
 }
@@ -1745,8 +1798,7 @@ void Renderer::createPipelineLayout(VkPipelineLayoutCreateInfo &pipelineLayoutIn
 }
 
 void
-Renderer::createPipeline(GfxPipelineData &gfxPipelineData,
-                         GfxPipelineType gfxPipelineType) {
+Renderer::createPipeline(GfxPipelineData &gfxPipelineData, GfxPipelineType gfxPipelineType) {
 
     VkGraphicsPipelineCreateInfo pipelineCreateInfo = gfxPipelineData.pipelineCreateInfo;
     pipelineCreateInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -1794,6 +1846,12 @@ Renderer::createPipeline(GfxPipelineData &gfxPipelineData,
             starParticlesPipeline_ = gfxPipelineData.pipeline;
             particlesPipelineLayout_ = gfxPipelineData.pipelineLayout;
             LOGE("starParticlesPipeline_: %p", &starParticlesPipeline_);
+            break;
+        case GfxPipelineType::AxisAlignedBoundingBoxes:
+            util_->aabbPipeline = gfxPipelineData.pipeline;
+            util_->aabbPipelineLayout = gfxPipelineData.pipelineLayout;
+            LOGE("aabbPipeline: %p", &util_->aabbPipeline);
+            LOGE("aabbPipeline llu: %llu", util_->aabbPipeline);
             break;
         default:
             LOGE("Unknown pipeline name: %s", gfxPipelineType);
@@ -1847,26 +1905,29 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
     // --- Draw triangle (or any background)
     float trianglePos[2] = {0.0, 0.0};
     MainPushConstants trianglePC;
-    trianglePC.pos = {0.0f,-0.9f};
-    trianglePC.shakeOffset = {0.0f,0.0f};
+    trianglePC.pos = {0.0f, -0.9f};
+    trianglePC.shakeOffset = {0.0f, 0.0f};
     trianglePC.flashAmount = 0.0f;
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipeline_);
-    vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(MainPushConstants),
+    vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
+                       sizeof(MainPushConstants),
                        &trianglePC);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineLayout_, 0, 1,
                             &powerUpManager_->doubleShotDescriptorSet, 0, nullptr);
     vkCmdBindVertexBuffers(cmd, 0, 1, &vertexBuffer_, offsets);
-    vkCmdDraw(cmd, sizeof(quadVerts)/sizeof(Vertex), 1, 0, 0);
+    vkCmdDraw(cmd, sizeof(quadVerts) / sizeof(Vertex), 1, 0, 0);
 
 
     powerUpManager_->recordCommandBuffer(cmd, mainPipelineLayout_, mainPipeline_, shakeOffset);
+
     // --- Draw ship
     float flashAmount = {0.0f};
 
     shipPC_.pos = {shipX_, ship_.y};
     shipPC_.shakeOffset = shakeOffset;
 
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipeline_);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineLayout_, 0, 1,
                             &shipDescriptorSet_, 0, nullptr);
     vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
@@ -1983,14 +2044,14 @@ void Renderer::spawnBullet() const {
                     bullets_[i].x = shipX_ - 0.05f;
                     bullets_[i].y = -0.8f;
                     bullets_[i].active = true;
-                    sfxMixer.playSFX(shootSFXSample.data(), shootSFXSample.size(), 0.05f);
+//                    sfxMixer.playSFX(shootSFXSample.data(), shootSFXSample.size(), 0.05f);
                     spawned++;
                 } else if (doubleShot && spawned == 1) {
                     // Right bullet
                     bullets_[i].x = shipX_ + 0.05f;
                     bullets_[i].y = -0.8f;
                     bullets_[i].active = true;
-                    sfxMixer.playSFX(shootSFXSample.data(), shootSFXSample.size(), 0.05f);
+//                    sfxMixer.playSFX(shootSFXSample.data(), shootSFXSample.size(), 0.05f);
                     spawned++;
                     break; // Spawned both bullets
                 } else if (!doubleShot) {
@@ -1998,7 +2059,7 @@ void Renderer::spawnBullet() const {
                     bullets_[i].x = shipX_;
                     bullets_[i].y = -0.8f;
                     bullets_[i].active = true;
-                    sfxMixer.playSFX(shootSFXSample.data(), shootSFXSample.size(), 0.05f);
+//                    sfxMixer.playSFX(shootSFXSample.data(), shootSFXSample.size(), 0.05f);
                     break;
                 }
             }
@@ -2075,7 +2136,7 @@ void Renderer::updateCollision() {
                     actualScore += 100;
                     alienMoveSpeed_ += 0.005f;
                     particleSystem_->spawn(glm::vec3(aliens_[i].x, -aliens_[i].y, 1.0f), 60);
-                    sfxMixer.playSFX(explosionSFXMap[x].data(), explosionSFXMap[x].size(), 0.3f);
+//                    sfxMixer.playSFX(explosionSFXMap[x].data(), explosionSFXMap[x].size(), 0.3f);
                     x++;
                     x == explosionSFXMap.size() ? x = 0 : x;
                     shakeTimer = 0.2f;
@@ -2268,6 +2329,13 @@ void Renderer::loadText() {
 }
 
 void Renderer::loadGameObjects() {
+
+    createBuffer(device_, physicalDevice_,  sizeof(quadVerts),
+                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                 util_->vtxBuffer, util_->stagingBufferMemory);
+    uploadDataBuffer(device_, (void *) quadVerts, sizeof(quadVerts),
+                     util_->stagingBufferMemory);
 
     VkDeviceSize quadBufferSize = sizeof(quadVerts);
     createBuffer(device_, physicalDevice_, quadBufferSize,

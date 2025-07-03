@@ -41,10 +41,29 @@ struct UniformBufferObject {
     alignas(16) glm::mat4 view;
     alignas(16) glm::mat4 proj;
 };
+
 struct Vertex {
     float pos[3];
     float color[3];
     float uv[2];
+
+    // Vertex input: just position
+    static std::vector<VkVertexInputBindingDescription> getBindingDescriptions() {
+        std::vector<VkVertexInputBindingDescription> bindings = {
+                {0, sizeof(Vertex),           VK_VERTEX_INPUT_RATE_VERTEX}
+        };
+
+        return bindings;
+    }
+
+    static std::vector<VkVertexInputAttributeDescription> getAttributeDescriptions() {
+        std::vector<VkVertexInputAttributeDescription> attributes = {
+                // Quad position (location=0)
+                {0, 0, VK_FORMAT_R32G32B32_SFLOAT,    offsetof(Vertex, pos)},
+                {1, 0, VK_FORMAT_R32G32B32_SFLOAT,       offsetof(Vertex, color)}
+        };
+        return attributes;
+    }
 };
 
 struct OverlayVertex {
@@ -75,7 +94,6 @@ enum class PowerUpType {
 struct Ship {
     float x{}, y{};
     float color[3]{};
-    float size = 0.1f;
     float width,height;
     uint life{3};
 };

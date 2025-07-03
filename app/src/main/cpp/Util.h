@@ -13,11 +13,14 @@ struct AABB {
 
 class Util {
 public:
+    VkDevice device;
+    VkBuffer vtxBuffer{VK_NULL_HANDLE};
+    VkDeviceMemory stagingBufferMemory{VK_NULL_HANDLE};
+    VkPipeline aabbPipeline{VK_NULL_HANDLE};
+    VkPipelineLayout aabbPipelineLayout{VK_NULL_HANDLE};
     static std::array<float,2> getQuadWidthHeight(const Vertex *verts, size_t vertsCount);
 
-    void recordDrawBoundingBox(VkCommandBuffer cmd, const AABB &box, const glm::vec3 &color,
-                               VkPipeline linePipeline, VkPipelineLayout pipelineLayout,
-                               VkBuffer vtxBuffer, VkDeviceSize vtxOffset);
+    void recordDrawBoundingBox(VkCommandBuffer cmd, const AABB& box, const glm::vec3& color);
 };
 
 

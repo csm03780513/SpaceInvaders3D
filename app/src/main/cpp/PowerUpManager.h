@@ -11,7 +11,7 @@
 
 struct PowerUpData {
     PowerUpType type;
-    glm::vec2 pos;      // NDC or world units
+    glm::vec3 pos;      // NDC or world units
     const float size = 0.05f;// e.g., 0.05f
     float width = Util::getQuadWidthHeight(quadVerts,6)[0];
     float height = Util::getQuadWidthHeight(quadVerts,6)[1];
@@ -22,10 +22,12 @@ struct PowerUpData {
 
 class PowerUpManager {
 private:
+
     void updatePowerUpExpiry();
     void activatePowerUp(PowerUpType type);
     std::vector<PowerUpData> powerUps_;
 public:
+    std::shared_ptr<Util> util;
     VkDevice device;
     bool doubleShotActive = false;
     float doubleShotTimer = 0.0f;

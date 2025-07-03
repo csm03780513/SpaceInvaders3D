@@ -3,8 +3,8 @@
 //
 
 #include "PowerUpManager.h"
-
-
+AABB powerupBox;
+AABB shipBox;
 AABB getAABB(float cx, float cy, float width, float height) {
     float halfW = width * 0.5f;
     float halfH = height * 0.5f;
@@ -21,7 +21,7 @@ void PowerUpManager::spawnPowerUp(PowerUpType type, const glm::vec2 &pos) {
     if (randomChance < 0.1f) { // 10% chance
         PowerUpData p{};
         p.type = (rand() % 2 == 0) ? PowerUpType::DoubleShot : PowerUpType::Shield;
-        p.pos = glm::vec2(pos.x, pos.y); // Spawn at alien’s last position
+        p.pos = glm::vec3(pos.x, pos.y,0.0f); // Spawn at alien’s last position
         p.fallSpeed = 0.3f + 0.2f * (rand() / float(RAND_MAX)); // vary slightly
         p.active = true;
         powerUps_.push_back(p);
@@ -47,6 +47,7 @@ void PowerUpManager::recordCommandBuffer(VkCommandBuffer cmd, VkPipelineLayout p
                                          VkPipeline pipeline,
                                          glm::vec2 shakeOffset) {
 
+
     for (auto powerUp:powerUps_) {
         MainPushConstants pushConstants = {};
         pushConstants.pos = {powerUp.pos.x, -powerUp.pos.y};
@@ -60,7 +61,12 @@ void PowerUpManager::recordCommandBuffer(VkCommandBuffer cmd, VkPipelineLayout p
 
         vkCmdBindVertexBuffers(cmd, 0, 1, &powerUpBuffer, offsets);
         vkCmdDraw(cmd, 6, 1, 0, 0);
+        util->recordDrawBoundingBox(cmd, powerupBox, {0.0f, 1.0f, 0.0f});
     }
+
+
+//    util->recordDrawBoundingBox(cmd, shipBox, {1.0f, 0.0f, 0.0f});
+
 
 
 
@@ -100,8 +106,9 @@ void PowerUpManager::checkIfPowerUpCollected(Ship ship) {
         // Get sizes from geometry (run once and cache, if shapes are fixed)
         auto powerUpWH = Util::getQuadWidthHeight(quadVerts, 6);  // [width, height]
         auto shipWH    = Util::getQuadWidthHeight(shipVerts, 6);  // [width, height]
-        AABB powerupBox = getAABB(powerup.pos.x, powerup.pos.y, powerUpWH[0], powerUpWH[1]);
-        AABB shipBox    = getAABB(ship.x, ship.y, shipWH[0], shipWH[1]);
+         powerupBox = getAABB(powerup.pos.x, -powerup.pos.y, powerUpWH[0], powerUpWH[1]);
+         shipBox    = getAABB(ship.x, 0.85, shipWH[0], shipWH[1]);
+
 
         if (isColliding(powerupBox, shipBox)) {
             powerup.active = false;

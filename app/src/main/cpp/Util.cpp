@@ -16,7 +16,7 @@ std::array<float, 2> Util::getQuadWidthHeight(const Vertex *verts, size_t vertsC
     return {maxX - minX, maxY - minY};
 }
 
-void Util::recordDrawBoundingBox(VkCommandBuffer cmd, const AABB& box, const glm::vec3& color, VkPipeline linePipeline, VkPipelineLayout pipelineLayout, VkBuffer vtxBuffer, VkDeviceSize vtxOffset)
+void Util::recordDrawBoundingBox(VkCommandBuffer cmd, const AABB& box, const glm::vec3& color)
 {
     Vertex verts[5] = {
             { {box.minX, box.minY}, {color.r, color.g, color.b} },
@@ -27,9 +27,15 @@ void Util::recordDrawBoundingBox(VkCommandBuffer cmd, const AABB& box, const glm
     };
     // Upload `verts` to a mapped staging buffer, then to GPU (or use persistently mapped buffer for debug overlays)
 
+    void *mapped;
+    vkMapMemory(device, stagingBufferMemory, 0, sizeof(verts), 0, &mapped);
+    memcpy(mapped, verts, sizeof(verts));
+    vkUnmapMemory(device, stagingBufferMemory);
+
     // Assuming vtxBuffer is ready and contains verts...
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, linePipeline);
-    VkDeviceSize offsets[] = { vtxOffset };
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, aabbPipeline);
+    VkDeviceSize offsets[] = { 0 };
     vkCmdBindVertexBuffers(cmd, 0, 1, &vtxBuffer, offsets);
     vkCmdDraw(cmd, 5, 1, 0, 0); // 5 vertices, 1 instance
+
 }
