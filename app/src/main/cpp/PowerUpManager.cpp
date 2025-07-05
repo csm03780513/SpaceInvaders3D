@@ -77,10 +77,12 @@ void PowerUpManager::activatePowerUp(PowerUpType type) {
         case PowerUpType::DoubleShot:
             doubleShotActive = true;
             doubleShotTimer = 6.0f; // lasts 6 seconds
+            LOGE("Activated DoubleShot");
             break;
         case PowerUpType::Shield:
             shieldActive = true;
             shieldTimer = 8.0f;
+            LOGE("Activated Shield");
             break;
         case PowerUpType::Life:
             break;

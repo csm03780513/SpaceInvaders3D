@@ -1570,8 +1570,8 @@ void Renderer::createGfxPipeline(GfxPipelineType gfxPipelineType) {
     VkPipelineLayoutCreateInfo aabbPipelineLayoutInfo = {};
 
     GfxPipelineData graphicsPipelineData {
-            .inputAssemblyState{.topology=VK_PRIMITIVE_TOPOLOGY_LINE_STRIP},
-            .rasterizationState{.polygonMode=VK_POLYGON_MODE_LINE},
+            .inputAssemblyState{.topology=VK_PRIMITIVE_TOPOLOGY_LINE_LIST},
+//            .rasterizationState{.polygonMode=VK_POLYGON_MODE_LINE},
             .viewport {.x=0.0, .y=0.0f, .width=(float) swapchainExtent_.width, .height=(float) swapchainExtent_.height, .minDepth=0.0f, .maxDepth=1.0f},
             .scissor {.offset{0, 0}, .extent = swapchainExtent_}
     };
