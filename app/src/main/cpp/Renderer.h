@@ -27,11 +27,11 @@ public:
 
     void updateShipBuffer() const;
 
-    void spawnBullet() const;
+    void spawnBullet();
 
     float shipX_ = 0.0f;
     float shipY_ = 0.0f;
-    MainPushConstants shipPC_ = {};
+    MainPushConstants shipPC_ = {.texturePos=0};
     MainPushConstants bulletPC_[MAX_BULLETS] = {};
     MainPushConstants alienPC_[MAX_ALIENS] = {};
     // In your renderer, have a shake timer and amplitude:
@@ -75,8 +75,6 @@ private:
     VkDeviceMemory vertexBufferMemory_{VK_NULL_HANDLE};
 
     VkDescriptorSetLayout shipDescriptorSetLayout_{VK_NULL_HANDLE};
-    VkDescriptorSetLayout alienDescriptorSetLayout_{VK_NULL_HANDLE};
-    VkDescriptorSetLayout shipBulletDescriptorSetLayout_{VK_NULL_HANDLE};
     VkDescriptorSetLayout overlayDescriptorSetLayout_{VK_NULL_HANDLE};
 
     VkPipelineLayout mainPipelineLayout_{VK_NULL_HANDLE};
@@ -95,8 +93,6 @@ private:
     VkDescriptorPool mainDescriptorPool_{VK_NULL_HANDLE};
 
     VkDescriptorSet shipDescriptorSet_{VK_NULL_HANDLE};
-    VkDescriptorSet alienDescriptorSet_{VK_NULL_HANDLE};
-    VkDescriptorSet shipBulletDescriptorSet_{VK_NULL_HANDLE};
 
     VkSemaphore imageAvailableSemaphore_{VK_NULL_HANDLE};
     VkSemaphore renderFinishedSemaphore_{VK_NULL_HANDLE};
@@ -180,6 +176,16 @@ private:
     VkDeviceMemory fontAtlasImageDeviceMemory_;
     VkImageView fontAtlasImageView_;
     VkSampler fontAtlasSampler_;
+
+    VkImage doubleShotImage_;
+    VkDeviceMemory doubleShotMemory_;
+    VkImageView doubleShotView_;
+    VkSampler doubleShotSampler_;
+
+    VkImage shieldImage_;
+    VkDeviceMemory shieldMemory_;
+    VkImageView shieldView_;
+    VkSampler shieldSampler_;
 
     VkPipeline fontPipeline_{VK_NULL_HANDLE};
     VkPipelineLayout fontPipelineLayout_{VK_NULL_HANDLE};

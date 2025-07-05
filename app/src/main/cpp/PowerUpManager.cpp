@@ -34,7 +34,10 @@ void PowerUpManager::updatePowerUpData() {
         if (!p.active) continue;
         p.pos.y -= p.fallSpeed * Time::deltaTime; // Move downwards
         // Deactivate if off-screen
-        if (p.pos.y < -1.1f) p.active = false;
+        if (p.pos.y < -1.1f){
+            p.active = false;
+        }
+
     }
 
 }
@@ -45,23 +48,27 @@ PowerUpManager::PowerUpManager(){
 
 void PowerUpManager::recordCommandBuffer(VkCommandBuffer cmd, VkPipelineLayout pipelineLayout,
                                          VkPipeline pipeline,
-                                         glm::vec2 shakeOffset) {
+                                         glm::vec2 shakeOffset,
+                                         VkDescriptorSet descriptorSet) {
 
 
     for (auto powerUp:powerUps_) {
         MainPushConstants pushConstants = {};
         pushConstants.pos = {powerUp.pos.x, -powerUp.pos.y};
         pushConstants.shakeOffset = shakeOffset;
+        if(powerUp.type == PowerUpType::DoubleShot) pushConstants.texturePos = 3;
+        if(powerUp.type == PowerUpType::Shield) pushConstants.texturePos = 4;
+
 
         VkDeviceSize offsets[] = {0};
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1,
-                                &doubleShotDescriptorSet, 0, nullptr);
+                                &descriptorSet, 0, nullptr);
         vkCmdPushConstants(cmd, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(MainPushConstants),&pushConstants);
 
         vkCmdBindVertexBuffers(cmd, 0, 1, &powerUpBuffer, offsets);
         vkCmdDraw(cmd, 6, 1, 0, 0);
-        util->recordDrawBoundingBox(cmd, powerupBox, {0.0f, 1.0f, 0.0f});
+//        util->recordDrawBoundingBox(cmd, powerupBox, {0.0f, 1.0f, 0.0f});
     }
 
 
@@ -99,22 +106,20 @@ void PowerUpManager::updatePowerUpExpiry() {
         shieldTimer -= Time::deltaTime;
         if (shieldTimer <= 0.0f) shieldActive = false;
     }
-
+    powerUps_.erase(std::remove_if(powerUps_.begin(), powerUps_.end(),
+                                   [](const PowerUpData& p) { return !p.active; }),
+                    powerUps_.end());
 }
 
 void PowerUpManager::checkIfPowerUpCollected(Ship ship) {
     for (auto& powerup : powerUps_) {
         if (!powerup.active) continue;
-        // Get sizes from geometry (run once and cache, if shapes are fixed)
-        auto powerUpWH = Util::getQuadWidthHeight(quadVerts, 6);  // [width, height]
-        auto shipWH    = Util::getQuadWidthHeight(shipVerts, 6);  // [width, height]
-         powerupBox = getAABB(powerup.pos.x, -powerup.pos.y, powerUpWH[0], powerUpWH[1]);
-         shipBox    = getAABB(ship.x, 0.85, shipWH[0], shipWH[1]);
 
+         powerupBox = getAABB(powerup.pos.x, -powerup.pos.y, powerup.widthHeight[0], powerup.widthHeight[1]);
+         shipBox    = getAABB(ship.x, 0.85, ship.widthHeight[0], ship.widthHeight[1]);
 
         if (isColliding(powerupBox, shipBox)) {
             powerup.active = false;
-            LOGE("PowerUp collected!");
             activatePowerUp(powerup.type);
         }
     }

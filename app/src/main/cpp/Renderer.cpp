@@ -37,8 +37,7 @@ const bool enableValidationLayers = true;
 
 Bullet bullets_[MAX_BULLETS] = {};
 Ship ship_ = {
-        .width=Util::getQuadWidthHeight(shipVerts, 6)[0],
-        .height=Util::getQuadWidthHeight(shipVerts, 6)[1]
+        .widthHeight = Util::getQuadWidthHeight(shipVerts,6)
 };
 Alien aliens_[MAX_ALIENS] = {};
 
@@ -140,11 +139,9 @@ VkShaderModule createShaderModule(VkDevice device, const std::vector<char> &code
 }
 
 inline bool isCollision(const Alien &alien, const Bullet &bullet) {
-    float halfAlien = alien.size * 0.5f;
-    float halfBullet = bullet.size * 0.5f;
 
-    return std::abs(alien.x - bullet.x) < (halfAlien + halfBullet) &&
-           std::abs(alien.y - bullet.y) < (halfAlien + halfBullet);
+    return std::abs(alien.x - bullet.x) < (alien.size + bullet.size) &&
+           std::abs(alien.y - bullet.y) < (alien.size + bullet.size);
 }
 
 std::vector<char> loadShaderAsset(AAssetManager *mgr, const char *filename) {
@@ -630,6 +627,10 @@ void Renderer::loadAllTextures() {
     loadTexture("8bitOperatorBold.png", fontAtlasImage_, fontAtlasImageDeviceMemory_,
                 fontAtlasImageView_, fontAtlasSampler_,
                 GameTextureType::FontAtlas);
+    loadTexture("double_shot_2.png", doubleShotImage_, doubleShotMemory_, doubleShotView_,
+                doubleShotSampler_, GameTextureType::PowerUp);
+    loadTexture("shield.png", shieldImage_, shieldMemory_, shieldView_, shieldSampler_,
+                GameTextureType::PowerUp);
 
 }
 
@@ -782,7 +783,7 @@ void Renderer::createFontDescriptor(GfxPipelineData &gfxPipelineData) {
 }
 
 void Renderer::createMainDescriptor(GfxPipelineData &gfxPipelineData) {
-
+     uint descriptorCount = 5;
     VkDescriptorSetLayoutBinding uboLayoutBinding = {};
     uboLayoutBinding.binding = 0;
     uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -792,7 +793,7 @@ void Renderer::createMainDescriptor(GfxPipelineData &gfxPipelineData) {
     VkDescriptorSetLayoutBinding samplerLayoutBinding = {};
     samplerLayoutBinding.binding = 1;
     samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    samplerLayoutBinding.descriptorCount = 1;
+    samplerLayoutBinding.descriptorCount = descriptorCount;
     samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
     std::vector<VkDescriptorSetLayoutBinding> bindings = {uboLayoutBinding, samplerLayoutBinding};
@@ -805,14 +806,14 @@ void Renderer::createMainDescriptor(GfxPipelineData &gfxPipelineData) {
 
     //setLayouts for ship,alien,shipBullet,powerUp
     createDescriptorSetLayout(layoutInfo, shipDescriptorSetLayout_);
-    createDescriptorSetLayout(layoutInfo, alienDescriptorSetLayout_);
-    createDescriptorSetLayout(layoutInfo, shipBulletDescriptorSetLayout_);
-    createDescriptorSetLayout(layoutInfo, powerUpManager_->doubleShotDescriptorSetLayout);
+    //createDescriptorSetLayout(layoutInfo, alienDescriptorSetLayout_);
+   // createDescriptorSetLayout(layoutInfo, shipBulletDescriptorSetLayout_);
+    //createDescriptorSetLayout(layoutInfo, powerUpManager_->doubleShotDescriptorSetLayout);
 
-    std::vector<VkDescriptorSetLayout> descriptorSetLayouts = {shipDescriptorSetLayout_,
-                                                               alienDescriptorSetLayout_,
-                                                               shipBulletDescriptorSetLayout_,
-                                                               powerUpManager_->doubleShotDescriptorSetLayout};
+    std::vector<VkDescriptorSetLayout> descriptorSetLayouts = {shipDescriptorSetLayout_};
+                                                              // alienDescriptorSetLayout_,
+                                                              // shipBulletDescriptorSetLayout_,
+                                                               //powerUpManager_->doubleShotDescriptorSetLayout};
 
     VkPushConstantRange mainPC = {};
     mainPC.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
@@ -832,17 +833,15 @@ void Renderer::createMainDescriptor(GfxPipelineData &gfxPipelineData) {
     createPipelineLayout(mainPipelineLayoutInfo, gfxPipelineData);
     LOGE("main pipelineLayout gd: %llu", gfxPipelineData.pipelineLayout);
 
-    std::vector<VkDescriptorSet> descriptorSets{shipDescriptorSet_, alienDescriptorSet_,
-                                                shipBulletDescriptorSet_,
-                                                powerUpManager_->doubleShotDescriptorSet};
+    std::vector<VkDescriptorSet> descriptorSets{shipDescriptorSet_};
 
     VkDescriptorPoolSize uboPoolSize = {};
     uboPoolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    uboPoolSize.descriptorCount = descriptorSets.size();
+    uboPoolSize.descriptorCount = descriptorCount;
 
     VkDescriptorPoolSize samplerPoolSize = {};
     samplerPoolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    samplerPoolSize.descriptorCount = descriptorSets.size();
+    samplerPoolSize.descriptorCount = descriptorCount;
 
     std::vector<VkDescriptorPoolSize> poolSizes = {uboPoolSize, samplerPoolSize};
 
@@ -876,9 +875,6 @@ void Renderer::createMainDescriptor(GfxPipelineData &gfxPipelineData) {
     }
 
     shipDescriptorSet_ = descriptorSets[0];
-    alienDescriptorSet_ = descriptorSets[1];
-    shipBulletDescriptorSet_ = descriptorSets[2];
-    powerUpManager_->doubleShotDescriptorSet = descriptorSets[3];
 
     LOGE("Descriptor set created");
     VkDescriptorBufferInfo bufferInfo = {};
@@ -886,99 +882,34 @@ void Renderer::createMainDescriptor(GfxPipelineData &gfxPipelineData) {
     bufferInfo.offset = 0;
     bufferInfo.range = sizeof(UniformBufferObject);
 
-    VkWriteDescriptorSet shipBulletBufferDescriptorWrite = {};
-    shipBulletBufferDescriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    shipBulletBufferDescriptorWrite.dstSet = shipBulletDescriptorSet_;
-    shipBulletBufferDescriptorWrite.dstBinding = 0;
-    shipBulletBufferDescriptorWrite.dstArrayElement = 0;
-    shipBulletBufferDescriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    shipBulletBufferDescriptorWrite.descriptorCount = 1;
-    shipBulletBufferDescriptorWrite.pBufferInfo = &bufferInfo;
+    VkWriteDescriptorSet bufferDescriptorWrite = {};
+    bufferDescriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    bufferDescriptorWrite.dstSet = shipDescriptorSet_;
+    bufferDescriptorWrite.dstBinding = 0;
+    bufferDescriptorWrite.dstArrayElement = 0;
+    bufferDescriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    bufferDescriptorWrite.descriptorCount = descriptorCount;
+    bufferDescriptorWrite.pBufferInfo = &bufferInfo;
 
-    VkWriteDescriptorSet shipBufferDescriptorWrite = {};
-    shipBufferDescriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    shipBufferDescriptorWrite.dstSet = shipDescriptorSet_;
-    shipBufferDescriptorWrite.dstBinding = 0;
-    shipBufferDescriptorWrite.dstArrayElement = 0;
-    shipBufferDescriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    shipBufferDescriptorWrite.descriptorCount = 1;
-    shipBufferDescriptorWrite.pBufferInfo = &bufferInfo;
-
-    VkWriteDescriptorSet alienBufferDescriptorWrite = {};
-    alienBufferDescriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    alienBufferDescriptorWrite.dstSet = alienDescriptorSet_;
-    alienBufferDescriptorWrite.dstBinding = 0;
-    alienBufferDescriptorWrite.dstArrayElement = 0;
-    alienBufferDescriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    alienBufferDescriptorWrite.descriptorCount = 1;
-    alienBufferDescriptorWrite.pBufferInfo = &bufferInfo;
-
-    VkDescriptorImageInfo shipBulletImageInfo = {};
-    shipBulletImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    shipBulletImageInfo.imageView = shipBulletImageView_;
-    shipBulletImageInfo.sampler = shipBulletSampler_;
-
-    VkWriteDescriptorSet shipBulletsSamplerDescriptorWrite = {};
-    shipBulletsSamplerDescriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    shipBulletsSamplerDescriptorWrite.dstSet = shipBulletDescriptorSet_;
-    shipBulletsSamplerDescriptorWrite.dstBinding = 1;
-    shipBulletsSamplerDescriptorWrite.dstArrayElement = 0;
-    shipBulletsSamplerDescriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    shipBulletsSamplerDescriptorWrite.descriptorCount = 1;
-    shipBulletsSamplerDescriptorWrite.pImageInfo = &shipBulletImageInfo;
-
-    VkDescriptorImageInfo shipImageInfo = {};
-    shipImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    shipImageInfo.imageView = shipImageView_;
-    shipImageInfo.sampler = shipSampler_;
-
-    VkWriteDescriptorSet shipSamplerDescriptorWrite = {};
-    shipSamplerDescriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    shipSamplerDescriptorWrite.dstSet = shipDescriptorSet_;
-    shipSamplerDescriptorWrite.dstBinding = 1;
-    shipSamplerDescriptorWrite.dstArrayElement = 0;
-    shipSamplerDescriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    shipSamplerDescriptorWrite.descriptorCount = 1;
-    shipSamplerDescriptorWrite.pImageInfo = &shipImageInfo;
-
-    VkDescriptorImageInfo alienImageInfo = {};
-    alienImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    alienImageInfo.imageView = alienImageView_;
-    alienImageInfo.sampler = alienSampler_;
-
-    VkWriteDescriptorSet alienSamplerDescriptorWrite = {};
-    alienSamplerDescriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    alienSamplerDescriptorWrite.dstSet = alienDescriptorSet_;
-    alienSamplerDescriptorWrite.dstBinding = 1;
-    alienSamplerDescriptorWrite.dstArrayElement = 0;
-    alienSamplerDescriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    alienSamplerDescriptorWrite.descriptorCount = 1;
-    alienSamplerDescriptorWrite.pImageInfo = &alienImageInfo;
+    VkDescriptorImageInfo shipImageInfo[5] = {
+            {shipSampler_,shipImageView_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
+            {alienSampler_,alienImageView_,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+            {shipBulletSampler_,shipBulletImageView_,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+            {doubleShotSampler_,doubleShotView_,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+            {shieldSampler_,shieldView_,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}
+    };
 
 
-    VkDescriptorImageInfo doubleShotImageInfo = {};
-    doubleShotImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    doubleShotImageInfo.imageView = shipImageView_;
-    doubleShotImageInfo.sampler = shipSampler_;
+    VkWriteDescriptorSet samplerDescriptorWrite = {};
+    samplerDescriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    samplerDescriptorWrite.dstSet = shipDescriptorSet_;
+    samplerDescriptorWrite.dstBinding = 1;
+    samplerDescriptorWrite.dstArrayElement = 0;
+    samplerDescriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    samplerDescriptorWrite.descriptorCount = descriptorCount;
+    samplerDescriptorWrite.pImageInfo = shipImageInfo;
 
-    VkWriteDescriptorSet doubleShotSamplerDescriptorWrite = {};
-    doubleShotSamplerDescriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    doubleShotSamplerDescriptorWrite.dstSet = powerUpManager_->doubleShotDescriptorSet;
-    doubleShotSamplerDescriptorWrite.dstBinding = 1;
-    doubleShotSamplerDescriptorWrite.dstArrayElement = 0;
-    doubleShotSamplerDescriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    doubleShotSamplerDescriptorWrite.descriptorCount = 1;
-    doubleShotSamplerDescriptorWrite.pImageInfo = &doubleShotImageInfo;
-
-
-    std::vector<VkWriteDescriptorSet> writeDescriptorSets = {shipBulletsSamplerDescriptorWrite,
-                                                             shipBulletBufferDescriptorWrite,
-                                                             shipBufferDescriptorWrite,
-                                                             shipSamplerDescriptorWrite,
-                                                             alienBufferDescriptorWrite,
-                                                             alienSamplerDescriptorWrite,
-                                                             doubleShotSamplerDescriptorWrite};
-
+    std::vector<VkWriteDescriptorSet> writeDescriptorSets = {samplerDescriptorWrite};
 
     vkUpdateDescriptorSets(device_, writeDescriptorSets.size(), writeDescriptorSets.data(), 0,
                            nullptr);
@@ -1381,6 +1312,7 @@ void Renderer::initAliens() {
             aliens_[idx].y = startY - y * dy;
             aliens_[idx].active = true;
             aliens_[idx].life = 3;
+            alienPC_[idx].texturePos = 1;
         }
     }
 }
@@ -1908,18 +1840,19 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
     trianglePC.pos = {0.0f, -0.9f};
     trianglePC.shakeOffset = {0.0f, 0.0f};
     trianglePC.flashAmount = 0.0f;
+    trianglePC.texturePos = 4;
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipeline_);
     vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
                        sizeof(MainPushConstants),
                        &trianglePC);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineLayout_, 0, 1,
-                            &powerUpManager_->doubleShotDescriptorSet, 0, nullptr);
+                            &shipDescriptorSet_, 0, nullptr);
     vkCmdBindVertexBuffers(cmd, 0, 1, &vertexBuffer_, offsets);
     vkCmdDraw(cmd, sizeof(quadVerts) / sizeof(Vertex), 1, 0, 0);
 
 
-    powerUpManager_->recordCommandBuffer(cmd, mainPipelineLayout_, mainPipeline_, shakeOffset);
+    powerUpManager_->recordCommandBuffer(cmd, mainPipelineLayout_, mainPipeline_, shakeOffset,shipDescriptorSet_);
 
     // --- Draw ship
     float flashAmount = {0.0f};
@@ -1944,9 +1877,10 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
 
         bulletPC_[i].pos = {bullets_[i].x, -bullets_[i].y};
         bulletPC_[i].shakeOffset = shakeOffset;
+        bulletPC_[i].texturePos = 2;
 
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineLayout_, 0, 1,
-                                &shipBulletDescriptorSet_, 0, nullptr);
+                                &shipDescriptorSet_, 0, nullptr);
         vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
                            sizeof(MainPushConstants), &bulletPC_[i]);
         vkCmdBindVertexBuffers(cmd, 0, 1, &bulletVertexBuffer_, offsets);
@@ -1959,7 +1893,7 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
         alienPC_[i].shakeOffset = shakeOffset;
 
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineLayout_, 0, 1,
-                                &alienDescriptorSet_, 0, nullptr);
+                                &shipDescriptorSet_, 0, nullptr);
         vkCmdBindVertexBuffers(cmd, 0, 1, &alienVertexBuffer_, offsets);
         vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
                            sizeof(MainPushConstants),
@@ -2033,11 +1967,12 @@ void Renderer::restartGame() {
     gameState = GameState::Playing;
 }
 
-void Renderer::spawnBullet() const {
+void Renderer::spawnBullet() {
     if (gameState == GameState::Playing) {
         int spawned = 0;
         bool doubleShot = powerUpManager_->doubleShotActive;
         for (int i = 0; i < MAX_BULLETS; ++i) {
+            bulletPC_[i].texturePos = 3;
             if (!bullets_[i].active) {
                 if (doubleShot && spawned == 0) {
                     // Left bullet
@@ -2128,15 +2063,15 @@ void Renderer::updateCollision() {
                 aliens_[i].life--;
                 // On hit:
                 alienPC_[i].flashAmount = 1.0f;
-                particleSystem_->spawn(glm::vec3(aliens_[i].x, -aliens_[i].y, 0.0f), 15);
-                powerUpManager_->spawnPowerUp(PowerUpType::DoubleShot,
-                                              {aliens_[i].x, aliens_[i].y});
+
                 if (aliens_[i].life <= 0) {
                     aliens_[i].active = false;    // Destroy alien
                     actualScore += 100;
                     alienMoveSpeed_ += 0.005f;
-                    particleSystem_->spawn(glm::vec3(aliens_[i].x, -aliens_[i].y, 1.0f), 60);
+                    particleSystem_->spawn(glm::vec3(aliens_[i].x, -aliens_[i].y, 1.0f), 15);
 //                    sfxMixer.playSFX(explosionSFXMap[x].data(), explosionSFXMap[x].size(), 0.3f);
+                    powerUpManager_->spawnPowerUp(PowerUpType::DoubleShot,
+                                                  {aliens_[i].x, aliens_[i].y});
                     x++;
                     x == explosionSFXMap.size() ? x = 0 : x;
                     shakeTimer = 0.2f;

@@ -12,9 +12,7 @@
 struct PowerUpData {
     PowerUpType type;
     glm::vec3 pos;      // NDC or world units
-    const float size = 0.05f;// e.g., 0.05f
-    float width = Util::getQuadWidthHeight(quadVerts,6)[0];
-    float height = Util::getQuadWidthHeight(quadVerts,6)[1];
+    std::array<float,2> widthHeight = Util::getQuadWidthHeight(quadVerts,6);
     float fallSpeed;    // e.g., 0.5f per sec
     float timeLeft;     // for active power-ups, e.g. 5.0f
     bool active;
@@ -35,13 +33,11 @@ public:
     float shieldTimer = 0.0f;
     VkBuffer powerUpBuffer;
     VkDeviceMemory powerUpBufferMemory;
-    VkDescriptorSet doubleShotDescriptorSet;
-    VkDescriptorSetLayout doubleShotDescriptorSetLayout;
     explicit PowerUpManager();
     void spawnPowerUp(PowerUpType type, const glm::vec2& pos);
     void updatePowerUpData();
     void checkIfPowerUpCollected(Ship ship);
-    void recordCommandBuffer(VkCommandBuffer cmd, VkPipelineLayout pipelineLayout,VkPipeline pipeline,glm::vec2 shakeOffset);
+    void recordCommandBuffer(VkCommandBuffer cmd, VkPipelineLayout pipelineLayout,VkPipeline pipeline,glm::vec2 shakeOffset,VkDescriptorSet descriptorSet);
 };
 
 

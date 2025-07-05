@@ -10,6 +10,7 @@ layout(push_constant) uniform AlienPush {
     vec2 offset;
     vec2 shakeOffset;
     float flashAmount;
+    uint texturePos;
 } pc;
 
 
@@ -20,6 +21,7 @@ layout(location = 2) in vec2 inUV;
 layout(location = 0) out vec4 fragColor;
 layout(location = 1) out vec2 outUV;
 layout(location = 2) out float outFlashAmount;
+layout(location = 3) out uint outTexturePos;
 
 void main() {
 
@@ -29,4 +31,5 @@ void main() {
     fragColor = vec4(inColor.xy + pc.offset, inColor.z, 1.0);
     outUV = inUV;
     outFlashAmount = pc.flashAmount;
+    outTexturePos = pc.texturePos;
 }

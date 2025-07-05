@@ -4,6 +4,7 @@
 
 #include "Util.h"
 
+//calculates the width and height of the quad based on the vertices
 std::array<float, 2> Util::getQuadWidthHeight(const Vertex *verts, size_t vertsCount) {
     float minX = verts[0].pos[0], maxX = verts[0].pos[0];
     float minY = verts[0].pos[1], maxY = verts[0].pos[1];
