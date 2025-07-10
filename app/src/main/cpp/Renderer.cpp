@@ -37,7 +37,7 @@ const bool enableValidationLayers = true;
 
 Bullet bullets_[MAX_BULLETS] = {};
 Ship ship_ = {
-        .widthHeight = Util::getQuadWidthHeight(shipVerts,6)
+        .widthHeight = Util::getQuadWidthHeight(shipVerts, 6)
 };
 Alien aliens_[MAX_ALIENS] = {};
 
@@ -141,7 +141,7 @@ VkShaderModule createShaderModule(VkDevice device, const std::vector<char> &code
 inline bool isCollision(const Alien &alien, const Bullet &bullet) {
 
     return std::abs(alien.x - bullet.x) < (alien.size + bullet.size) &&
-           std::abs(alien.y - bullet.y) < (alien.size + bullet.size);
+           std::abs(alien.y + bullet.y) < (alien.size + bullet.size);
 }
 
 std::vector<char> loadShaderAsset(AAssetManager *mgr, const char *filename) {
@@ -783,7 +783,7 @@ void Renderer::createFontDescriptor(GfxPipelineData &gfxPipelineData) {
 }
 
 void Renderer::createMainDescriptor(GfxPipelineData &gfxPipelineData) {
-     uint descriptorCount = 5;
+    uint descriptorCount = 5;
     VkDescriptorSetLayoutBinding uboLayoutBinding = {};
     uboLayoutBinding.binding = 0;
     uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -807,13 +807,13 @@ void Renderer::createMainDescriptor(GfxPipelineData &gfxPipelineData) {
     //setLayouts for ship,alien,shipBullet,powerUp
     createDescriptorSetLayout(layoutInfo, shipDescriptorSetLayout_);
     //createDescriptorSetLayout(layoutInfo, alienDescriptorSetLayout_);
-   // createDescriptorSetLayout(layoutInfo, shipBulletDescriptorSetLayout_);
+    // createDescriptorSetLayout(layoutInfo, shipBulletDescriptorSetLayout_);
     //createDescriptorSetLayout(layoutInfo, powerUpManager_->doubleShotDescriptorSetLayout);
 
     std::vector<VkDescriptorSetLayout> descriptorSetLayouts = {shipDescriptorSetLayout_};
-                                                              // alienDescriptorSetLayout_,
-                                                              // shipBulletDescriptorSetLayout_,
-                                                               //powerUpManager_->doubleShotDescriptorSetLayout};
+    // alienDescriptorSetLayout_,
+    // shipBulletDescriptorSetLayout_,
+    //powerUpManager_->doubleShotDescriptorSetLayout};
 
     VkPushConstantRange mainPC = {};
     mainPC.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
@@ -892,11 +892,11 @@ void Renderer::createMainDescriptor(GfxPipelineData &gfxPipelineData) {
     bufferDescriptorWrite.pBufferInfo = &bufferInfo;
 
     VkDescriptorImageInfo shipImageInfo[5] = {
-            {shipSampler_,shipImageView_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
-            {alienSampler_,alienImageView_,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
-            {shipBulletSampler_,shipBulletImageView_,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
-            {doubleShotSampler_,doubleShotView_,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
-            {shieldSampler_,shieldView_,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}
+            {shipSampler_,       shipImageView_,       VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+            {alienSampler_,      alienImageView_,      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+            {shipBulletSampler_, shipBulletImageView_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+            {doubleShotSampler_, doubleShotView_,      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+            {shieldSampler_,     shieldView_,          VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}
     };
 
 
@@ -1501,7 +1501,7 @@ void Renderer::createGfxPipeline(GfxPipelineType gfxPipelineType) {
     VkPipelineVertexInputStateCreateInfo vertexInputInfo = {};
     VkPipelineLayoutCreateInfo aabbPipelineLayoutInfo = {};
 
-    GfxPipelineData graphicsPipelineData {
+    GfxPipelineData graphicsPipelineData{
             .inputAssemblyState{.topology=VK_PRIMITIVE_TOPOLOGY_LINE_LIST},
 //            .rasterizationState{.polygonMode=VK_POLYGON_MODE_LINE},
             .viewport {.x=0.0, .y=0.0f, .width=(float) swapchainExtent_.width, .height=(float) swapchainExtent_.height, .minDepth=0.0f, .maxDepth=1.0f},
@@ -1548,10 +1548,9 @@ void Renderer::createGfxPipeline(GfxPipelineType gfxPipelineType) {
     }
 
 
-
 }
 
-void Renderer::createParticlesGfxPipeline(VkPipeline pipeline,GfxPipelineType gfxPipelineType) {
+void Renderer::createParticlesGfxPipeline(VkPipeline pipeline, GfxPipelineType gfxPipelineType) {
     std::vector<VkVertexInputBindingDescription> bindings;
     std::vector<VkVertexInputAttributeDescription> attributes;
 
@@ -1852,7 +1851,8 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
     vkCmdDraw(cmd, sizeof(quadVerts) / sizeof(Vertex), 1, 0, 0);
 
 
-    powerUpManager_->recordCommandBuffer(cmd, mainPipelineLayout_, mainPipeline_, shakeOffset,shipDescriptorSet_);
+    powerUpManager_->recordCommandBuffer(cmd, mainPipelineLayout_, mainPipeline_, shakeOffset,
+                                         shipDescriptorSet_);
 
     // --- Draw ship
     float flashAmount = {0.0f};
@@ -1873,9 +1873,7 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
     // --- Draw bullets (for each active bullet, updateExplosionParticles buffer and draw)
     for (int i = 0; i < MAX_BULLETS; ++i) {
         if (!bullets_[i].active) continue;
-//        float bulletPos[2] = {bullets_[i].x, -bullets_[i].y};
-
-        bulletPC_[i].pos = {bullets_[i].x, -bullets_[i].y};
+        bulletPC_[i].pos = {bullets_[i].x, bullets_[i].y};
         bulletPC_[i].shakeOffset = shakeOffset;
         bulletPC_[i].texturePos = 2;
 
@@ -1960,59 +1958,57 @@ void Renderer::restartGame() {
     }
 
     // Reset score, level, etc.
-
-    // ---- FIX: Reset frame timer ----
-//    lastFrameTime = Clock::now();
-
+    actualScore = 0;
     gameState = GameState::Playing;
 }
 
 void Renderer::spawnBullet() {
-    if (gameState == GameState::Playing) {
-        int spawned = 0;
-        bool doubleShot = powerUpManager_->doubleShotActive;
-        for (int i = 0; i < MAX_BULLETS; ++i) {
-            bulletPC_[i].texturePos = 3;
-            if (!bullets_[i].active) {
-                if (doubleShot && spawned == 0) {
-                    // Left bullet
-                    bullets_[i].x = shipX_ - 0.05f;
-                    bullets_[i].y = -0.8f;
-                    bullets_[i].active = true;
-//                    sfxMixer.playSFX(shootSFXSample.data(), shootSFXSample.size(), 0.05f);
-                    spawned++;
-                } else if (doubleShot && spawned == 1) {
-                    // Right bullet
-                    bullets_[i].x = shipX_ + 0.05f;
-                    bullets_[i].y = -0.8f;
-                    bullets_[i].active = true;
-//                    sfxMixer.playSFX(shootSFXSample.data(), shootSFXSample.size(), 0.05f);
-                    spawned++;
-                    break; // Spawned both bullets
-                } else if (!doubleShot) {
-                    // Normal shot: center
-                    bullets_[i].x = shipX_;
-                    bullets_[i].y = -0.8f;
-                    bullets_[i].active = true;
-//                    sfxMixer.playSFX(shootSFXSample.data(), shootSFXSample.size(), 0.05f);
-                    break;
+
+    if (gameState == GameState::Playing && canFire) {
+            int spawned = 0;
+            bool doubleShot = powerUpManager_->doubleShotActive;
+            for (int i = 0; i < MAX_BULLETS; ++i) {
+                bulletPC_[i].texturePos = 3;
+                if (!bullets_[i].active) {
+                    if (doubleShot && spawned == 0) {
+                        // Left bullet
+                        bullets_[i].x = shipX_ - 0.05f;
+                        bullets_[i].y = shipY_ - 0.04f;
+                        bullets_[i].active = true;
+                        sfxMixer.playSFX(shootSFXSample.data(), shootSFXSample.size(), 0.05f);
+                        spawned++;
+                    } else if (doubleShot && spawned == 1) {
+                        // Right bullet
+                        bullets_[i].x = shipX_ + 0.05f;
+                        bullets_[i].y = shipY_ - 0.04f;
+                        bullets_[i].active = true;
+                        sfxMixer.playSFX(shootSFXSample.data(), shootSFXSample.size(), 0.05f);
+                        spawned++;
+                        break; // Spawned both bullets
+                    } else if (!doubleShot) {
+                        // Normal shot: center
+                        bullets_[i].x = shipX_;
+                        bullets_[i].y = shipY_ - 0.04f;
+                        bullets_[i].active = true;
+                        sfxMixer.playSFX(shootSFXSample.data(), shootSFXSample.size(), 0.05f);
+                        break;
+                    }
                 }
             }
-        }
     }
 }
 
 void Renderer::updateShipBuffer() const {
     ship_.x = shipX_;
-    ship_.y = 0.0f;
+    ship_.y = shipY_;
     ship_.color[0] = shipX_;
 }
 
 void Renderer::updateBullet() {
     for (int i = 0; i < MAX_BULLETS; ++i) {
         if (bullets_[i].active) {
-            bullets_[i].y += bulletMoveSpeed_ * Time::deltaTime; // Move up
-            if (bullets_[i].y > 1.0f)
+            bullets_[i].y -= bulletMoveSpeed_ * Time::deltaTime; // Move up
+            if (bullets_[i].y < -1.0f)
                 bullets_[i].active = false; // Off screen
         }
     }
@@ -2068,6 +2064,7 @@ void Renderer::updateCollision() {
                     aliens_[i].active = false;    // Destroy alien
                     actualScore += 100;
                     alienMoveSpeed_ += 0.005f;
+                    rateOfFire -= 0.0005f;
                     particleSystem_->spawn(glm::vec3(aliens_[i].x, -aliens_[i].y, 1.0f), 15);
 //                    sfxMixer.playSFX(explosionSFXMap[x].data(), explosionSFXMap[x].size(), 0.3f);
                     powerUpManager_->spawnPowerUp(PowerUpType::DoubleShot,
@@ -2177,12 +2174,18 @@ void Renderer::animateScore() {
 
 
 void Renderer::drawFrame() {
-    //computeDeltaTime();
+
     uint32_t imageIndex;
     vkAcquireNextImageKHR(device_, swapchain_, UINT64_MAX, imageAvailableSemaphore_, VK_NULL_HANDLE,
                           &imageIndex);
     if (gameState == GameState::Playing) {
-
+        if (lastFireTime > rateOfFire) {
+            lastFireTime = 0.0f;
+            canFire = true;
+        } else {
+            lastFireTime += Time::deltaTime;
+            canFire = false;
+        }
         updateUniformBuffer();
         updateShipBuffer();
 
@@ -2265,7 +2268,7 @@ void Renderer::loadText() {
 
 void Renderer::loadGameObjects() {
 
-    createBuffer(device_, physicalDevice_,  sizeof(quadVerts),
+    createBuffer(device_, physicalDevice_, sizeof(quadVerts),
                  VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                  util_->vtxBuffer, util_->stagingBufferMemory);
@@ -2328,13 +2331,13 @@ void Renderer::loadGameObjects() {
                  particlesInstanceBuffer_, particlesInstanceBufferMemory_);
 
 
-    VkDeviceSize bulletBufferSize = sizeof(bulletVerts);
+    VkDeviceSize bulletBufferSize = sizeof(quadVerts);
     createBuffer(device_, physicalDevice_, bulletBufferSize,
                  VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                  bulletVertexBuffer_, bulletVertexBufferMemory_);
 
-    uploadDataBuffer(device_, (void *) bulletVerts, bulletBufferSize, bulletVertexBufferMemory_);
+    uploadDataBuffer(device_, (void *) quadVerts, bulletBufferSize, bulletVertexBufferMemory_);
 
     VkDeviceSize bufferSize = sizeof(quadVerts);
     createBuffer(device_, physicalDevice_, bufferSize,

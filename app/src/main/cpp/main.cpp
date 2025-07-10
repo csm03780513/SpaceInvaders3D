@@ -24,7 +24,7 @@ static int32_t handle_input(struct android_app *app, AInputEvent *event) {
             int32_t height = ANativeWindow_getHeight(app->window);
             // Convert X to normalized device coordinate [-1, 1]
             float ndcX = (x / (float) width) * 2.0f - 1.0f;
-            float ndcY = (y / (float) height) * 1.0f - 1.0f;
+            float ndcY = (y / (float) height) * 2.0f - 1.0f;
             if (g_renderer && g_renderer->gameState == GameState::Playing) {
                 // Move ship as before
                 if (AMotionEvent_getAction(event) == AMOTION_EVENT_ACTION_DOWN ||
@@ -51,7 +51,8 @@ static int32_t handle_input(struct android_app *app, AInputEvent *event) {
 void set_ship_x(float x, float y) {
     if (g_renderer) {
         g_renderer->shipX_ = x;
-        g_renderer->shipY_ = y;
+        g_renderer->shipY_ = y - 0.12f;
+        g_renderer->spawnBullet();
     }
 }
 

@@ -229,14 +229,14 @@ static Vertex quadVerts[6] = {
 };
 
 static Vertex shipVerts[6] = {
-        // First triangle
-        {{0.1f,  0.9f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}}, // bottom left (white)
-        {{-0.1f, 0.9f, 0.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f}}, // bottom right (cyan)
-        {{0.1f,  0.8f, 0.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 0.0f}}, // top left (magenta)
-        // Second triangle
-        {{-0.1f, 0.9f, 0.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f}}, // bottom right
-        {{-0.1f, 0.8f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f}}, // top right (blue)
-        {{0.1f,  0.8f, 0.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 0.0f}}  // top left
+        // Rectangle centered at (0, 0), width 0.12, height 0.07
+        {{-0.08f,-0.045f, 0.0f}, {0.3f, 1.0f, 0.3f}, {0.0f, 0.0f}}, // green
+        {{0.08f,-0.045f, 0.0f}, {0.3f, 1.0f, 0.3f}, {1.0f, 0.0f}},
+        {{-0.08f,0.045f,  0.0f}, {0.6f, 1.0f, 0.6f}, {0.0f, 1.0f}},
+
+        {{0.08f,0.045f,0.0f}, {0.3f, 1.0f, 0.3f}, {1.0f, 1.0f}},
+        {{-0.08f,0.045f,0.0f}, {0.6f, 1.0f, 0.6f}, {0.0f, 1.0f}},
+        {{0.08f,-0.045f,0.0f}, {0.6f, 1.0f, 0.6f}, {1.0f, 0.0f}},
 };
 
 

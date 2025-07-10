@@ -116,7 +116,7 @@ void PowerUpManager::checkIfPowerUpCollected(Ship ship) {
         if (!powerup.active) continue;
 
          powerupBox = getAABB(powerup.pos.x, -powerup.pos.y, powerup.widthHeight[0], powerup.widthHeight[1]);
-         shipBox    = getAABB(ship.x, 0.85, ship.widthHeight[0], ship.widthHeight[1]);
+         shipBox    = getAABB(ship.x, ship.y, ship.widthHeight[0], ship.widthHeight[1]);
 
         if (isColliding(powerupBox, shipBox)) {
             powerup.active = false;

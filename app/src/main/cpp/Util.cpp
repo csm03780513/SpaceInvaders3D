@@ -26,7 +26,6 @@ void Util::recordDrawBoundingBox(VkCommandBuffer cmd, const AABB& box, const glm
             { {box.minX, box.maxY}, {color.r, color.g, color.b} },
             { {box.minX, box.minY}, {color.r, color.g, color.b} } // close loop
     };
-    // Upload `verts` to a mapped staging buffer, then to GPU (or use persistently mapped buffer for debug overlays)
 
     void *mapped;
     vkMapMemory(device, stagingBufferMemory, 0, sizeof(verts), 0, &mapped);

@@ -31,6 +31,10 @@ public:
 
     float shipX_ = 0.0f;
     float shipY_ = 0.0f;
+    float rateOfFire = 0.2f;
+    float lastFireTime = 0.0f;
+    bool canFire = false;
+
     MainPushConstants shipPC_ = {.texturePos=0};
     MainPushConstants bulletPC_[MAX_BULLETS] = {};
     MainPushConstants alienPC_[MAX_ALIENS] = {};
