@@ -53,9 +53,6 @@ public:
             float x, float y, float z,
             float scale,bool center = false);
 
-    std::vector<Vertex>
-    buildTextVertices0(float startX, float startY, float scale, const std::string &text);
-
 private:
     FontAtlasMetrics fontAtlasMetrics_;
 };

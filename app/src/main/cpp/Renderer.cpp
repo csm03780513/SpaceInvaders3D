@@ -1958,7 +1958,6 @@ void Renderer::restartGame() {
     }
 
     // Reset score, level, etc.
-    actualScore = 0;
     gameState = GameState::Playing;
 }
 
@@ -2062,7 +2061,7 @@ void Renderer::updateCollision() {
 
                 if (aliens_[i].life <= 0) {
                     aliens_[i].active = false;    // Destroy alien
-                    actualScore += 100;
+                    actualScore += 1000;
                     alienMoveSpeed_ += 0.005f;
                     rateOfFire -= 0.0005f;
                     particleSystem_->spawn(glm::vec3(aliens_[i].x, -aliens_[i].y, 1.0f), 15);
