@@ -43,7 +43,7 @@ Alien aliens_[MAX_ALIENS] = {};
 
 float alienMoveSpeed_ = 0.3f;
 float bulletMoveSpeed_ = 2.0f;
-int alienDirection_ = 1; // 1 = right, -1 = left
+float alienDirection_ = 1.0f; // 1 = right, -1 = left
 
 
 std::vector<char> loadShaderAsset(AAssetManager *mgr, const char *filename);
@@ -91,7 +91,7 @@ void setSampling(GfxPipelineData &graphicsPipelineData);
 void updateFontBuffer(VkDevice device, std::vector<Vertex> textVertices,
                       VkDeviceMemory fontVertexBufferMemory_);
 
-void uploadDataBuffer(VkDevice device, void *dataToUpload, VkDeviceSize sizeOfData,
+void uploadDataBuffer(VkDevice device,const void *dataToUpload, VkDeviceSize sizeOfData,
                       VkDeviceMemory bufferMemory);
 
 std::vector<float>
@@ -563,14 +563,31 @@ std::vector<float> shootSFXSample, explodeSFXSample1, explodeSFXSample2;
 std::unordered_map<uint, std::vector<float>> explosionSFXMap;
 
 Renderer::Renderer(android_app *app) : app_(app) {
+    initVulkan();
     assetManager_ = app_->activity->assetManager;
     fontManager_ = std::make_unique<FontManager>();
-    powerUpManager_ = std::make_unique<PowerUpManager>();
     util_ = std::make_shared<Util>();
-    initVulkan();
+    powerUpManager_ = std::make_shared<PowerUpManager>();
+    particleSystem_ = std::make_unique<ParticleSystem>(device_, powerUpManager_);
     util_->device = device_;
-    particleSystem_ = std::make_unique<ParticleSystem>(device_);
     powerUpManager_->util = util_;
+
+    powerUpManager_->device = device_;
+    loadAllTextures();
+    loadText();
+    loadGameObjects();
+    createUniformBuffer();
+    initAliens();
+
+    createMainGfxPipeline();
+    createOverlayGfxPipeline();
+    createFontGfxPipeline();
+
+    createParticlesGfxPipeline(GfxPipelineType::ExplosionParticles);
+    createParticlesGfxPipeline(GfxPipelineType::StarParticles);
+    createParticlesGfxPipeline(GfxPipelineType::HaloEffect);
+
+    createGfxPipeline(GfxPipelineType::AxisAlignedBoundingBoxes);
 
     // 1. Load file from assets
     std::vector<uint8_t> shootSFX = loadMusicAssetToMemory(assetManager_, "shoot.wav");
@@ -1240,21 +1257,6 @@ void Renderer::initVulkan() {// Load Vulkan functions using volk
         LOGE("Failed to allocate command buffers");
         throw std::runtime_error("Failed to allocate command buffers");
     }
-    powerUpManager_->device = device_;
-    loadAllTextures();
-    loadText();
-    loadGameObjects();
-    createUniformBuffer();
-    initAliens();
-
-    createMainGfxPipeline();
-    createOverlayGfxPipeline();
-    createFontGfxPipeline();
-    createParticlesGfxPipeline(explosionParticlesPipeline_,
-                               GfxPipelineType::ExplosionParticles);
-    createParticlesGfxPipeline(explosionParticlesPipeline_,
-                               GfxPipelineType::StarParticles);
-    createGfxPipeline(GfxPipelineType::AxisAlignedBoundingBoxes);
 
 
 }
@@ -1268,7 +1270,7 @@ void updateFontBuffer(VkDevice device, std::vector<Vertex> textVertices,
     vkUnmapMemory(device, fontVertexBufferMemory);
 }
 
-void uploadDataBuffer(VkDevice device, void *dataToUpload, VkDeviceSize sizeOfData,
+void uploadDataBuffer(VkDevice device, const void *dataToUpload, VkDeviceSize sizeOfData,
                       VkDeviceMemory bufferMemory) {
     void *fontData;
     vkMapMemory(device, bufferMemory, 0, sizeOfData, 0, &fontData);
@@ -1501,15 +1503,15 @@ void Renderer::createGfxPipeline(GfxPipelineType gfxPipelineType) {
     VkPipelineVertexInputStateCreateInfo vertexInputInfo = {};
     VkPipelineLayoutCreateInfo aabbPipelineLayoutInfo = {};
 
-    GfxPipelineData graphicsPipelineData{
-            .inputAssemblyState{.topology=VK_PRIMITIVE_TOPOLOGY_LINE_LIST},
-//            .rasterizationState{.polygonMode=VK_POLYGON_MODE_LINE},
+    GfxPipelineData graphicsPipelineData {
             .viewport {.x=0.0, .y=0.0f, .width=(float) swapchainExtent_.width, .height=(float) swapchainExtent_.height, .minDepth=0.0f, .maxDepth=1.0f},
             .scissor {.offset{0, 0}, .extent = swapchainExtent_}
     };
 
     switch (gfxPipelineType) {
         case GfxPipelineType::AxisAlignedBoundingBoxes:
+            graphicsPipelineData.inputAssemblyState.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+
             setShaderStages(device_, assetManager_, "aabb.vert.spv", "aabb.frag.spv",
                             graphicsPipelineData);
             bindings = Vertex::getBindingDescriptions();
@@ -1550,12 +1552,11 @@ void Renderer::createGfxPipeline(GfxPipelineType gfxPipelineType) {
 
 }
 
-void Renderer::createParticlesGfxPipeline(VkPipeline pipeline, GfxPipelineType gfxPipelineType) {
+void Renderer::createParticlesGfxPipeline(GfxPipelineType gfxPipelineType) {
     std::vector<VkVertexInputBindingDescription> bindings;
     std::vector<VkVertexInputAttributeDescription> attributes;
 
     GfxPipelineData graphicsPipelineData{
-            .pipeline = pipeline,
             .viewport {.x=0.0, .y=0.0f, .width=(float) swapchainExtent_.width, .height=(float) swapchainExtent_.height, .minDepth=0.0f, .maxDepth=1.0f},
             .scissor {.offset{0, 0}, .extent = swapchainExtent_}
     };
@@ -1595,6 +1596,25 @@ void Renderer::createParticlesGfxPipeline(VkPipeline pipeline, GfxPipelineType g
 
         graphicsPipelineData.vertexInputState = particlesVertexInputInfo;
     }
+
+    if(gfxPipelineType == GfxPipelineType::HaloEffect) {
+        setShaderStages(device_, assetManager_, "halo.vert.spv",
+                        "halo.frag.spv",
+                        graphicsPipelineData);
+        bindings = ShieldInstance::getBindingDescriptions();
+        attributes = ShieldInstance::getAttributeDescriptions();
+
+        VkPipelineVertexInputStateCreateInfo particlesVertexInputInfo = {};
+        particlesVertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+        particlesVertexInputInfo.vertexBindingDescriptionCount = bindings.size();
+        particlesVertexInputInfo.pVertexBindingDescriptions = bindings.data();
+        particlesVertexInputInfo.vertexAttributeDescriptionCount = attributes.size();
+        particlesVertexInputInfo.pVertexAttributeDescriptions = attributes.data();
+
+        graphicsPipelineData.vertexInputState = particlesVertexInputInfo;
+
+    }
+
     setColorBlending(graphicsPipelineData);
     setViewPortState(graphicsPipelineData);
     setInputAssembly(graphicsPipelineData);
@@ -1784,6 +1804,9 @@ Renderer::createPipeline(GfxPipelineData &gfxPipelineData, GfxPipelineType gfxPi
             LOGE("aabbPipeline: %p", &util_->aabbPipeline);
             LOGE("aabbPipeline llu: %llu", util_->aabbPipeline);
             break;
+        case GfxPipelineType::HaloEffect:
+             particleSystem_->haloPipeline = gfxPipelineData.pipeline;
+            break;
         default:
             LOGE("Unknown pipeline name: %s", gfxPipelineType);
             break;
@@ -1832,6 +1855,8 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
                                          GfxPipelineType::StarParticles);
 
 
+
+
     VkDeviceSize offsets[] = {0};
     // --- Draw triangle (or any background)
     float trianglePos[2] = {0.0, 0.0};
@@ -1869,6 +1894,8 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
 
     vkCmdBindVertexBuffers(cmd, 0, 1, &shipVertexBuffer_, offsets);
     vkCmdDraw(cmd, 6, 1, 0, 0);
+
+
 
     // --- Draw bullets (for each active bullet, updateExplosionParticles buffer and draw)
     for (int i = 0; i < MAX_BULLETS; ++i) {
@@ -1942,6 +1969,14 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
                                          particlesInstanceBuffer_,
                                          GfxPipelineType::ExplosionParticles);
 
+    particleSystem_->recordCommandBuffer(cmd,
+                                         particlesPipelineLayout_,
+                                         starParticlesPipeline_,
+                                         starInstanceBuffer_,
+                                         starIndexBuffer_,
+                                         starInstanceBuffer_,
+                                         GfxPipelineType::HaloEffect);
+
     vkCmdEndRenderPass(cmd);
     vkEndCommandBuffer(cmd);
 }
@@ -1994,6 +2029,8 @@ void Renderer::spawnBullet() {
                     }
                 }
             }
+        canFire = false;
+        lastFireTime = 0.0f;
     }
 }
 
@@ -2036,9 +2073,9 @@ void Renderer::updateAliens() {
     if (hitEdge) {
         alienDirection_ *= -1;
         // Move all aliens down a bit
-        for (int i = 0; i < MAX_ALIENS; ++i) {
-            if (aliens_[i].active)
-                aliens_[i].y -= 0.04f;
+        for (auto & alien : aliens_) {
+            if (alien.active)
+                alien.y -= 0.04f;
         }
     }
 }
@@ -2061,7 +2098,7 @@ void Renderer::updateCollision() {
 
                 if (aliens_[i].life <= 0) {
                     aliens_[i].active = false;    // Destroy alien
-                    actualScore += 1000;
+                    actualScore += 100;
                     alienMoveSpeed_ += 0.005f;
                     rateOfFire -= 0.0005f;
                     particleSystem_->spawn(glm::vec3(aliens_[i].x, -aliens_[i].y, 1.0f), 15);
@@ -2072,9 +2109,6 @@ void Renderer::updateCollision() {
                     x == explosionSFXMap.size() ? x = 0 : x;
                     shakeTimer = 0.2f;
                 }
-
-
-
                 // Optionally: score++, play sound, create explosion, etc.
                 break; // Stop checking this bullet (it's now gone)
             }
@@ -2197,6 +2231,7 @@ void Renderer::drawFrame() {
     }
 
     updateBullet();
+    particleSystem_->updateHaloEffect(ship_);
     particleSystem_->updateStarField(starInstanceBufferMemory_);
     particleSystem_->updateExplosionParticles(particlesInstanceBufferMemory_);
 
@@ -2265,115 +2300,43 @@ void Renderer::loadText() {
 
 }
 
+void Renderer::createAndUploadBuffer(const void *vertices, VkBuffer &buffer, VkDeviceMemory &bufferMemory,VkDeviceSize size,VkBufferUsageFlags usage){
+    createBuffer(device_, physicalDevice_, size, usage,
+                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                 buffer, bufferMemory);
+    uploadDataBuffer(device_,vertices, size,
+                     bufferMemory);
+}
+
 void Renderer::loadGameObjects() {
+    createAndUploadBuffer(quadVerts, util_->vtxBuffer, util_->stagingBufferMemory, sizeof(quadVerts),VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
 
-    createBuffer(device_, physicalDevice_, sizeof(quadVerts),
-                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                 util_->vtxBuffer, util_->stagingBufferMemory);
-    uploadDataBuffer(device_, (void *) quadVerts, sizeof(quadVerts),
-                     util_->stagingBufferMemory);
+    createAndUploadBuffer(quadVerts, powerUpManager_->powerUpBuffer, powerUpManager_->powerUpBufferMemory, sizeof(quadVerts),VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
 
-    VkDeviceSize quadBufferSize = sizeof(quadVerts);
-    createBuffer(device_, physicalDevice_, quadBufferSize,
-                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                 powerUpManager_->powerUpBuffer, powerUpManager_->powerUpBufferMemory);
-    uploadDataBuffer(device_, (void *) quadVerts, quadBufferSize,
-                     powerUpManager_->powerUpBufferMemory);
-
-    VkDeviceSize starBufferSize = sizeof(starVerts);
-    createBuffer(device_, physicalDevice_, starBufferSize,
-                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                 starVertsBuffer_, starVertsMemory_);
-
-    uploadDataBuffer(device_, (void *) starVerts, starBufferSize, starVertsMemory_);
-
-    VkDeviceSize starIndexSize = sizeof(particlesIndices);
-    createBuffer(device_, physicalDevice_, starIndexSize,
-                 VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                 starIndexBuffer_, starIndexMemory_);
-    uploadDataBuffer(device_, (void *) particlesIndices, starIndexSize, starIndexMemory_);
-
-    VkDeviceSize starInstanceSize = sizeof(StarInstance) * NUM_STARS;
-    createBuffer(device_, physicalDevice_,
-                 starInstanceSize,
-                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                 starInstanceBuffer_, starInstanceBufferMemory_);
-
-    VkDeviceSize particlesBufferSize = sizeof(particleVerts);
-    createBuffer(device_, physicalDevice_, particlesBufferSize,
-                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                 particlesVertexBuffer_, particlesVertexBufferMemory_);
-
-    uploadDataBuffer(device_, (void *) particleVerts, particlesBufferSize,
-                     particlesVertexBufferMemory_);
-
-    VkDeviceSize particlesIndexSize = sizeof(particlesIndices);
-    createBuffer(device_, physicalDevice_, particlesIndexSize,
-                 VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                 particlesIndexBuffer_, particlesIndexBufferMemory_);
-
-    uploadDataBuffer(device_, (void *) particlesIndices, particlesIndexSize,
-                     particlesIndexBufferMemory_);
-
-    VkDeviceSize instanceSize = sizeof(ParticleInstance) * MAX_PARTICLES;
-    createBuffer(device_, physicalDevice_,
-                 instanceSize,
-                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                 particlesInstanceBuffer_, particlesInstanceBufferMemory_);
+    createAndUploadBuffer(starVerts, starVertsBuffer_, starVertsMemory_, sizeof(starVerts),VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+    createAndUploadBuffer(particlesIndices, starIndexBuffer_, starIndexMemory_, sizeof(particlesIndices),VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+    createAndUploadBuffer(starVerts, starInstanceBuffer_, starInstanceBufferMemory_, sizeof(StarInstance)*NUM_STARS,VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
 
 
-    VkDeviceSize bulletBufferSize = sizeof(quadVerts);
-    createBuffer(device_, physicalDevice_, bulletBufferSize,
-                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                 bulletVertexBuffer_, bulletVertexBufferMemory_);
-
-    uploadDataBuffer(device_, (void *) quadVerts, bulletBufferSize, bulletVertexBufferMemory_);
-
-    VkDeviceSize bufferSize = sizeof(quadVerts);
-    createBuffer(device_, physicalDevice_, bufferSize,
-                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                 vertexBuffer_, vertexBufferMemory_);
-
-    uploadDataBuffer(device_, (void *) quadVerts, bufferSize, vertexBufferMemory_);
+    createAndUploadBuffer(particleVerts, particlesVertexBuffer_, particlesVertexBufferMemory_, sizeof(particleVerts),VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+    createAndUploadBuffer(particlesIndices, particlesIndexBuffer_, particlesIndexBufferMemory_, sizeof(particlesIndices),VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+    createAndUploadBuffer(particleVerts, particlesInstanceBuffer_, particlesInstanceBufferMemory_, sizeof(ParticleInstance) * MAX_PARTICLES,VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
 
 
-    VkDeviceSize shipBufferSize = sizeof(shipVerts);
-    createBuffer(device_, physicalDevice_, shipBufferSize,
-                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                 shipVertexBuffer_, shipVertexBufferMemory_);
+    createAndUploadBuffer(quadVerts, bulletVertexBuffer_, bulletVertexBufferMemory_, sizeof(quadVerts),VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
 
-    uploadDataBuffer(device_, (void *) shipVerts, shipBufferSize, shipVertexBufferMemory_);
+    createAndUploadBuffer(quadVerts, vertexBuffer_, vertexBufferMemory_, sizeof(quadVerts),VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
 
-    VkDeviceSize alienBufferSize = sizeof(alienVerts);
-    createBuffer(device_, physicalDevice_,
-                 alienBufferSize,
-                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                 alienVertexBuffer_, alienVertexBufferMemory_);
 
-    uploadDataBuffer(device_, (void *) alienVerts, alienBufferSize, alienVertexBufferMemory_);
+    createAndUploadBuffer(shipVerts, shipVertexBuffer_, shipVertexBufferMemory_, sizeof(shipVerts),VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
 
-    VkDeviceSize overlayBufferSize = sizeof(overlayQuadVerts);
-    createBuffer(device_, physicalDevice_,
-                 overlayBufferSize,
-                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                 overlayVertexBuffer_, overlayVertexBufferMemory_);
+    createAndUploadBuffer(alienVerts, alienVertexBuffer_, alienVertexBufferMemory_, sizeof(alienVerts),VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
 
-    uploadDataBuffer(device_, (void *) overlayQuadVerts, overlayBufferSize,
-                     overlayVertexBufferMemory_);
+    createAndUploadBuffer(overlayQuadVerts, overlayVertexBuffer_, overlayVertexBufferMemory_, sizeof(overlayQuadVerts),VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
 
+    createAndUploadBuffer(particleVerts, particleSystem_->haloVertexBuffer, particleSystem_->haloVertexBufferMemory, sizeof(particleVerts),VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+    createAndUploadBuffer(particlesIndices, particleSystem_->haloIndexBuffer, particleSystem_->haloIndexBufferMemory, sizeof(particlesIndices),VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+    createAndUploadBuffer(particleVerts, particleSystem_->haloInstanceBuffer, particleSystem_->haloInstanceBufferMemory, sizeof(ShieldInstance) * 6,VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
 
 }
 

@@ -96,6 +96,7 @@ struct Ship {
     float color[3]{};
     std::array<float,2> widthHeight;
     uint life{3};
+    float size{0.1f};
 };
 
 
@@ -151,7 +152,8 @@ enum class GfxPipelineType {
     Font,
     ExplosionParticles,
     StarParticles,
-    AxisAlignedBoundingBoxes
+    AxisAlignedBoundingBoxes,
+    HaloEffect
 };
 
 

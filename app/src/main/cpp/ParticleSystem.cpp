@@ -4,6 +4,8 @@
 
 #include "ParticleSystem.h"
 
+#include <utility>
+
 
 std::mt19937 rng(std::random_device{}());
 std::uniform_real_distribution<float> xDist(-1.0f, 1.0f);
@@ -64,6 +66,19 @@ void ParticleSystem::recordCommandBuffer(VkCommandBuffer cmd,
 //    vkCmdDraw(cmd, 4, 1, 0, 0);
     }
 
+    if(gfxPipelineType == GfxPipelineType::HaloEffect) {
+//      if (!powerUpManager->shieldActive) return;
+
+        VkDeviceSize offsets[] = {0, 0};
+        VkBuffer vertexBuffers[] = {haloVertexBuffer, haloInstanceBuffer};
+
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, haloPipeline);
+        vkCmdBindVertexBuffers(cmd, 0, 2, vertexBuffers, offsets);
+        vkCmdBindIndexBuffer(cmd, haloIndexBuffer, 0, VK_INDEX_TYPE_UINT16);
+        vkCmdDrawIndexed(cmd, 6, 1, 0, 0, 0);
+//    vkCmdDraw(cmd, 4, 1, 0, 0);
+    }
+
 
 }
 
@@ -84,9 +99,9 @@ void ParticleSystem::updateExplosionParticles(VkDeviceMemory particlesInstanceBu
     if (!liveParticles.empty()) {
         void *data;
         VkDeviceSize size = liveParticles.size() * sizeof(ParticleInstance);
-        vkMapMemory(device_, particlesInstanceBufferMemory, 0, size, 0, &data);
+        vkMapMemory(device, particlesInstanceBufferMemory, 0, size, 0, &data);
         memcpy(data, liveParticles.data(), size);
-        vkUnmapMemory(device_, particlesInstanceBufferMemory);
+        vkUnmapMemory(device, particlesInstanceBufferMemory);
     }
 
 }
@@ -106,13 +121,13 @@ void ParticleSystem::updateStarField(VkDeviceMemory starInstanceBufferMemory) {
     // Map and upload starInstances to your instance buffer (same as particles)
     void *data;
     VkDeviceSize size = starInstances.size() * sizeof(StarInstance);
-    vkMapMemory(device_, starInstanceBufferMemory, 0, size, 0, &data);
+    vkMapMemory(device, starInstanceBufferMemory, 0, size, 0, &data);
     memcpy(data, starInstances.data(), size);
-    vkUnmapMemory(device_, starInstanceBufferMemory);
+    vkUnmapMemory(device, starInstanceBufferMemory);
 
 }
 
-ParticleSystem::ParticleSystem(VkDevice device):device_(device) {
+ParticleSystem::ParticleSystem(VkDevice device,std::shared_ptr<PowerUpManager> powerUpManager):device(device),powerUpManager(std::move(powerUpManager)) {
     initExplosionParticles();
     initStarField();
 }
@@ -145,5 +160,29 @@ void ParticleSystem::initStarField() {
 }
 
 ParticleSystem::~ParticleSystem() {
+
+}
+float totalTime = 0.0f;
+void ParticleSystem::updateHaloEffect(Ship ship) {
+//    if (!powerUpManager->shieldActive) return;
+      totalTime +=Time::deltaTime;
+    ShieldInstance halo{};
+    halo.center = { ship.x, ship.y };
+    halo.size = ship.size * 2.0f; // slightly larger than ship
+    halo.color = glm::vec4(0.2f, 0.8f, 1.0f, 0.7f); // bluish, semi-transparent
+    halo.time = totalTime; // for pulsing, if desired
+    halo.effectType = 1.0f;
+
+    LOGE("effectType: %f", halo.effectType);
+
+    void *data;
+    VkDeviceSize size = sizeof(ShieldInstance);
+    vkMapMemory(device, haloInstanceBufferMemory, 0, size, 0, &data);
+    memcpy(data, &halo, size);
+    vkUnmapMemory(device, haloInstanceBufferMemory);
+
+}
+
+ParticleSystem::ParticleSystem() {
 
 }

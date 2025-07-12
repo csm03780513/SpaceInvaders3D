@@ -55,7 +55,7 @@ public:
 private:
     std::unique_ptr<FontManager> fontManager_;
     std::unique_ptr<ParticleSystem> particleSystem_;
-    std::unique_ptr<PowerUpManager> powerUpManager_;
+    std::shared_ptr<PowerUpManager> powerUpManager_;
     std::shared_ptr<Util> util_;
     UniformBufferObject ubo_;
     android_app *app_;
@@ -260,8 +260,11 @@ private:
 
     void getPhysicalDevice();
 
-    void createParticlesGfxPipeline(VkPipeline pipeline, GfxPipelineType gfxPipelineType);
+    void createParticlesGfxPipeline(GfxPipelineType gfxPipelineType);
 
 
     void createGfxPipeline(GfxPipelineType gfxPipelineType);
+
+    void createAndUploadBuffer(const void *vertices, VkBuffer &buffer, VkDeviceMemory &bufferMemory,
+                               VkDeviceSize size,VkBufferUsageFlags usage);
 };
