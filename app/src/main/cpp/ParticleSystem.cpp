@@ -67,8 +67,7 @@ void ParticleSystem::recordCommandBuffer(VkCommandBuffer cmd,
     }
 
     if(gfxPipelineType == GfxPipelineType::HaloEffect) {
-//      if (!powerUpManager->shieldActive) return;
-
+      if (!powerUpManager->shieldActive) return;
         VkDeviceSize offsets[] = {0, 0};
         VkBuffer vertexBuffers[] = {haloVertexBuffer, haloInstanceBuffer};
 
@@ -164,8 +163,9 @@ ParticleSystem::~ParticleSystem() {
 }
 float totalTime = 0.0f;
 void ParticleSystem::updateHaloEffect(Ship ship) {
-//    if (!powerUpManager->shieldActive) return;
-      totalTime +=Time::deltaTime;
+    if (!powerUpManager->shieldActive) return;
+    LOGE("power up is active:%b",powerUpManager->shieldActive);
+    totalTime +=Time::deltaTime;
     ShieldInstance halo{};
     halo.center = { ship.x, ship.y };
     halo.size = ship.size * 2.0f; // slightly larger than ship
@@ -173,12 +173,9 @@ void ParticleSystem::updateHaloEffect(Ship ship) {
     halo.time = totalTime; // for pulsing, if desired
     halo.effectType = 1.0f;
 
-    LOGE("effectType: %f", halo.effectType);
-
     void *data;
-    VkDeviceSize size = sizeof(ShieldInstance);
-    vkMapMemory(device, haloInstanceBufferMemory, 0, size, 0, &data);
-    memcpy(data, &halo, size);
+    vkMapMemory(device, haloInstanceBufferMemory, 0, sizeof(ShieldInstance), 0, &data);
+    memcpy(data, &halo, sizeof(ShieldInstance));
     vkUnmapMemory(device, haloInstanceBufferMemory);
 
 }
