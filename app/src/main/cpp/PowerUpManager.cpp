@@ -45,17 +45,19 @@ void PowerUpManager::updatePowerUpData() {
 PowerUpManager::PowerUpManager(){
 
 }
-
+float elapsedTime =0.0f;
 void PowerUpManager::recordCommandBuffer(VkCommandBuffer cmd, VkPipelineLayout pipelineLayout,
                                          VkPipeline pipeline,
                                          glm::vec2 shakeOffset,
                                          VkDescriptorSet descriptorSet) {
 
-
     for (auto powerUp:powerUps_) {
+        elapsedTime += Time::deltaTime;
         MainPushConstants pushConstants = {};
         pushConstants.pos = {powerUp.pos.x, -powerUp.pos.y};
         pushConstants.shakeOffset = shakeOffset;
+        pushConstants.time = elapsedTime;
+        pushConstants.canPulse = 1;
         if(powerUp.type == PowerUpType::DoubleShot) pushConstants.texturePos = 3;
         if(powerUp.type == PowerUpType::Shield) pushConstants.texturePos = 4;
 

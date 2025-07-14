@@ -105,6 +105,8 @@ struct MainPushConstants {
     glm::vec2 shakeOffset{0.0f, 0.0f};
     float flashAmount{0.0f};
     uint texturePos{0};
+    float time{0.0f};
+    uint canPulse{0};
 };
 
 

@@ -17,7 +17,7 @@ void main() {
         float ring = inner - outer;
         float pulse = 0.8 + 0.2 * sin(vTime * 3.0);
         float alpha = ring * fragColor.a * pulse;
-        vec3 color = mix(vec3(1.0,1.0,1.0), fragColor.rgb, 0.8);
+        //vec3 color = mix(vec3(1.0,1.0,1.0), fragColor.rgb, 0.8);
 
         // --- Rainbow ---
         float hue = mod(vTime * 0.03, 1.0);

@@ -11,6 +11,8 @@ layout(push_constant) uniform AlienPush {
     vec2 shakeOffset;
     float flashAmount;
     uint texturePos;
+    float deltaTime;
+    uint enablePulse;
 } pc;
 
 
@@ -22,6 +24,8 @@ layout(location = 0) out vec4 fragColor;
 layout(location = 1) out vec2 outUV;
 layout(location = 2) out float outFlashAmount;
 layout(location = 3) out uint outTexturePos;
+layout(location = 4) out float outTime;
+layout(location = 5) out uint outCanPulse;
 
 void main() {
 
@@ -32,4 +36,6 @@ void main() {
     outUV = inUV;
     outFlashAmount = pc.flashAmount;
     outTexturePos = pc.texturePos;
+    outTime = pc.deltaTime;
+    outCanPulse = pc.enablePulse;
 }

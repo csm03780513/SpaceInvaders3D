@@ -164,11 +164,10 @@ ParticleSystem::~ParticleSystem() {
 float totalTime = 0.0f;
 void ParticleSystem::updateHaloEffect(Ship ship) {
     if (!powerUpManager->shieldActive) return;
-    LOGE("power up is active:%b",powerUpManager->shieldActive);
     totalTime +=Time::deltaTime;
     ShieldInstance halo{};
     halo.center = { ship.x, ship.y };
-    halo.size = ship.size * 2.0f; // slightly larger than ship
+    halo.size = ship.size * 1.5f; // slightly larger than ship
     halo.color = glm::vec4(0.2f, 0.8f, 1.0f, 0.7f); // bluish, semi-transparent
     halo.time = totalTime; // for pulsing, if desired
     halo.effectType = 1.0f;
