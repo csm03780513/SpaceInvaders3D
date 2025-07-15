@@ -2034,11 +2034,12 @@ void Renderer::spawnBullet(BulletType bulletType, glm::vec2 spawnPos) {
 //                 lastFireTime = 0.0f;
             }
 
-            if (BulletType::Alien == bulletType) {
+            if (!bullets_[i].active && bulletType == BulletType::Alien) {
                 bullets_[i].x = spawnPos.x;
                 bullets_[i].y = spawnPos.y - 0.04f;
                 bullets_[i].active = true;
                 bullets_[i].bulletType = bulletType;
+                break;
             }
         }
     }
