@@ -9,6 +9,7 @@
 #include "GameObjectData.h"
 #include "PowerUpManager.h"
 
+
 struct ShieldInstance {
     glm::vec2 center;    // Center position (NDC)
     float size;          // Size (radius or scale factor)

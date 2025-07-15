@@ -12,6 +12,8 @@ struct AABB {
 };
 
 class Util {
+private:
+    static std::mt19937 rng;
 public:
     VkDevice device;
     VkBuffer vtxBuffer{VK_NULL_HANDLE};
@@ -19,6 +21,8 @@ public:
     VkPipeline aabbPipeline{VK_NULL_HANDLE};
     VkPipelineLayout aabbPipelineLayout{VK_NULL_HANDLE};
     static std::array<float,2> getQuadWidthHeight(const Vertex *verts, size_t vertsCount);
+    static uint32_t getRandomUint(uint32_t min, uint32_t max);
+    static float getRandomFloat(float min, float max);
 
     void recordDrawBoundingBox(VkCommandBuffer cmd, const AABB& box, const glm::vec3& color);
 };

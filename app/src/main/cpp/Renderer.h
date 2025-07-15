@@ -14,7 +14,7 @@ static constexpr int MAX_ALIENS = NUM_ALIENS_X * NUM_ALIENS_Y;
 constexpr int SFX_SAMPLE_RATE = 44100;
 constexpr int SFX_CHANNELS = 1;
 
-static constexpr int MAX_BULLETS = 32;
+static constexpr int MAX_BULLETS = 50;
 
 
 class Renderer {
@@ -27,7 +27,7 @@ public:
 
     void updateShipBuffer() const;
 
-    void spawnBullet();
+    void spawnBullet(BulletType bulletType,glm::vec2 spawnPos);
 
     float shipX_ = 0.0f;
     float shipY_ = 0.0f;
@@ -267,4 +267,6 @@ private:
 
     void createAndUploadBuffer(const void *vertices, VkBuffer &buffer, VkDeviceMemory &bufferMemory,
                                VkDeviceSize size,VkBufferUsageFlags usage);
+
+    void alienFireBullet();
 };

@@ -15,7 +15,7 @@ void main() {
 
     float alpha = 1.0f;
     if (inCanPulse == 1) {
-        alpha = 0.8 + 0.2 * sin(inTime * 3.0);
+        alpha = 0.8 + 0.2 * sin(inTime * 9.0);
     }
 
     vec4 texColor = texture(textures[inTexturePos], inUV);

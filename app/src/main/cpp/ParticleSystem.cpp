@@ -4,8 +4,6 @@
 
 #include "ParticleSystem.h"
 
-#include <utility>
-
 
 std::mt19937 rng(std::random_device{}());
 std::uniform_real_distribution<float> xDist(-1.0f, 1.0f);
@@ -19,14 +17,14 @@ void ParticleSystem::spawn(const glm::vec3 &pos, int count) {
 
     for (int i = 0; i < count; ++i) {
         ParticleInstance &p = particles[firstFree++ % MAX_PARTICLES];
-        float angle = ((float) rand() / RAND_MAX) * 2.0f * M_PI;
-        float speed = 0.15f + ((float) rand() / RAND_MAX) * 0.15f;
+        float angle = Util::getRandomFloat(0.0f,1.0f) * 2.0f * (float)M_PI;
+        float speed = 0.15f + Util::getRandomFloat(0.0f,1.0f) * 0.15f;
         p.position = pos;
         p.velocity = glm::vec3(cos(angle), sin(angle), 0.0f) * speed;
         p.acceleration = glm::vec3(0.0f);
-        p.life = p.maxLife = 0.5f + ((float) rand() / RAND_MAX) * 0.3f;
+        p.life = p.maxLife = 0.5f + Util::getRandomFloat(0.0f,1.0f) * 0.3f;
         p.color = glm::vec4(1, 0.5, 0, 1); // yellowish, can randomize
-        p.size = 0.005f + ((float) rand() / RAND_MAX) * 0.005f;
+        p.size = 0.005f + Util::getRandomFloat(0.0f,1.0f) * 0.005f;
         p.center = pos;
         p.rotation = 0.0f;
         p.active = true;

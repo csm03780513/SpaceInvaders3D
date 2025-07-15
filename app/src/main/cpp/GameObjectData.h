@@ -32,9 +32,11 @@
 #include <unordered_map>
 #include <random>
 #include <cmath>
+#include <utility>
 
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "Vulkan", __VA_ARGS__)
 constexpr int MAX_POWERUPS = 10;
+
 
 struct UniformBufferObject {
     alignas(16) glm::mat4 model;
@@ -50,7 +52,7 @@ struct Vertex {
     // Vertex input: just position
     static std::vector<VkVertexInputBindingDescription> getBindingDescriptions() {
         std::vector<VkVertexInputBindingDescription> bindings = {
-                {0, sizeof(Vertex),           VK_VERTEX_INPUT_RATE_VERTEX}
+                {0, sizeof(Vertex), VK_VERTEX_INPUT_RATE_VERTEX}
         };
 
         return bindings;
@@ -59,8 +61,8 @@ struct Vertex {
     static std::vector<VkVertexInputAttributeDescription> getAttributeDescriptions() {
         std::vector<VkVertexInputAttributeDescription> attributes = {
                 // Quad position (location=0)
-                {0, 0, VK_FORMAT_R32G32B32_SFLOAT,    offsetof(Vertex, pos)},
-                {1, 0, VK_FORMAT_R32G32B32_SFLOAT,       offsetof(Vertex, color)}
+                {0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, pos)},
+                {1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, color)}
         };
         return attributes;
     }
@@ -70,9 +72,15 @@ struct OverlayVertex {
     float pos[3];
     float uv[2];
 };
+enum class BulletType {
+    Ship,
+    Alien
+};
+
 struct Bullet {
     float x{}, y{};
     bool active{};
+    BulletType bulletType;
     const float size = 0.05f * 0.5f; //half alien
 };
 
@@ -90,11 +98,10 @@ enum class PowerUpType {
 };
 
 
-
 struct Ship {
     float x{}, y{};
     float color[3]{};
-    std::array<float,2> widthHeight;
+    std::array<float, 2> widthHeight;
     uint life{3};
     float size{0.1f};
 };
@@ -159,10 +166,6 @@ enum class GfxPipelineType {
 };
 
 
-
-
-
-
 static const Vertex particleVerts[4] = {
         {{-0.5f, -0.5f, 0.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
         {{0.5f,  -0.5f, 0.0f}, {1.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
@@ -223,26 +226,25 @@ static OverlayVertex overlayQuadVerts[6] = {
 
 static Vertex quadVerts[6] = {
         // Rectangle centered at (0, 0), width 0.12, height 0.07
-        {{-0.08f,-0.045f, 0.0f}, {0.3f, 1.0f, 0.3f}, {0.0f, 0.0f}}, // green
-        {{0.08f,-0.045f, 0.0f}, {0.3f, 1.0f, 0.3f}, {1.0f, 0.0f}},
-        {{-0.08f,0.045f,  0.0f}, {0.6f, 1.0f, 0.6f}, {0.0f, 1.0f}},
+        {{-0.08f, -0.045f, 0.0f}, {0.3f, 1.0f, 0.3f}, {0.0f, 0.0f}}, // green
+        {{0.08f,  -0.045f, 0.0f}, {0.3f, 1.0f, 0.3f}, {1.0f, 0.0f}},
+        {{-0.08f, 0.045f,  0.0f}, {0.6f, 1.0f, 0.6f}, {0.0f, 1.0f}},
 
-        {{0.08f,0.045f,0.0f}, {0.3f, 1.0f, 0.3f}, {1.0f, 1.0f}},
-        {{-0.08f,0.045f,0.0f}, {0.6f, 1.0f, 0.6f}, {0.0f, 1.0f}},
-        {{0.08f,-0.045f,0.0f}, {0.6f, 1.0f, 0.6f}, {1.0f, 0.0f}},
+        {{0.08f,  0.045f,  0.0f}, {0.3f, 1.0f, 0.3f}, {1.0f, 1.0f}},
+        {{-0.08f, 0.045f,  0.0f}, {0.6f, 1.0f, 0.6f}, {0.0f, 1.0f}},
+        {{0.08f,  -0.045f, 0.0f}, {0.6f, 1.0f, 0.6f}, {1.0f, 0.0f}},
 };
 
 static Vertex shipVerts[6] = {
         // Rectangle centered at (0, 0), width 0.12, height 0.07
-        {{-0.08f,-0.045f, 0.0f}, {0.3f, 1.0f, 0.3f}, {0.0f, 0.0f}}, // green
-        {{0.08f,-0.045f, 0.0f}, {0.3f, 1.0f, 0.3f}, {1.0f, 0.0f}},
-        {{-0.08f,0.045f,  0.0f}, {0.6f, 1.0f, 0.6f}, {0.0f, 1.0f}},
+        {{-0.08f, -0.045f, 0.0f}, {0.3f, 1.0f, 0.3f}, {0.0f, 0.0f}}, // green
+        {{0.08f,  -0.045f, 0.0f}, {0.3f, 1.0f, 0.3f}, {1.0f, 0.0f}},
+        {{-0.08f, 0.045f,  0.0f}, {0.6f, 1.0f, 0.6f}, {0.0f, 1.0f}},
 
-        {{0.08f,0.045f,0.0f}, {0.3f, 1.0f, 0.3f}, {1.0f, 1.0f}},
-        {{-0.08f,0.045f,0.0f}, {0.6f, 1.0f, 0.6f}, {0.0f, 1.0f}},
-        {{0.08f,-0.045f,0.0f}, {0.6f, 1.0f, 0.6f}, {1.0f, 0.0f}},
+        {{0.08f,  0.045f,  0.0f}, {0.3f, 1.0f, 0.3f}, {1.0f, 1.0f}},
+        {{-0.08f, 0.045f,  0.0f}, {0.6f, 1.0f, 0.6f}, {0.0f, 1.0f}},
+        {{0.08f,  -0.045f, 0.0f}, {0.6f, 1.0f, 0.6f}, {1.0f, 0.0f}},
 };
-
 
 
 class GameObjectData {

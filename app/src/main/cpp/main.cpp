@@ -26,14 +26,10 @@ static int32_t handle_input(struct android_app *app, AInputEvent *event) {
             float ndcX = (x / (float) width) * 2.0f - 1.0f;
             float ndcY = (y / (float) height) * 2.0f - 1.0f;
             if (g_renderer && g_renderer->gameState == GameState::Playing) {
-                // Move ship as before
+                // Move ship and fire bullet
                 if (AMotionEvent_getAction(event) == AMOTION_EVENT_ACTION_DOWN ||
                     AMotionEvent_getAction(event) == AMOTION_EVENT_ACTION_MOVE) {
                     set_ship_x(ndcX,ndcY);
-                }
-                // Shoot bullet
-                if (AMotionEvent_getAction(event) == AMOTION_EVENT_ACTION_DOWN) {
-                    g_renderer->spawnBullet();
                 }
             } else if (g_renderer && g_renderer->gameState != GameState::Playing) {
                 // TAP = RESTART GAME when game over/won
@@ -52,7 +48,7 @@ void set_ship_x(float x, float y) {
     if (g_renderer) {
         g_renderer->shipX_ = x;
         g_renderer->shipY_ = y - 0.12f;
-        g_renderer->spawnBullet();
+        g_renderer->spawnBullet(BulletType::Ship, {x, y - 0.12f});
     }
 }
 

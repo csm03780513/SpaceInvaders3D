@@ -39,3 +39,16 @@ void Util::recordDrawBoundingBox(VkCommandBuffer cmd, const AABB& box, const glm
     vkCmdDraw(cmd, 5, 1, 0, 0); // 5 vertices, 1 instance
 
 }
+// returns random unsigned int between min and max
+uint Util::getRandomUint(uint32_t min, uint32_t max) {
+    std::uniform_int_distribution<uint32_t> x(min,max);
+    return x(rng);
+}
+
+// returns random float between min and max
+float Util::getRandomFloat(float min, float max) {
+    std::uniform_real_distribution<float> x(min, max);
+    return x(rng);
+}
+
+std::mt19937 Util::rng{ std::random_device{}() };

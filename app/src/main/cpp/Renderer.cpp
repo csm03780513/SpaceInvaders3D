@@ -91,7 +91,7 @@ void setSampling(GfxPipelineData &graphicsPipelineData);
 void updateFontBuffer(VkDevice device, std::vector<Vertex> textVertices,
                       VkDeviceMemory fontVertexBufferMemory_);
 
-void uploadDataBuffer(VkDevice device,const void *dataToUpload, VkDeviceSize sizeOfData,
+void uploadDataBuffer(VkDevice device, const void *dataToUpload, VkDeviceSize sizeOfData,
                       VkDeviceMemory bufferMemory);
 
 std::vector<float>
@@ -140,8 +140,13 @@ VkShaderModule createShaderModule(VkDevice device, const std::vector<char> &code
 
 inline bool isCollision(const Alien &alien, const Bullet &bullet) {
 
-    return std::abs(alien.x - bullet.x) < (alien.size + bullet.size) &&
-           std::abs(alien.y + bullet.y) < (alien.size + bullet.size);
+    if (bullet.bulletType == BulletType::Ship) {
+        return std::abs(alien.x - bullet.x) < (alien.size + bullet.size) &&
+               std::abs(alien.y + bullet.y) < (alien.size + bullet.size);
+    } else if (bullet.bulletType == BulletType::Alien) {
+        return false;
+    }
+    return false;
 }
 
 std::vector<char> loadShaderAsset(AAssetManager *mgr, const char *filename) {
@@ -1503,7 +1508,7 @@ void Renderer::createGfxPipeline(GfxPipelineType gfxPipelineType) {
     VkPipelineVertexInputStateCreateInfo vertexInputInfo = {};
     VkPipelineLayoutCreateInfo aabbPipelineLayoutInfo = {};
 
-    GfxPipelineData graphicsPipelineData {
+    GfxPipelineData graphicsPipelineData{
             .viewport {.x=0.0, .y=0.0f, .width=(float) swapchainExtent_.width, .height=(float) swapchainExtent_.height, .minDepth=0.0f, .maxDepth=1.0f},
             .scissor {.offset{0, 0}, .extent = swapchainExtent_}
     };
@@ -1597,7 +1602,7 @@ void Renderer::createParticlesGfxPipeline(GfxPipelineType gfxPipelineType) {
         graphicsPipelineData.vertexInputState = particlesVertexInputInfo;
     }
 
-    if(gfxPipelineType == GfxPipelineType::HaloEffect) {
+    if (gfxPipelineType == GfxPipelineType::HaloEffect) {
         setShaderStages(device_, assetManager_, "halo.vert.spv",
                         "halo.frag.spv",
                         graphicsPipelineData);
@@ -1805,7 +1810,7 @@ Renderer::createPipeline(GfxPipelineData &gfxPipelineData, GfxPipelineType gfxPi
             LOGE("aabbPipeline llu: %llu", util_->aabbPipeline);
             break;
         case GfxPipelineType::HaloEffect:
-             particleSystem_->haloPipeline = gfxPipelineData.pipeline;
+            particleSystem_->haloPipeline = gfxPipelineData.pipeline;
             break;
         default:
             LOGE("Unknown pipeline name: %s", gfxPipelineType);
@@ -1853,8 +1858,6 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
                                          starIndexBuffer_,
                                          starInstanceBuffer_,
                                          GfxPipelineType::StarParticles);
-
-
 
 
     VkDeviceSize offsets[] = {0};
@@ -1996,41 +1999,48 @@ void Renderer::restartGame() {
     gameState = GameState::Playing;
 }
 
-void Renderer::spawnBullet() {
+void Renderer::spawnBullet(BulletType bulletType, glm::vec2 spawnPos) {
 
-    if (gameState == GameState::Playing && canFire) {
-            int spawned = 0;
-            bool doubleShot = powerUpManager_->doubleShotActive;
-            for (int i = 0; i < MAX_BULLETS; ++i) {
-                bulletPC_[i].texturePos = 3;
-                if (!bullets_[i].active) {
-                    if (doubleShot && spawned == 0) {
-                        // Left bullet
-                        bullets_[i].x = shipX_ - 0.05f;
-                        bullets_[i].y = shipY_ - 0.04f;
-                        bullets_[i].active = true;
-                        sfxMixer.playSFX(shootSFXSample.data(), shootSFXSample.size(), 0.05f);
-                        spawned++;
-                    } else if (doubleShot && spawned == 1) {
-                        // Right bullet
-                        bullets_[i].x = shipX_ + 0.05f;
-                        bullets_[i].y = shipY_ - 0.04f;
-                        bullets_[i].active = true;
-                        sfxMixer.playSFX(shootSFXSample.data(), shootSFXSample.size(), 0.05f);
-                        spawned++;
-                        break; // Spawned both bullets
-                    } else if (!doubleShot) {
-                        // Normal shot: center
-                        bullets_[i].x = shipX_;
-                        bullets_[i].y = shipY_ - 0.04f;
-                        bullets_[i].active = true;
-                        sfxMixer.playSFX(shootSFXSample.data(), shootSFXSample.size(), 0.05f);
-                        break;
-                    }
+    if (gameState == GameState::Playing) {
+        int spawned = 0;
+        bool doubleShot = powerUpManager_->doubleShotActive;
+        for (int i = 0; i < MAX_BULLETS; ++i) {
+            if (!bullets_[i].active && BulletType::Ship == bulletType && canFire) {
+                bullets_[i].bulletType = bulletType;
+                if (doubleShot && spawned == 0) {
+                    // Left bullet
+                    bullets_[i].x = spawnPos.x - 0.05f;
+                    bullets_[i].y = spawnPos.y - 0.04f;
+                    bullets_[i].active = true;
+                    sfxMixer.playSFX(shootSFXSample.data(), shootSFXSample.size(), 0.05f);
+                    spawned++;
+                } else if (doubleShot && spawned == 1) {
+                    // Right bullet
+                    bullets_[i].x = spawnPos.x + 0.05f;
+                    bullets_[i].y = spawnPos.y - 0.04f;
+                    bullets_[i].active = true;
+                    sfxMixer.playSFX(shootSFXSample.data(), shootSFXSample.size(), 0.05f);
+                    spawned++;
+                    break; // Spawned both bullets
+                } else if (!doubleShot) {
+                    // Normal shot: center
+                    bullets_[i].x = spawnPos.x;
+                    bullets_[i].y = spawnPos.y - 0.04f;
+                    bullets_[i].active = true;
+                    sfxMixer.playSFX(shootSFXSample.data(), shootSFXSample.size(), 0.05f);
+                    break;
                 }
+//                 canFire = false;
+//                 lastFireTime = 0.0f;
             }
-        canFire = false;
-        lastFireTime = 0.0f;
+
+            if (BulletType::Alien == bulletType) {
+                bullets_[i].x = spawnPos.x;
+                bullets_[i].y = spawnPos.y - 0.04f;
+                bullets_[i].active = true;
+                bullets_[i].bulletType = bulletType;
+            }
+        }
     }
 }
 
@@ -2043,7 +2053,11 @@ void Renderer::updateShipBuffer() const {
 void Renderer::updateBullet() {
     for (int i = 0; i < MAX_BULLETS; ++i) {
         if (bullets_[i].active) {
-            bullets_[i].y -= bulletMoveSpeed_ * Time::deltaTime; // Move up
+            if (bullets_[i].bulletType == BulletType::Ship) bullets_[i].y -= bulletMoveSpeed_ *
+                                                                             Time::deltaTime; // Move up
+            if (bullets_[i].bulletType == BulletType::Alien) bullets_[i].y += 0.5f *
+                                                                              Time::deltaTime; // Move down
+
             if (bullets_[i].y < -1.0f)
                 bullets_[i].active = false; // Off screen
         }
@@ -2053,9 +2067,9 @@ void Renderer::updateBullet() {
 
 void Renderer::updateAliens() {
     bool hitEdge = false;
+
     for (int i = 0; i < MAX_ALIENS; ++i) {
         if (!aliens_[i].active) continue;
-
         // update flash amount (fade in/out) smoothly
         alienPC_[i].flashAmount -= Time::deltaTime * 5.0f; // fade speed (0.2s)
         if (alienPC_[i].flashAmount < 0.0f) alienPC_[i].flashAmount = 0.0f;
@@ -2073,7 +2087,7 @@ void Renderer::updateAliens() {
     if (hitEdge) {
         alienDirection_ *= -1;
         // Move all aliens down a bit
-        for (auto & alien : aliens_) {
+        for (auto &alien: aliens_) {
             if (alien.active)
                 alien.y -= 0.04f;
         }
@@ -2090,7 +2104,7 @@ void Renderer::updateCollision() {
         for (int i = 0; i < MAX_ALIENS; i++) {
             if (!aliens_[i].active) continue;
 
-            if (isCollision(aliens_[i], bullet)) {
+            if (isCollision(aliens_[i], bullet) && bullet.bulletType == BulletType::Ship) {
                 bullet.active = false;   // Destroy bullet
                 aliens_[i].life--;
                 // On hit:
@@ -2231,6 +2245,7 @@ void Renderer::drawFrame() {
     }
 
     updateBullet();
+    alienFireBullet();
     particleSystem_->updateHaloEffect(ship_);
     particleSystem_->updateStarField(starInstanceBufferMemory_);
     particleSystem_->updateExplosionParticles(particlesInstanceBufferMemory_);
@@ -2242,6 +2257,7 @@ void Renderer::drawFrame() {
         shakeOffset.y = (rand() / (float) RAND_MAX - 0.5f) * 2.0f * shakeMagnitude;
         shakeTimer -= Time::deltaTime;
     }
+
 
     recordCommandBuffer(imageIndex);
 
@@ -2300,43 +2316,67 @@ void Renderer::loadText() {
 
 }
 
-void Renderer::createAndUploadBuffer(const void *vertices, VkBuffer &buffer, VkDeviceMemory &bufferMemory,VkDeviceSize size,VkBufferUsageFlags usage){
+void Renderer::createAndUploadBuffer(const void *vertices, VkBuffer &buffer,
+                                     VkDeviceMemory &bufferMemory, VkDeviceSize size,
+                                     VkBufferUsageFlags usage) {
     createBuffer(device_, physicalDevice_, size, usage,
                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                  buffer, bufferMemory);
-    uploadDataBuffer(device_,vertices, size,
+    uploadDataBuffer(device_, vertices, size,
                      bufferMemory);
 }
 
 void Renderer::loadGameObjects() {
-    createAndUploadBuffer(quadVerts, util_->vtxBuffer, util_->stagingBufferMemory, sizeof(quadVerts),VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+    createAndUploadBuffer(quadVerts, util_->vtxBuffer, util_->stagingBufferMemory,
+                          sizeof(quadVerts), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
 
-    createAndUploadBuffer(quadVerts, powerUpManager_->powerUpBuffer, powerUpManager_->powerUpBufferMemory, sizeof(quadVerts),VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+    createAndUploadBuffer(quadVerts, powerUpManager_->powerUpBuffer,
+                          powerUpManager_->powerUpBufferMemory, sizeof(quadVerts),
+                          VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
 
-    createAndUploadBuffer(starVerts, starVertsBuffer_, starVertsMemory_, sizeof(starVerts),VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
-    createAndUploadBuffer(particlesIndices, starIndexBuffer_, starIndexMemory_, sizeof(particlesIndices),VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
-    createAndUploadBuffer(starVerts, starInstanceBuffer_, starInstanceBufferMemory_, sizeof(StarInstance)*NUM_STARS,VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-
-
-    createAndUploadBuffer(particleVerts, particlesVertexBuffer_, particlesVertexBufferMemory_, sizeof(particleVerts),VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
-    createAndUploadBuffer(particlesIndices, particlesIndexBuffer_, particlesIndexBufferMemory_, sizeof(particlesIndices),VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
-    createAndUploadBuffer(particleVerts, particlesInstanceBuffer_, particlesInstanceBufferMemory_, sizeof(ParticleInstance) * MAX_PARTICLES,VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-
-
-    createAndUploadBuffer(quadVerts, bulletVertexBuffer_, bulletVertexBufferMemory_, sizeof(quadVerts),VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
-
-    createAndUploadBuffer(quadVerts, vertexBuffer_, vertexBufferMemory_, sizeof(quadVerts),VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+    createAndUploadBuffer(starVerts, starVertsBuffer_, starVertsMemory_, sizeof(starVerts),
+                          VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+    createAndUploadBuffer(particlesIndices, starIndexBuffer_, starIndexMemory_,
+                          sizeof(particlesIndices), VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+    createAndUploadBuffer(starVerts, starInstanceBuffer_, starInstanceBufferMemory_,
+                          sizeof(StarInstance) * NUM_STARS,
+                          VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
 
 
-    createAndUploadBuffer(shipVerts, shipVertexBuffer_, shipVertexBufferMemory_, sizeof(shipVerts),VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+    createAndUploadBuffer(particleVerts, particlesVertexBuffer_, particlesVertexBufferMemory_,
+                          sizeof(particleVerts), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+    createAndUploadBuffer(particlesIndices, particlesIndexBuffer_, particlesIndexBufferMemory_,
+                          sizeof(particlesIndices), VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+    createAndUploadBuffer(particleVerts, particlesInstanceBuffer_, particlesInstanceBufferMemory_,
+                          sizeof(ParticleInstance) * MAX_PARTICLES,
+                          VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
 
-    createAndUploadBuffer(alienVerts, alienVertexBuffer_, alienVertexBufferMemory_, sizeof(alienVerts),VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
 
-    createAndUploadBuffer(overlayQuadVerts, overlayVertexBuffer_, overlayVertexBufferMemory_, sizeof(overlayQuadVerts),VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+    createAndUploadBuffer(quadVerts, bulletVertexBuffer_, bulletVertexBufferMemory_,
+                          sizeof(quadVerts), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
 
-    createAndUploadBuffer(particleVerts, particleSystem_->haloVertexBuffer, particleSystem_->haloVertexBufferMemory, sizeof(particleVerts),VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
-    createAndUploadBuffer(particlesIndices, particleSystem_->haloIndexBuffer, particleSystem_->haloIndexBufferMemory, sizeof(particlesIndices),VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
-    createAndUploadBuffer(particleVerts, particleSystem_->haloInstanceBuffer, particleSystem_->haloInstanceBufferMemory, sizeof(ShieldInstance) * 6,VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    createAndUploadBuffer(quadVerts, vertexBuffer_, vertexBufferMemory_, sizeof(quadVerts),
+                          VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+
+
+    createAndUploadBuffer(shipVerts, shipVertexBuffer_, shipVertexBufferMemory_, sizeof(shipVerts),
+                          VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+
+    createAndUploadBuffer(alienVerts, alienVertexBuffer_, alienVertexBufferMemory_,
+                          sizeof(alienVerts), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+
+    createAndUploadBuffer(overlayQuadVerts, overlayVertexBuffer_, overlayVertexBufferMemory_,
+                          sizeof(overlayQuadVerts), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+
+    createAndUploadBuffer(particleVerts, particleSystem_->haloVertexBuffer,
+                          particleSystem_->haloVertexBufferMemory, sizeof(particleVerts),
+                          VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+    createAndUploadBuffer(particlesIndices, particleSystem_->haloIndexBuffer,
+                          particleSystem_->haloIndexBufferMemory, sizeof(particlesIndices),
+                          VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+    createAndUploadBuffer(particleVerts, particleSystem_->haloInstanceBuffer,
+                          particleSystem_->haloInstanceBufferMemory, sizeof(ShieldInstance) * 6,
+                          VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
 
 }
 
@@ -2453,8 +2493,17 @@ Renderer::~Renderer() {
 }
 
 
+void Renderer::alienFireBullet() {
+    if (gameState == GameState::Playing) {
+        static float timer = 0.0f;
+        timer += Time::deltaTime;
+        if (timer > 1.0f) {
+            timer = 0.0f;
+            Alien alien = aliens_[Util::getRandomUint(0, MAX_ALIENS)];
+            if (alien.active) {
+                spawnBullet(BulletType::Alien, {alien.x, -alien.y});
+            }
+        }
 
-
-
-
-
+    }
+}
