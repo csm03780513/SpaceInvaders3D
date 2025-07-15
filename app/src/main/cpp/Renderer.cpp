@@ -2054,13 +2054,15 @@ void Renderer::updateShipBuffer() const {
 void Renderer::updateBullet() {
     for (int i = 0; i < MAX_BULLETS; ++i) {
         if (bullets_[i].active) {
-            if (bullets_[i].bulletType == BulletType::Ship) bullets_[i].y -= bulletMoveSpeed_ *
-                                                                             Time::deltaTime; // Move up
-            if (bullets_[i].bulletType == BulletType::Alien) bullets_[i].y += 0.5f *
-                                                                              Time::deltaTime; // Move down
+            if (bullets_[i].bulletType == BulletType::Ship)
+                bullets_[i].y -= bulletMoveSpeed_ * Time::deltaTime; // Move up
+            if (bullets_[i].bulletType == BulletType::Alien)
+                bullets_[i].y += 0.5f * Time::deltaTime;             // Move down
 
-            if (bullets_[i].y < -1.0f)
+            if ((bullets_[i].bulletType == BulletType::Ship && bullets_[i].y < -1.0f) ||
+                (bullets_[i].bulletType == BulletType::Alien && bullets_[i].y > 1.0f)) {
                 bullets_[i].active = false; // Off screen
+            }
         }
     }
 
