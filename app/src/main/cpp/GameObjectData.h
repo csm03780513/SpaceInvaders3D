@@ -80,15 +80,16 @@ enum class BulletType {
 struct Bullet {
     float x{}, y{};
     bool active{};
-    BulletType bulletType;
+    std::array<float, 2> widthHeight{};
+    BulletType bulletType{};
     const float size = 0.05f * 0.5f; //half alien
 };
 
 struct Alien {
     float x{}, y{};
     bool active{};
-    const float size = 0.1f * 0.5f; //half alien
-    uint life{3};
+    std::array<float, 2> widthHeight{};
+    uint hp{3};
 };
 
 enum class PowerUpType {
@@ -101,8 +102,8 @@ enum class PowerUpType {
 struct Ship {
     float x{}, y{};
     float color[3]{};
-    std::array<float, 2> widthHeight;
-    uint life{3};
+    std::array<float, 2> widthHeight{};
+    uint hp{3};
     float size{0.1f};
 };
 
@@ -114,6 +115,7 @@ struct MainPushConstants {
     uint texturePos{0};
     float time{0.0f};
     uint canPulse{0};
+    glm::vec2 scale{1.0f, 1.0f};
 };
 
 

@@ -23,12 +23,12 @@ struct FontGlyphMetrics {
     int minY, maxY;      // Top/bottom of nontransparent region (relative to cell)
     float advance;       // Recommended horizontal advance (pixels, incl. extra spacing)
     int cellX, cellY;    // Top-left in atlas (pixels)
-    int cellW, cellH;    // Cell size (pixels)
+    int cellW, cellH;    // Cell scale (pixels)
 };
 
 struct FontAtlasMetrics {
-    int imgW, imgH;         // Atlas size in pixels
-    int cellW, cellH;       // Each cell size in pixels
+    int imgW, imgH;         // Atlas scale in pixels
+    int cellW, cellH;       // Each cell scale in pixels
     int cols, rows;         // How many glyphs in X/Y
     int firstChar, lastChar;// ASCII code (typically 32..127)
     std::vector<FontGlyphMetrics> glyphs; // Indexed by (code - firstChar)

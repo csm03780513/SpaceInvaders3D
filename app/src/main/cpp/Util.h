@@ -5,11 +5,7 @@
 #ifndef SPACEINVADERS3D_UTIL_H
 #define SPACEINVADERS3D_UTIL_H
 #include "GameObjectData.h"
-
-struct AABB {
-    float minX, minY;
-    float maxX, maxY;
-};
+#include "Collision.h"
 
 class Util {
 private:
@@ -20,7 +16,7 @@ public:
     VkDeviceMemory stagingBufferMemory{VK_NULL_HANDLE};
     VkPipeline aabbPipeline{VK_NULL_HANDLE};
     VkPipelineLayout aabbPipelineLayout{VK_NULL_HANDLE};
-    static std::array<float,2> getQuadWidthHeight(const Vertex *verts, size_t vertsCount);
+    static std::array<float,2> getQuadWidthHeight(const Vertex *verts, size_t vertsCount,std::array<float,2> sizeXY);
     static uint32_t getRandomUint(uint32_t min, uint32_t max);
     static float getRandomFloat(float min, float max);
 

@@ -8,11 +8,12 @@
 #include "GameObjectData.h"
 #include "Time.h"
 #include "Util.h"
+#include "Collision.h"
 
 struct PowerUpData {
     PowerUpType type;
     glm::vec3 pos;      // NDC or world units
-    std::array<float,2> widthHeight = Util::getQuadWidthHeight(quadVerts,6);
+    std::array<float,2> widthHeight = Util::getQuadWidthHeight(quadVerts,6,{1,1});
     float fallSpeed;    // e.g., 0.5f per sec
     float timeLeft;     // for active power-ups, e.g. 5.0f
     bool active;

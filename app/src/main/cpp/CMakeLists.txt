@@ -24,6 +24,7 @@ add_library(SpaceInvaders3D SHARED
         PowerUpManager.cpp
         Time.cpp
         Util.cpp
+        Collision.cpp
         #        volk/volk.c
 )
 target_include_directories(SpaceInvaders3D PRIVATE

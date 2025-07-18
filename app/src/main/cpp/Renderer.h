@@ -75,6 +75,7 @@ private:
     std::vector<VkFramebuffer> framebuffers_;
     VkCommandPool commandPool_{VK_NULL_HANDLE};
     std::vector<VkCommandBuffer> commandBuffers_;
+    VkCommandBuffer cmd_;
     VkBuffer vertexBuffer_{VK_NULL_HANDLE};
     VkDeviceMemory vertexBufferMemory_{VK_NULL_HANDLE};
 

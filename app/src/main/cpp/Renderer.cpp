@@ -37,7 +37,7 @@ const bool enableValidationLayers = true;
 
 Bullet bullets_[MAX_BULLETS] = {};
 Ship ship_ = {
-        .widthHeight = Util::getQuadWidthHeight(shipVerts, 6)
+        .widthHeight = Util::getQuadWidthHeight(shipVerts, 6, {1, 1})
 };
 Alien aliens_[MAX_ALIENS] = {};
 
@@ -141,8 +141,12 @@ VkShaderModule createShaderModule(VkDevice device, const std::vector<char> &code
 inline bool isCollision(const Alien &alien, const Bullet &bullet) {
 
     if (bullet.bulletType == BulletType::Ship) {
-        return std::abs(alien.x - bullet.x) < (alien.size + bullet.size) &&
-               std::abs(alien.y + bullet.y) < (alien.size + bullet.size);
+        auto alienAABB = Collision::getAABB(alien.x, alien.y, alien.widthHeight[0],
+                                            alien.widthHeight[1]);
+        auto bulletAABB = Collision::getAABB(bullet.x, -bullet.y, bullet.widthHeight[0],
+                                             bullet.widthHeight[1]);
+
+        return Collision::isColliding(alienAABB, bulletAABB);
     } else if (bullet.bulletType == BulletType::Alien) {
         return false;
     }
@@ -168,7 +172,7 @@ std::vector<uint8_t> loadMusicAssetToMemory(AAssetManager *mgr, const char *file
     std::vector<uint8_t> data(fileSize);
     AAsset_read(asset, data.data(), fileSize);
     AAsset_close(asset);
-    LOGE("Asset size: %zu", data.size());
+    LOGE("Asset scale: %zu", data.size());
     return data;
 }
 
@@ -568,6 +572,7 @@ std::vector<float> shootSFXSample, explodeSFXSample1, explodeSFXSample2;
 std::unordered_map<uint, std::vector<float>> explosionSFXMap;
 
 Renderer::Renderer(android_app *app) : app_(app) {
+
     initVulkan();
     assetManager_ = app_->activity->assetManager;
     fontManager_ = std::make_unique<FontManager>();
@@ -1034,7 +1039,7 @@ void Renderer::createSurface() {
 
     int w = ANativeWindow_getWidth(app_->window);
     int h = ANativeWindow_getHeight(app_->window);
-    LOGE("ANativeWindow = %p, size = %dx%d", app_->window, w, h);
+    LOGE("ANativeWindow = %p, scale = %dx%d", app_->window, w, h);
 
     VkResult surfaceResult = vkCreateAndroidSurfaceKHR(instance_, &surfInfo, nullptr, &surface_);
     if (surfaceResult != VK_SUCCESS) {
@@ -1318,7 +1323,8 @@ void Renderer::initAliens() {
             aliens_[idx].x = startX + x * dx;
             aliens_[idx].y = startY - y * dy;
             aliens_[idx].active = true;
-            aliens_[idx].life = 3;
+            aliens_[idx].hp = 3;
+            aliens_[idx].widthHeight = Util::getQuadWidthHeight(alienVerts, 6, {0.5, 0.5});
             alienPC_[idx].texturePos = 1;
         }
     }
@@ -1833,11 +1839,11 @@ Renderer::createDescriptorSetLayout(VkDescriptorSetLayoutCreateInfo descriptorSe
 }
 
 void Renderer::recordCommandBuffer(uint32_t imageIndex) {
-    VkCommandBuffer cmd = commandBuffers_[imageIndex];
+    cmd_ = commandBuffers_[imageIndex];
 
     VkCommandBufferBeginInfo beginInfo = {};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    vkBeginCommandBuffer(cmd, &beginInfo);
+    vkBeginCommandBuffer(cmd_, &beginInfo);
 
     VkClearValue clearColor = {{0.0f, 0.0f, 0.0f, 1.0f}};
     VkRenderPassBeginInfo renderBeginPassInfo = {};
@@ -1849,9 +1855,9 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
     renderBeginPassInfo.clearValueCount = 1;
     renderBeginPassInfo.pClearValues = &clearColor;
 
-    vkCmdBeginRenderPass(cmd, &renderBeginPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdBeginRenderPass(cmd_, &renderBeginPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-    particleSystem_->recordCommandBuffer(cmd,
+    particleSystem_->recordCommandBuffer(cmd_,
                                          particlesPipelineLayout_,
                                          starParticlesPipeline_,
                                          starVertsBuffer_,
@@ -1869,17 +1875,17 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
     trianglePC.flashAmount = 0.0f;
     trianglePC.texturePos = 4;
 
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipeline_);
-    vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
+    vkCmdBindPipeline(cmd_, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipeline_);
+    vkCmdPushConstants(cmd_, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
                        sizeof(MainPushConstants),
                        &trianglePC);
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineLayout_, 0, 1,
+    vkCmdBindDescriptorSets(cmd_, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineLayout_, 0, 1,
                             &shipDescriptorSet_, 0, nullptr);
-    vkCmdBindVertexBuffers(cmd, 0, 1, &vertexBuffer_, offsets);
-    vkCmdDraw(cmd, sizeof(quadVerts) / sizeof(Vertex), 1, 0, 0);
+    vkCmdBindVertexBuffers(cmd_, 0, 1, &vertexBuffer_, offsets);
+    vkCmdDraw(cmd_, sizeof(quadVerts) / sizeof(Vertex), 1, 0, 0);
 
 
-    powerUpManager_->recordCommandBuffer(cmd, mainPipelineLayout_, mainPipeline_, shakeOffset,
+    powerUpManager_->recordCommandBuffer(cmd_, mainPipelineLayout_, mainPipeline_, shakeOffset,
                                          shipDescriptorSet_);
 
     // --- Draw ship
@@ -1888,15 +1894,15 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
     shipPC_.pos = {shipX_, ship_.y};
     shipPC_.shakeOffset = shakeOffset;
 
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipeline_);
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineLayout_, 0, 1,
+    vkCmdBindPipeline(cmd_, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipeline_);
+    vkCmdBindDescriptorSets(cmd_, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineLayout_, 0, 1,
                             &shipDescriptorSet_, 0, nullptr);
-    vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
+    vkCmdPushConstants(cmd_, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
                        sizeof(MainPushConstants),
                        &shipPC_);
 
-    vkCmdBindVertexBuffers(cmd, 0, 1, &shipVertexBuffer_, offsets);
-    vkCmdDraw(cmd, 6, 1, 0, 0);
+    vkCmdBindVertexBuffers(cmd_, 0, 1, &shipVertexBuffer_, offsets);
+    vkCmdDraw(cmd_, 6, 1, 0, 0);
 
 
 
@@ -1906,13 +1912,18 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
         bulletPC_[i].pos = {bullets_[i].x, bullets_[i].y};
         bulletPC_[i].shakeOffset = shakeOffset;
         bulletPC_[i].texturePos = 2;
+        bulletPC_[i].scale = {0.5f, 0.5f};
+         auto bulletAABB = Collision::getAABB(bullets_[i].x, bullets_[i].y, bullets_[i].widthHeight[0],
+                                              bullets_[i].widthHeight[1]);
 
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineLayout_, 0, 1,
+        vkCmdBindPipeline(cmd_, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipeline_);
+        vkCmdBindDescriptorSets(cmd_, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineLayout_, 0, 1,
                                 &shipDescriptorSet_, 0, nullptr);
-        vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
+        vkCmdPushConstants(cmd_, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
                            sizeof(MainPushConstants), &bulletPC_[i]);
-        vkCmdBindVertexBuffers(cmd, 0, 1, &bulletVertexBuffer_, offsets);
-        vkCmdDraw(cmd, 6, 1, 0, 0);
+        vkCmdBindVertexBuffers(cmd_, 0, 1, &bulletVertexBuffer_, offsets);
+        vkCmdDraw(cmd_, 6, 1, 0, 0);
+        //util_->recordDrawBoundingBox(cmd_, bulletAABB, {0.0f,1.0f,1.0f});
     }
 
     for (int i = 0; i < MAX_ALIENS; ++i) {
@@ -1920,13 +1931,19 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
         alienPC_[i].pos = {aliens_[i].x, -aliens_[i].y};
         alienPC_[i].shakeOffset = shakeOffset;
 
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineLayout_, 0, 1,
+        auto alienAABB = Collision::getAABB(aliens_[i].x, -aliens_[i].y, aliens_[i].widthHeight[0],
+                                            aliens_[i].widthHeight[1]);
+
+
+        vkCmdBindPipeline(cmd_, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipeline_);
+        vkCmdBindDescriptorSets(cmd_, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineLayout_, 0, 1,
                                 &shipDescriptorSet_, 0, nullptr);
-        vkCmdBindVertexBuffers(cmd, 0, 1, &alienVertexBuffer_, offsets);
-        vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
+        vkCmdBindVertexBuffers(cmd_, 0, 1, &alienVertexBuffer_, offsets);
+        vkCmdPushConstants(cmd_, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
                            sizeof(MainPushConstants),
                            &alienPC_[i]);
-        vkCmdDraw(cmd, 6, 1, 0, 0);
+        vkCmdDraw(cmd_, 6, 1, 0, 0);
+//        util_->recordDrawBoundingBox(cmd_, alienAABB, {1.0f,0.0f,0.0f});
 
     }
 
@@ -1945,26 +1962,26 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
             overlayColor[3] = 0.5f;
         }
 
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, overlayPipeline_);
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, overlayPipelineLayout_, 0, 1,
+        vkCmdBindPipeline(cmd_, VK_PIPELINE_BIND_POINT_GRAPHICS, overlayPipeline_);
+        vkCmdBindDescriptorSets(cmd_, VK_PIPELINE_BIND_POINT_GRAPHICS, overlayPipelineLayout_, 0, 1,
                                 &overlayDescriptorSet_, 0, nullptr);
-        vkCmdBindVertexBuffers(cmd, 0, 1, &overlayVertexBuffer_, offsets);
-        vkCmdPushConstants(cmd, overlayPipelineLayout_, VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+        vkCmdBindVertexBuffers(cmd_, 0, 1, &overlayVertexBuffer_, offsets);
+        vkCmdPushConstants(cmd_, overlayPipelineLayout_, VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                            sizeof(overlayColor), overlayColor);
-        vkCmdDraw(cmd, 6, 1, 0, 0);
+        vkCmdDraw(cmd_, 6, 1, 0, 0);
     }
 
 
     for (const auto &[textName, textData]: allTextVertices) {
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, fontPipeline_);
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, fontPipelineLayout_, 0, 1,
+        vkCmdBindPipeline(cmd_, VK_PIPELINE_BIND_POINT_GRAPHICS, fontPipeline_);
+        vkCmdBindDescriptorSets(cmd_, VK_PIPELINE_BIND_POINT_GRAPHICS, fontPipelineLayout_, 0, 1,
                                 &fontDescriptorSet_, 0, nullptr);
-        vkCmdBindVertexBuffers(cmd, 0, 1, &textData.first, offsets);
-        vkCmdDraw(cmd, textData.second.size(), 1, 0, 0);
+        vkCmdBindVertexBuffers(cmd_, 0, 1, &textData.first, offsets);
+        vkCmdDraw(cmd_, textData.second.size(), 1, 0, 0);
     }
 
 
-    particleSystem_->recordCommandBuffer(cmd,
+    particleSystem_->recordCommandBuffer(cmd_,
                                          particlesPipelineLayout_,
                                          explosionParticlesPipeline_,
                                          particlesVertexBuffer_,
@@ -1972,7 +1989,7 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
                                          particlesInstanceBuffer_,
                                          GfxPipelineType::ExplosionParticles);
 
-    particleSystem_->recordCommandBuffer(cmd,
+    particleSystem_->recordCommandBuffer(cmd_,
                                          particlesPipelineLayout_,
                                          starParticlesPipeline_,
                                          starInstanceBuffer_,
@@ -1980,8 +1997,8 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
                                          starInstanceBuffer_,
                                          GfxPipelineType::HaloEffect);
 
-    vkCmdEndRenderPass(cmd);
-    vkEndCommandBuffer(cmd);
+    vkCmdEndRenderPass(cmd_);
+    vkEndCommandBuffer(cmd_);
 }
 
 void Renderer::restartGame() {
@@ -2109,24 +2126,23 @@ void Renderer::updateCollision() {
 
             if (isCollision(aliens_[i], bullet) && bullet.bulletType == BulletType::Ship) {
                 bullet.active = false;   // Destroy bullet
-                aliens_[i].life--;
+                aliens_[i].hp--;
                 // On hit:
                 alienPC_[i].flashAmount = 1.0f;
 
-                if (aliens_[i].life <= 0) {
+                if (aliens_[i].hp <= 0) {
                     aliens_[i].active = false;    // Destroy alien
                     actualScore += 100;
                     alienMoveSpeed_ += 0.005f;
                     rateOfFire -= 0.0005f;
                     particleSystem_->spawn(glm::vec3(aliens_[i].x, -aliens_[i].y, 1.0f), 15);
-//                    sfxMixer.playSFX(explosionSFXMap[x].data(), explosionSFXMap[x].size(), 0.3f);
+//                    sfxMixer.playSFX(explosionSFXMap[x].data(), explosionSFXMap[x].scale(), 0.3f);
                     powerUpManager_->spawnPowerUp(PowerUpType::DoubleShot,
                                                   {aliens_[i].x, aliens_[i].y});
                     x++;
                     x == explosionSFXMap.size() ? x = 0 : x;
                     shakeTimer = 0.2f;
                 }
-                // Optionally: score++, play sound, create explosion, etc.
                 break; // Stop checking this bullet (it's now gone)
             }
         }
@@ -2143,7 +2159,7 @@ void Renderer::updateGameState() {
                 break;
             }
         }
-        // --- Win Condition: All aliens destroyed
+
         bool anyAlienAlive = false;
         for (const auto &alien: aliens_) {
             if (alien.active) {
@@ -2357,6 +2373,11 @@ void Renderer::loadGameObjects() {
 
     createAndUploadBuffer(quadVerts, bulletVertexBuffer_, bulletVertexBufferMemory_,
                           sizeof(quadVerts), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+
+    for (auto &bullet: bullets_) {
+        bullet.active = false;
+        bullet.widthHeight = Util::getQuadWidthHeight(quadVerts, 6, {0.2, 0.5});
+    }
 
     createAndUploadBuffer(quadVerts, vertexBuffer_, vertexBufferMemory_, sizeof(quadVerts),
                           VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);

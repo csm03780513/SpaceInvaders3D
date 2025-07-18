@@ -32,7 +32,7 @@ struct ShieldInstance {
                 {0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, pos)},
                 // Instance data (locations = 1-5)
                 {1, 1, VK_FORMAT_R32G32_SFLOAT,    offsetof(ShieldInstance, center)},      // center.xy
-                {2, 1, VK_FORMAT_R32_SFLOAT,       offsetof(ShieldInstance, size)},        // size
+                {2, 1, VK_FORMAT_R32_SFLOAT,       offsetof(ShieldInstance, size)},        // scale
                 {3, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(ShieldInstance, color)},    // color
                 {4, 1, VK_FORMAT_R32_SFLOAT,       offsetof(ShieldInstance, time)},        // time
                 {5, 1, VK_FORMAT_R32_SFLOAT,       offsetof(ShieldInstance, effectType)}   // effectType

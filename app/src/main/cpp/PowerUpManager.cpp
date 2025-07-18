@@ -5,16 +5,16 @@
 #include "PowerUpManager.h"
 AABB powerupBox;
 AABB shipBox;
-AABB getAABB(float cx, float cy, float width, float height) {
-    float halfW = width * 0.5f;
-    float halfH = height * 0.5f;
-    return { cx - halfW, cy - halfH, cx + halfW, cy + halfH };
-}
-
-bool isColliding(const AABB& a, const AABB& b) {
-    return (a.minX < b.maxX && a.maxX > b.minX &&
-            a.minY < b.maxY && a.maxY > b.minY);
-}
+//AABB getAABB(float cx, float cy, float width, float height) {
+//    float halfW = width * 0.5f;
+//    float halfH = height * 0.5f;
+//    return { cx - halfW, cy - halfH, cx + halfW, cy + halfH };
+//}
+//
+//bool isColliding(const AABB& a, const AABB& b) {
+//    return (a.minX < b.maxX && a.maxX > b.minX &&
+//            a.minY < b.maxY && a.maxY > b.minY);
+//}
 
 void PowerUpManager::spawnPowerUp(PowerUpType type, const glm::vec2 &pos) {
     float randomChance = rand() / float(RAND_MAX);
@@ -70,11 +70,11 @@ void PowerUpManager::recordCommandBuffer(VkCommandBuffer cmd, VkPipelineLayout p
 
         vkCmdBindVertexBuffers(cmd, 0, 1, &powerUpBuffer, offsets);
         vkCmdDraw(cmd, 6, 1, 0, 0);
-//        util->recordDrawBoundingBox(cmd, powerupBox, {0.0f, 1.0f, 0.0f});
+//        util->recordDrawBoundingBox(cmd_, powerupBox, {0.0f, 1.0f, 0.0f});
     }
 
 
-//    util->recordDrawBoundingBox(cmd, shipBox, {1.0f, 0.0f, 0.0f});
+//    util->recordDrawBoundingBox(cmd_, shipBox, {1.0f, 0.0f, 0.0f});
 
 
 
@@ -117,10 +117,10 @@ void PowerUpManager::checkIfPowerUpCollected(Ship ship) {
     for (auto& powerup : powerUps_) {
         if (!powerup.active) continue;
 
-         powerupBox = getAABB(powerup.pos.x, -powerup.pos.y, powerup.widthHeight[0], powerup.widthHeight[1]);
-         shipBox    = getAABB(ship.x, ship.y, ship.widthHeight[0], ship.widthHeight[1]);
+         powerupBox = Collision::getAABB(powerup.pos.x, -powerup.pos.y, powerup.widthHeight[0], powerup.widthHeight[1]);
+         shipBox    = Collision::getAABB(ship.x, ship.y, ship.widthHeight[0], ship.widthHeight[1]);
 
-        if (isColliding(powerupBox, shipBox)) {
+        if (Collision::isColliding(powerupBox, shipBox)) {
             powerup.active = false;
             activatePowerUp(powerup.type);
         }

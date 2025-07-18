@@ -2,7 +2,7 @@
 
 layout(location = 0) in vec3 quadPos;       // Per-vertex quad position (from Vertex struct)
 layout(location = 1) in vec2 inCenter;      // Per-instance: effect center
-layout(location = 2) in float inSize;       // Per-instance: effect size
+layout(location = 2) in float inSize;       // Per-instance: effect scale
 layout(location = 3) in vec4 inColor;       // Per-instance: color
 layout(location = 4) in float inTime;       // Per-instance: time (for pulse/anim)
 layout(location = 5) in float inEffectType; // Per-instance: effect type flag
@@ -13,7 +13,7 @@ layout(location = 2) out float vTime;
 layout(location = 3) out float vEffectType;
 
 void main() {
-    // Scale quad from [-0.5,0.5] to effect size, and move to center
+    // Scale quad from [-0.5,0.5] to effect scale, and move to center
     vec2 pos = quadPos.xy * inSize + inCenter;
     fragUV = quadPos.xy * 0.5 + 0.5; // Map to [0,1] for ring/circle logic
     fragColor = inColor;

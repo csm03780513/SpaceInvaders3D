@@ -49,7 +49,7 @@ void ParticleSystem::recordCommandBuffer(VkCommandBuffer cmd,
         vkCmdBindVertexBuffers(cmd, 0, 2, vertexBuffers, offsets);
         vkCmdBindIndexBuffer(cmd, indexBuffer, 0, VK_INDEX_TYPE_UINT16);
         vkCmdDrawIndexed(cmd, 6, liveParticles.size(), 0, 0, 0);
-//    vkCmdDraw(cmd, 4, 1, 0, 0);
+//    vkCmdDraw(cmd_, 4, 1, 0, 0);
     }
     if(gfxPipelineType == GfxPipelineType::StarParticles) {
         if (starInstances.empty()) return;
@@ -61,7 +61,7 @@ void ParticleSystem::recordCommandBuffer(VkCommandBuffer cmd,
         vkCmdBindVertexBuffers(cmd, 0, 2, vertexBuffers, offsets);
         vkCmdBindIndexBuffer(cmd, indexBuffer, 0, VK_INDEX_TYPE_UINT16);
         vkCmdDrawIndexed(cmd, 6, starInstances.size(), 0, 0, 0);
-//    vkCmdDraw(cmd, 4, 1, 0, 0);
+//    vkCmdDraw(cmd_, 4, 1, 0, 0);
     }
 
     if(gfxPipelineType == GfxPipelineType::HaloEffect) {
@@ -73,7 +73,7 @@ void ParticleSystem::recordCommandBuffer(VkCommandBuffer cmd,
         vkCmdBindVertexBuffers(cmd, 0, 2, vertexBuffers, offsets);
         vkCmdBindIndexBuffer(cmd, haloIndexBuffer, 0, VK_INDEX_TYPE_UINT16);
         vkCmdDrawIndexed(cmd, 6, 1, 0, 0, 0);
-//    vkCmdDraw(cmd, 4, 1, 0, 0);
+//    vkCmdDraw(cmd_, 4, 1, 0, 0);
     }
 
 
@@ -108,10 +108,10 @@ void ParticleSystem::updateStarField(VkDeviceMemory starInstanceBufferMemory) {
         star.position.y += star.speed * Time::deltaTime;
         if (star.position.y > 1.1f) { // Slightly below bottom, wrap to top
             star.position.y = -1.1f;
-            // Optionally randomize X/speed/size/brightness for more variation
+            // Optionally randomize X/speed/scale/brightness for more variation
             star.position.x = xDist(rng);
             star.speed = speedDist(rng);
-            star.size = sizeDist(rng);
+            star.scale = sizeDist(rng);
             star.brightness = brightDist(rng);
         }
     }
