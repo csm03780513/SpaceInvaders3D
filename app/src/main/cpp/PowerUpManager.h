@@ -37,7 +37,7 @@ public:
     explicit PowerUpManager();
     void spawnPowerUp(PowerUpType type, const glm::vec2& pos);
     void updatePowerUpData();
-    void checkIfPowerUpCollected(Ship ship);
+    void checkIfPowerUpCollected(const Ship &ship);
     void recordCommandBuffer(VkCommandBuffer cmd, VkPipelineLayout pipelineLayout,VkPipeline pipeline,glm::vec2 shakeOffset,VkDescriptorSet descriptorSet);
 };
 

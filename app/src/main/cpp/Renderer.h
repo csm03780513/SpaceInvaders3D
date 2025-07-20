@@ -25,7 +25,7 @@ public:
 
     void drawFrame();
 
-    void updateShipBuffer() const;
+    void updateShip() const;
 
     void spawnBullet(BulletType bulletType,glm::vec2 spawnPos);
 

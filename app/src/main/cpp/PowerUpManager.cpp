@@ -113,7 +113,7 @@ void PowerUpManager::updatePowerUpExpiry() {
                     powerUps_.end());
 }
 
-void PowerUpManager::checkIfPowerUpCollected(Ship ship) {
+void PowerUpManager::checkIfPowerUpCollected(const Ship &ship) {
     for (auto& powerup : powerUps_) {
         if (!powerup.active) continue;
 

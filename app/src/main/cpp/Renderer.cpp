@@ -148,8 +148,14 @@ inline bool isCollision(const Alien &alien, const Bullet &bullet) {
 
         return Collision::isColliding(alienAABB, bulletAABB);
     } else if (bullet.bulletType == BulletType::Alien) {
-        return false;
+        auto shipAABB = Collision::getAABB(ship_.x, ship_.y, ship_.widthHeight[0],
+                                           ship_.widthHeight[1]);
+        auto bulletAABB = Collision::getAABB(bullet.x, bullet.y, bullet.widthHeight[0],
+                                             bullet.widthHeight[1]);
+       return Collision::isColliding(shipAABB, bulletAABB);
+
     }
+
     return false;
 }
 
@@ -1904,6 +1910,9 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
     vkCmdBindVertexBuffers(cmd_, 0, 1, &shipVertexBuffer_, offsets);
     vkCmdDraw(cmd_, 6, 1, 0, 0);
 
+    auto shipAABB = Collision::getAABB(ship_.x, ship_.y, ship_.widthHeight[0],
+                                       ship_.widthHeight[1]);
+    util_->recordDrawBoundingBox(cmd_, shipAABB, {0.0f,1.0f,1.0f});
 
 
     // --- Draw bullets (for each active bullet, updateExplosionParticles buffer and draw)
@@ -1913,8 +1922,6 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
         bulletPC_[i].shakeOffset = shakeOffset;
         bulletPC_[i].texturePos = 2;
         bulletPC_[i].scale = {0.5f, 0.5f};
-         auto bulletAABB = Collision::getAABB(bullets_[i].x, bullets_[i].y, bullets_[i].widthHeight[0],
-                                              bullets_[i].widthHeight[1]);
 
         vkCmdBindPipeline(cmd_, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipeline_);
         vkCmdBindDescriptorSets(cmd_, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineLayout_, 0, 1,
@@ -1923,17 +1930,13 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
                            sizeof(MainPushConstants), &bulletPC_[i]);
         vkCmdBindVertexBuffers(cmd_, 0, 1, &bulletVertexBuffer_, offsets);
         vkCmdDraw(cmd_, 6, 1, 0, 0);
-        //util_->recordDrawBoundingBox(cmd_, bulletAABB, {0.0f,1.0f,1.0f});
+
     }
 
     for (int i = 0; i < MAX_ALIENS; ++i) {
         if (!aliens_[i].active) continue;
         alienPC_[i].pos = {aliens_[i].x, -aliens_[i].y};
         alienPC_[i].shakeOffset = shakeOffset;
-
-        auto alienAABB = Collision::getAABB(aliens_[i].x, -aliens_[i].y, aliens_[i].widthHeight[0],
-                                            aliens_[i].widthHeight[1]);
-
 
         vkCmdBindPipeline(cmd_, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipeline_);
         vkCmdBindDescriptorSets(cmd_, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineLayout_, 0, 1,
@@ -1954,7 +1957,7 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
             overlayColor[0] = 1.0f; // Red
             overlayColor[1] = 0.0f;
             overlayColor[2] = 0.0f;
-            overlayColor[3] = 0.5f; // Alpha, for see-through
+            overlayColor[3] = 0.8f; // Alpha, for see-through
         } else {
             overlayColor[0] = 0.0f; // Green or Blue
             overlayColor[1] = 1.0f;
@@ -2006,6 +2009,8 @@ void Renderer::restartGame() {
 
     // Reset aliens
     initAliens();
+    ship_.hp = 3;
+    alienMoveSpeed_ = 0.3f;
 
     // Reset bullets
     for (auto &bullet: bullets_) {
@@ -2062,7 +2067,7 @@ void Renderer::spawnBullet(BulletType bulletType, glm::vec2 spawnPos) {
     }
 }
 
-void Renderer::updateShipBuffer() const {
+void Renderer::updateShip() const {
     ship_.x = shipX_;
     ship_.y = shipY_;
     ship_.color[0] = shipX_;
@@ -2144,6 +2149,17 @@ void Renderer::updateCollision() {
                     shakeTimer = 0.2f;
                 }
                 break; // Stop checking this bullet (it's now gone)
+            }
+            if(isCollision(aliens_[i], bullet) && bullet.bulletType == BulletType::Alien && !powerUpManager_->shieldActive) {
+                particleSystem_->spawn(glm::vec3(bullet.x, bullet.y, 0.0f), 15);
+                bullet.active = false;   // Destroy bullet
+                shipPC_.flashAmount = 1.0f;
+                ship_.hp--;
+                if(ship_.hp <= 0) {
+                    gameState = GameState::Lost;
+                    LOGE("Game over: %i",ship_.hp);
+                }
+                break;
             }
         }
     }
@@ -2253,7 +2269,7 @@ void Renderer::drawFrame() {
             canFire = false;
         }
         updateUniformBuffer();
-        updateShipBuffer();
+        updateShip();
 
         updateAliens();
         updateCollision();
@@ -2276,7 +2292,8 @@ void Renderer::drawFrame() {
         shakeOffset.y = (rand() / (float) RAND_MAX - 0.5f) * 2.0f * shakeMagnitude;
         shakeTimer -= Time::deltaTime;
     }
-
+    shipPC_.flashAmount -= Time::deltaTime * 5.0f; // fade speed (0.2s)
+    if (shipPC_.flashAmount < 0.0f) shipPC_.flashAmount = 0.0f;
 
     recordCommandBuffer(imageIndex);
 

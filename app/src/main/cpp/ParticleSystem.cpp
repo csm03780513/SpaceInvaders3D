@@ -111,7 +111,7 @@ void ParticleSystem::updateStarField(VkDeviceMemory starInstanceBufferMemory) {
             // Optionally randomize X/speed/scale/brightness for more variation
             star.position.x = xDist(rng);
             star.speed = speedDist(rng);
-            star.scale = sizeDist(rng);
+            star.size = sizeDist(rng);
             star.brightness = brightDist(rng);
         }
     }
