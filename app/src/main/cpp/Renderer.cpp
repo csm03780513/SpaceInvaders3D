@@ -18,7 +18,13 @@
 #include <vector>
 #include <stdexcept>
 
-std::unordered_map<GameText, std::pair<VkBuffer, std::vector<Vertex>>> allTextVertices;
+struct TextData {
+    VkBuffer buffer;
+    std::vector<Vertex> vertices;
+    VkDeviceSize offset;
+};
+
+std::unordered_map<GameText, TextData> allTextVertices;
 
 const std::vector<const char *> validationLayers = {
         "VK_LAYER_KHRONOS_validation"
@@ -52,7 +58,7 @@ VkShaderModule createShaderModule(VkDevice device, const std::vector<char> &code
 
 void createBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkDeviceSize size,
                   VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer &buffer,
-                  VkDeviceMemory &bufferMemory);
+                  VkDeviceMemory &bufferMemory, VkDeviceSize customAllocSize = 0);
 
 
 bool isCollision(const Alien &alien, const Bullet &bullet);
@@ -88,8 +94,10 @@ void setRasterizer(GfxPipelineData &graphicsPipelineData);
 
 void setSampling(GfxPipelineData &graphicsPipelineData);
 
-void updateFontBuffer(VkDevice device, std::vector<Vertex> textVertices,
-                      VkDeviceMemory fontVertexBufferMemory_);
+//void updateFontBuffer(VkDevice device, std::vector<Vertex> textVertices,
+//                      VkDeviceMemory fontVertexBufferMemory_);
+void updateFontBuffer(VkDevice device, const std::vector<Vertex> &vertices, VkDeviceMemory memory,
+                      VkDeviceSize offset);
 
 void uploadDataBuffer(VkDevice device, const void *dataToUpload, VkDeviceSize sizeOfData,
                       VkDeviceMemory bufferMemory);
@@ -152,7 +160,7 @@ inline bool isCollision(const Alien &alien, const Bullet &bullet) {
                                            ship_.widthHeight[1]);
         auto bulletAABB = Collision::getAABB(bullet.x, bullet.y, bullet.widthHeight[0],
                                              bullet.widthHeight[1]);
-       return Collision::isColliding(shipAABB, bulletAABB);
+        return Collision::isColliding(shipAABB, bulletAABB);
 
     }
 
@@ -319,28 +327,30 @@ void Renderer::loadTexture(const char *filename, VkImage &vkImage, VkDeviceMemor
 
 // Create a Vulkan buffer
 void createBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkDeviceSize size,
-                  VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer &buffer,
-                  VkDeviceMemory &bufferMemory) {
-
+                  VkBufferUsageFlags usage, VkMemoryPropertyFlags properties,
+                  VkBuffer &buffer, VkDeviceMemory &bufferMemory,
+                  VkDeviceSize customAllocSize) // NEW
+{
     VkBufferCreateInfo bufferInfo = {};
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufferInfo.size = size;
+    bufferInfo.size = size; // size of the buffer, not memory
     bufferInfo.usage = usage;
     bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
     if (vkCreateBuffer(device, &bufferInfo, nullptr, &buffer) != VK_SUCCESS) {
-        LOGE("Failed to create buffer");
         throw std::runtime_error("Failed to create buffer");
     }
 
     VkMemoryRequirements memRequirements;
     vkGetBufferMemoryRequirements(device, buffer, &memRequirements);
 
+    VkDeviceSize allocSize = (customAllocSize > 0) ? customAllocSize : memRequirements.size;
+
     VkMemoryAllocateInfo allocInfo = {};
     allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    allocInfo.allocationSize = memRequirements.size;
+    allocInfo.allocationSize = allocSize;
 
-    // Find memory type
+    // Memory type selection
     VkPhysicalDeviceMemoryProperties memProperties;
     vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
     for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
@@ -352,12 +362,12 @@ void createBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkDeviceSize
     }
 
     if (vkAllocateMemory(device, &allocInfo, nullptr, &bufferMemory) != VK_SUCCESS) {
-        LOGE("Failed to allocate buffer memory");
         throw std::runtime_error("Failed to allocate buffer memory");
     }
 
     vkBindBufferMemory(device, buffer, bufferMemory, 0);
 }
+
 
 void createImage(VkDevice device, VkPhysicalDevice physicalDevice,
                  uint32_t width, uint32_t height, VkFormat format,
@@ -582,13 +592,10 @@ Renderer::Renderer(android_app *app) : app_(app) {
     initVulkan();
     assetManager_ = app_->activity->assetManager;
     fontManager_ = std::make_unique<FontManager>();
-    util_ = std::make_shared<Util>();
-    powerUpManager_ = std::make_shared<PowerUpManager>();
+    util_ = std::make_shared<Util>(device_);
+    powerUpManager_ = std::make_shared<PowerUpManager>(device_, util_);
     particleSystem_ = std::make_unique<ParticleSystem>(device_, powerUpManager_);
-    util_->device = device_;
-    powerUpManager_->util = util_;
 
-    powerUpManager_->device = device_;
     loadAllTextures();
     loadText();
     loadGameObjects();
@@ -773,10 +780,9 @@ void Renderer::createFontDescriptor(GfxPipelineData &gfxPipelineData) {
     }
 
     VkPushConstantRange pushConstantRange = {};
-    pushConstantRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
     pushConstantRange.offset = 0;
-    pushConstantRange.size = sizeof(float) * 4; // For vec4 offset
-
+    pushConstantRange.size = sizeof(FontPushConstants);
 
     VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = {};
     pipelineLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -1277,14 +1283,24 @@ void Renderer::initVulkan() {// Load Vulkan functions using volk
 
 }
 
-void updateFontBuffer(VkDevice device, std::vector<Vertex> textVertices,
-                      VkDeviceMemory fontVertexBufferMemory) {
-    VkDeviceSize textBufferSize = textVertices.size() * sizeof(Vertex);
-    void *fontData;
-    vkMapMemory(device, fontVertexBufferMemory, 0, textBufferSize, 0, &fontData);
-    memcpy(fontData, textVertices.data(), (size_t) textBufferSize);
-    vkUnmapMemory(device, fontVertexBufferMemory);
+void updateFontBuffer(VkDevice device, const std::vector<Vertex> &vertices, VkDeviceMemory memory,
+                      VkDeviceSize offset) {
+    void *mapped;
+    VkDeviceSize size = vertices.size() * sizeof(Vertex);
+
+    vkMapMemory(device, memory, offset, size, 0, &mapped);
+    memcpy(mapped, vertices.data(), size);
+    vkUnmapMemory(device, memory);
 }
+
+//void updateFontBuffer(VkDevice device, std::vector<Vertex> textVertices,
+//                      VkDeviceMemory fontVertexBufferMemory) {
+//    VkDeviceSize textBufferSize = textVertices.size() * sizeof(Vertex);
+//    void *fontData;
+//    vkMapMemory(device, fontVertexBufferMemory, 0, textBufferSize, 0, &fontData);
+//    memcpy(fontData, textVertices.data(), (size_t) textBufferSize);
+//    vkUnmapMemory(device, fontVertexBufferMemory);
+//}
 
 void uploadDataBuffer(VkDevice device, const void *dataToUpload, VkDeviceSize sizeOfData,
                       VkDeviceMemory bufferMemory) {
@@ -1329,7 +1345,7 @@ void Renderer::initAliens() {
             aliens_[idx].x = startX + x * dx;
             aliens_[idx].y = startY - y * dy;
             aliens_[idx].active = true;
-            aliens_[idx].hp = 3;
+            aliens_[idx].hp = 1;
             aliens_[idx].widthHeight = Util::getQuadWidthHeight(alienVerts, 6, {0.5, 0.5});
             alienPC_[idx].texturePos = 1;
         }
@@ -1527,7 +1543,7 @@ void Renderer::createGfxPipeline(GfxPipelineType gfxPipelineType) {
 
     switch (gfxPipelineType) {
         case GfxPipelineType::AxisAlignedBoundingBoxes:
-            graphicsPipelineData.inputAssemblyState.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+            graphicsPipelineData.inputAssemblyState.topology = VK_PRIMITIVE_TOPOLOGY_LINE_STRIP;
 
             setShaderStages(device_, assetManager_, "aabb.vert.spv", "aabb.frag.spv",
                             graphicsPipelineData);
@@ -1845,11 +1861,11 @@ Renderer::createDescriptorSetLayout(VkDescriptorSetLayoutCreateInfo descriptorSe
 }
 
 void Renderer::recordCommandBuffer(uint32_t imageIndex) {
-    cmd_ = commandBuffers_[imageIndex];
+    VkCommandBuffer cmd = commandBuffers_[imageIndex];
 
     VkCommandBufferBeginInfo beginInfo = {};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    vkBeginCommandBuffer(cmd_, &beginInfo);
+    vkBeginCommandBuffer(cmd, &beginInfo);
 
     VkClearValue clearColor = {{0.0f, 0.0f, 0.0f, 1.0f}};
     VkRenderPassBeginInfo renderBeginPassInfo = {};
@@ -1861,9 +1877,9 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
     renderBeginPassInfo.clearValueCount = 1;
     renderBeginPassInfo.pClearValues = &clearColor;
 
-    vkCmdBeginRenderPass(cmd_, &renderBeginPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdBeginRenderPass(cmd, &renderBeginPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-    particleSystem_->recordCommandBuffer(cmd_,
+    particleSystem_->recordCommandBuffer(cmd,
                                          particlesPipelineLayout_,
                                          starParticlesPipeline_,
                                          starVertsBuffer_,
@@ -1881,17 +1897,17 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
     trianglePC.flashAmount = 0.0f;
     trianglePC.texturePos = 4;
 
-    vkCmdBindPipeline(cmd_, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipeline_);
-    vkCmdPushConstants(cmd_, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipeline_);
+    vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
                        sizeof(MainPushConstants),
                        &trianglePC);
-    vkCmdBindDescriptorSets(cmd_, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineLayout_, 0, 1,
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineLayout_, 0, 1,
                             &shipDescriptorSet_, 0, nullptr);
-    vkCmdBindVertexBuffers(cmd_, 0, 1, &vertexBuffer_, offsets);
-    vkCmdDraw(cmd_, sizeof(quadVerts) / sizeof(Vertex), 1, 0, 0);
+    vkCmdBindVertexBuffers(cmd, 0, 1, &vertexBuffer_, offsets);
+    vkCmdDraw(cmd, sizeof(quadVerts) / sizeof(Vertex), 1, 0, 0);
 
 
-    powerUpManager_->recordCommandBuffer(cmd_, mainPipelineLayout_, mainPipeline_, shakeOffset,
+    powerUpManager_->recordCommandBuffer(cmd, mainPipelineLayout_, mainPipeline_, shakeOffset,
                                          shipDescriptorSet_);
 
     // --- Draw ship
@@ -1900,19 +1916,19 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
     shipPC_.pos = {shipX_, ship_.y};
     shipPC_.shakeOffset = shakeOffset;
 
-    vkCmdBindPipeline(cmd_, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipeline_);
-    vkCmdBindDescriptorSets(cmd_, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineLayout_, 0, 1,
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipeline_);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineLayout_, 0, 1,
                             &shipDescriptorSet_, 0, nullptr);
-    vkCmdPushConstants(cmd_, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
+    vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
                        sizeof(MainPushConstants),
                        &shipPC_);
 
-    vkCmdBindVertexBuffers(cmd_, 0, 1, &shipVertexBuffer_, offsets);
-    vkCmdDraw(cmd_, 6, 1, 0, 0);
+    vkCmdBindVertexBuffers(cmd, 0, 1, &shipVertexBuffer_, offsets);
+    vkCmdDraw(cmd, 6, 1, 0, 0);
 
     auto shipAABB = Collision::getAABB(ship_.x, ship_.y, ship_.widthHeight[0],
                                        ship_.widthHeight[1]);
-    util_->recordDrawBoundingBox(cmd_, shipAABB, {0.0f,1.0f,1.0f});
+    util_->recordDrawBoundingBox(cmd, shipAABB, {0.0f, 1.0f, 1.0f});
 
 
     // --- Draw bullets (for each active bullet, updateExplosionParticles buffer and draw)
@@ -1923,13 +1939,13 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
         bulletPC_[i].texturePos = 2;
         bulletPC_[i].scale = {0.5f, 0.5f};
 
-        vkCmdBindPipeline(cmd_, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipeline_);
-        vkCmdBindDescriptorSets(cmd_, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineLayout_, 0, 1,
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipeline_);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineLayout_, 0, 1,
                                 &shipDescriptorSet_, 0, nullptr);
-        vkCmdPushConstants(cmd_, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
+        vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
                            sizeof(MainPushConstants), &bulletPC_[i]);
-        vkCmdBindVertexBuffers(cmd_, 0, 1, &bulletVertexBuffer_, offsets);
-        vkCmdDraw(cmd_, 6, 1, 0, 0);
+        vkCmdBindVertexBuffers(cmd, 0, 1, &bulletVertexBuffer_, offsets);
+        vkCmdDraw(cmd, 6, 1, 0, 0);
 
     }
 
@@ -1938,15 +1954,15 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
         alienPC_[i].pos = {aliens_[i].x, -aliens_[i].y};
         alienPC_[i].shakeOffset = shakeOffset;
 
-        vkCmdBindPipeline(cmd_, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipeline_);
-        vkCmdBindDescriptorSets(cmd_, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineLayout_, 0, 1,
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipeline_);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineLayout_, 0, 1,
                                 &shipDescriptorSet_, 0, nullptr);
-        vkCmdBindVertexBuffers(cmd_, 0, 1, &alienVertexBuffer_, offsets);
-        vkCmdPushConstants(cmd_, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
+        vkCmdBindVertexBuffers(cmd, 0, 1, &alienVertexBuffer_, offsets);
+        vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
                            sizeof(MainPushConstants),
                            &alienPC_[i]);
-        vkCmdDraw(cmd_, 6, 1, 0, 0);
-//        util_->recordDrawBoundingBox(cmd_, alienAABB, {1.0f,0.0f,0.0f});
+        vkCmdDraw(cmd, 6, 1, 0, 0);
+//        util_->recordDrawBoundingBox(cmd, alienAABB, {1.0f,0.0f,0.0f});
 
     }
 
@@ -1965,26 +1981,42 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
             overlayColor[3] = 0.5f;
         }
 
-        vkCmdBindPipeline(cmd_, VK_PIPELINE_BIND_POINT_GRAPHICS, overlayPipeline_);
-        vkCmdBindDescriptorSets(cmd_, VK_PIPELINE_BIND_POINT_GRAPHICS, overlayPipelineLayout_, 0, 1,
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, overlayPipeline_);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, overlayPipelineLayout_, 0, 1,
                                 &overlayDescriptorSet_, 0, nullptr);
-        vkCmdBindVertexBuffers(cmd_, 0, 1, &overlayVertexBuffer_, offsets);
-        vkCmdPushConstants(cmd_, overlayPipelineLayout_, VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+        vkCmdBindVertexBuffers(cmd, 0, 1, &overlayVertexBuffer_, offsets);
+        vkCmdPushConstants(cmd, overlayPipelineLayout_, VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                            sizeof(overlayColor), overlayColor);
-        vkCmdDraw(cmd_, 6, 1, 0, 0);
+        vkCmdDraw(cmd, 6, 1, 0, 0);
     }
 
 
     for (const auto &[textName, textData]: allTextVertices) {
-        vkCmdBindPipeline(cmd_, VK_PIPELINE_BIND_POINT_GRAPHICS, fontPipeline_);
-        vkCmdBindDescriptorSets(cmd_, VK_PIPELINE_BIND_POINT_GRAPHICS, fontPipelineLayout_, 0, 1,
+        FontPushConstants fontPushConstants{};
+        auto it = powerUpManager_->collectedPowerUps.find(textName);
+        if (it != powerUpManager_->collectedPowerUps.end()) {
+            if (it->second.active) {
+                auto textPos = it->second.textPos;
+                fontPushConstants.pos = {textPos.x, textPos.y};
+            } else {
+                continue;
+            }
+        }
+
+
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, fontPipeline_);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, fontPipelineLayout_, 0, 1,
                                 &fontDescriptorSet_, 0, nullptr);
-        vkCmdBindVertexBuffers(cmd_, 0, 1, &textData.first, offsets);
-        vkCmdDraw(cmd_, textData.second.size(), 1, 0, 0);
+        vkCmdPushConstants(cmd, fontPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
+                           sizeof(FontPushConstants), &fontPushConstants);
+
+        VkDeviceSize vertexOffset = textData.offset;
+        vkCmdBindVertexBuffers(cmd, 0, 1, &textData.buffer, &vertexOffset);
+        vkCmdDraw(cmd, static_cast<uint32_t>(textData.vertices.size()), 1, 0, 0);
     }
 
 
-    particleSystem_->recordCommandBuffer(cmd_,
+    particleSystem_->recordCommandBuffer(cmd,
                                          particlesPipelineLayout_,
                                          explosionParticlesPipeline_,
                                          particlesVertexBuffer_,
@@ -1992,7 +2024,7 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
                                          particlesInstanceBuffer_,
                                          GfxPipelineType::ExplosionParticles);
 
-    particleSystem_->recordCommandBuffer(cmd_,
+    particleSystem_->recordCommandBuffer(cmd,
                                          particlesPipelineLayout_,
                                          starParticlesPipeline_,
                                          starInstanceBuffer_,
@@ -2000,8 +2032,8 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
                                          starInstanceBuffer_,
                                          GfxPipelineType::HaloEffect);
 
-    vkCmdEndRenderPass(cmd_);
-    vkEndCommandBuffer(cmd_);
+    vkCmdEndRenderPass(cmd);
+    vkEndCommandBuffer(cmd);
 }
 
 void Renderer::restartGame() {
@@ -2150,14 +2182,15 @@ void Renderer::updateCollision() {
                 }
                 break; // Stop checking this bullet (it's now gone)
             }
-            if(isCollision(aliens_[i], bullet) && bullet.bulletType == BulletType::Alien && !powerUpManager_->shieldActive) {
+            if (isCollision(aliens_[i], bullet) && bullet.bulletType == BulletType::Alien &&
+                !powerUpManager_->shieldActive) {
                 particleSystem_->spawn(glm::vec3(bullet.x, bullet.y, 0.0f), 15);
                 bullet.active = false;   // Destroy bullet
                 shipPC_.flashAmount = 1.0f;
                 ship_.hp--;
-                if(ship_.hp <= 0) {
+                if (ship_.hp <= 0) {
                     gameState = GameState::Lost;
-                    LOGE("Game over: %i",ship_.hp);
+                    LOGE("Game over: %i", ship_.hp);
                 }
                 break;
             }
@@ -2200,14 +2233,13 @@ void Renderer::updateGameState() {
 
 
 void Renderer::animateScore() {
-    int newScore = actualScore; // (set by your gameplay logic elsewhere)
+    int newScore = actualScore;
     int prevDisplay = static_cast<int>(displayedScore_);
 
     // Roll toward actualScore_
     if (displayedScore_ != newScore) {
         float diff = newScore - displayedScore_;
         float step = scoreAnimSpeed_ * Time::deltaTime;
-
         if (fabs(diff) < step)
             displayedScore_ = static_cast<float>(newScore);
         else
@@ -2216,23 +2248,15 @@ void Renderer::animateScore() {
 
     int nowDisplay = static_cast<int>(displayedScore_);
 
+    bool needsUpdate = false;
+
     // Only rebuild vertices if digit has changed!
     if (nowDisplay != prevDisplay) {
-        char buf[32];
-        snprintf(buf, sizeof(buf), "Score:%d", nowDisplay);
-        scoreText_ = buf;
-
-        std::vector<Vertex> scoreVertices;
-        scoreVertices = fontManager_->buildTextVertices(scoreText_, -0.95f, -0.80f, 1.0f,
-                                                        scoreScale_);
-        allTextVertices[GameText::Score] = {scoreTextVertexBuffer_, scoreVertices};
-        updateFontBuffer(device_, scoreVertices, scoreTextVertexBufferMemory_);
-
-        // POP! Trigger the scale effect
-        scoreScale_ = scorePopAmount_;
-        scoreScaleTarget_ = 0.002f;
-
+        scoreScale_ = scorePopAmount_;    // Trigger POP!
+        scoreScaleTarget_ = 0.002f;       // Target scale
+        needsUpdate = true;
     }
+
     // Animate the scale back to normal (damped spring)
     if (scoreScale_ != scoreScaleTarget_) {
         float delta = scoreScaleTarget_ - scoreScale_;
@@ -2241,18 +2265,21 @@ void Renderer::animateScore() {
             scoreScale_ = scoreScaleTarget_;
         else
             scoreScale_ += delta * snap;
-        // After updating scale, optionally rebuild vertices for smooth shrink
-        // (But: for best performance, only rebuild if scale is "out of rest")
+        needsUpdate = true;
+    }
+
+    if (needsUpdate) {
         char buf[32];
         snprintf(buf, sizeof(buf), "Score:%d", nowDisplay);
         scoreText_ = buf;
-        std::vector<Vertex> scoreVertices;
-        scoreVertices = fontManager_->buildTextVertices(scoreText_, -0.95f, -0.80f, 1.0f,
-                                                        scoreScale_);
-        allTextVertices[GameText::Score] = {scoreTextVertexBuffer_, scoreVertices};
-        updateFontBuffer(device_, scoreVertices, scoreTextVertexBufferMemory_);
+        std::vector<Vertex> scoreVertices = fontManager_->buildTextVertices(
+                scoreText_, -0.95f, -0.80f, 1.0f, scoreScale_);
+        allTextVertices[GameText::Score] = {fontVertexBuffer_, scoreVertices, scoreOffset_};
+        updateFontBuffer(device_, scoreVertices, fontBufferMemory_, scoreOffset_);
+        powerUpTextCDOffset = scoreOffset_ + scoreVertices.size() * sizeof(Vertex);
     }
 }
+
 
 
 void Renderer::drawFrame() {
@@ -2295,6 +2322,26 @@ void Renderer::drawFrame() {
     shipPC_.flashAmount -= Time::deltaTime * 5.0f; // fade speed (0.2s)
     if (shipPC_.flashAmount < 0.0f) shipPC_.flashAmount = 0.0f;
 
+    glm::vec2 offsetPos{0.75, -0.8f};
+
+
+    for (auto &powerup: powerUpManager_->collectedPowerUps) {
+        if (powerup.second.active) {
+            std::vector<Vertex> powerupVertices = fontManager_->buildTextVertices(
+                    std::to_string(powerup.second.expiryTime), 0.0, 0.0, 1.0f, 0.002f);
+
+            powerup.second.textPos = offsetPos;
+
+            allTextVertices[powerup.first] = {fontVertexBuffer_, powerupVertices, powerUpTextCDOffset};
+            updateFontBuffer(device_, powerupVertices, fontBufferMemory_, powerUpTextCDOffset);
+            powerUpTextCDOffset += powerupVertices.size() * sizeof(Vertex);
+            // Optionally: align curOffset here for safety
+
+            offsetPos += glm::vec2(0.0f, 0.1f);
+        }
+    }
+
+
     recordCommandBuffer(imageIndex);
 
     VkSubmitInfo submitInfo = {};
@@ -2322,34 +2369,27 @@ void Renderer::drawFrame() {
     vkQueueWaitIdle(graphicsQueue_);
 }
 
-
 void Renderer::loadText() {
-    std::vector<Vertex> titleVertices;
-    titleVertices = fontManager_->buildTextVertices("Nairobi Space Force 2030", -0.95f, -0.85f,
-                                                    0.0f, 0.002f);
-
-    VkDeviceSize titleTextBufferSize = titleVertices.size() * sizeof(Vertex);
+    VkDeviceSize fontSize = 384 * 500;
     createBuffer(device_, physicalDevice_,
-                 titleTextBufferSize,
+                 fontSize,
                  VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                 titleTextVertexBuffer_, titleTextVertexBufferMemory_);
-    updateFontBuffer(device_, titleVertices, titleTextVertexBufferMemory_);
-    allTextVertices[GameText::Title] = {titleTextVertexBuffer_, titleVertices};
+                 fontVertexBuffer_, fontBufferMemory_, fontSize);
 
-    std::vector<Vertex> scoreVertices;
-    scoreVertices = fontManager_->buildTextVertices("Score:99999999", -0.95f, -0.8f, 0.0f, 0.002f);
-    VkDeviceSize scoreTextBufferSize = scoreVertices.size() * sizeof(Vertex);
-    createBuffer(device_, physicalDevice_,
-                 scoreTextBufferSize,
-                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                 scoreTextVertexBuffer_, scoreTextVertexBufferMemory_);
-    scoreVertices = fontManager_->buildTextVertices("Score:0", -0.95f, -0.8f, 0.0f, 0.002f);
-    allTextVertices[GameText::Score] = {scoreTextVertexBuffer_, scoreVertices};
-    updateFontBuffer(device_, scoreVertices, scoreTextVertexBufferMemory_);
+    // Title text
+    std::vector<Vertex> titleVertices = fontManager_->buildTextVertices(
+            "Nairobi Space Force 2030", -0.95f, -0.85f, 0.0f, 0.002f);
+    VkDeviceSize titleOffset = 0;
+    updateFontBuffer(device_, titleVertices, fontBufferMemory_, titleOffset);
+    allTextVertices[GameText::Title] = {fontVertexBuffer_, titleVertices, titleOffset};
 
-
+    // Score text
+    std::vector<Vertex> scoreVertices = fontManager_->buildTextVertices(
+            "Score:0", -0.95f, -0.8f, 0.0f, 0.002f);
+    scoreOffset_ = titleOffset + titleVertices.size() * sizeof(Vertex);
+    updateFontBuffer(device_, scoreVertices, fontBufferMemory_, scoreOffset_);
+    allTextVertices[GameText::Score] = {fontVertexBuffer_, scoreVertices, scoreOffset_};
 }
 
 void Renderer::createAndUploadBuffer(const void *vertices, VkBuffer &buffer,

@@ -10,8 +10,9 @@
 class Util {
 private:
     static std::mt19937 rng;
+    VkDevice device_;
 public:
-    VkDevice device;
+
     VkBuffer vtxBuffer{VK_NULL_HANDLE};
     VkDeviceMemory stagingBufferMemory{VK_NULL_HANDLE};
     VkPipeline aabbPipeline{VK_NULL_HANDLE};
@@ -21,6 +22,8 @@ public:
     static float getRandomFloat(float min, float max);
 
     void recordDrawBoundingBox(VkCommandBuffer cmd, const AABB& box, const glm::vec3& color);
+
+    Util(VkDevice &vkDevice);
 };
 
 

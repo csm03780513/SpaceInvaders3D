@@ -28,9 +28,9 @@ void Util::recordDrawBoundingBox(VkCommandBuffer cmd, const AABB &box, const glm
     };
 
     void *mapped;
-    vkMapMemory(device, stagingBufferMemory, 0, sizeof(verts), 0, &mapped);
+    vkMapMemory(device_, stagingBufferMemory, 0, sizeof(verts), 0, &mapped);
     memcpy(mapped, verts, sizeof(verts));
-    vkUnmapMemory(device, stagingBufferMemory);
+    vkUnmapMemory(device_, stagingBufferMemory);
 
     // Assuming vtxBuffer is ready and contains verts...
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, aabbPipeline);
@@ -53,3 +53,7 @@ float Util::getRandomFloat(float min, float max) {
 }
 
 std::mt19937 Util::rng{std::random_device{}()};
+
+Util::Util(VkDevice &vkDevice): device_(vkDevice) {
+
+}

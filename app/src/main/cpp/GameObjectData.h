@@ -89,7 +89,7 @@ struct Alien {
     float x{}, y{};
     bool active{};
     std::array<float, 2> widthHeight{};
-    uint hp{3};
+    uint hp{1};
 };
 
 enum class PowerUpType {
@@ -116,6 +116,11 @@ struct MainPushConstants {
     float time{0.0f};
     uint canPulse{0};
     glm::vec2 scale{1.0f, 1.0f};
+};
+
+struct FontPushConstants {
+    glm::vec2 pos{0.0f, 0.0f};
+    glm::vec2 uv{0.0f, 0.0f};
 };
 
 
@@ -145,7 +150,10 @@ enum class GameState {
 
 enum class GameText {
     Score,
-    Title
+    Title,
+    ShieldCD,
+    DoubleShotCD,
+    HP
 };
 
 enum class GameTextureType {

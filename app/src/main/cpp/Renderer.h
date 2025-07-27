@@ -75,7 +75,6 @@ private:
     std::vector<VkFramebuffer> framebuffers_;
     VkCommandPool commandPool_{VK_NULL_HANDLE};
     std::vector<VkCommandBuffer> commandBuffers_;
-    VkCommandBuffer cmd_;
     VkBuffer vertexBuffer_{VK_NULL_HANDLE};
     VkDeviceMemory vertexBufferMemory_{VK_NULL_HANDLE};
 
@@ -146,6 +145,11 @@ private:
 
     VkBuffer scoreTextVertexBuffer_;
     VkDeviceMemory scoreTextVertexBufferMemory_;
+
+    VkBuffer fontVertexBuffer_;
+    VkDeviceMemory fontBufferMemory_;
+    VkDeviceSize scoreOffset_ = 0;
+    VkDeviceSize powerUpTextCDOffset;
 
     // Score tracking and animation
     int actualScore = 0;            // Game logic value

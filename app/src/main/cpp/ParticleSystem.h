@@ -113,29 +113,23 @@ constexpr int NUM_STARS = 256;
 class ParticleSystem {
 
 private:
-
+    VkDevice device_;
+    std::shared_ptr<PowerUpManager> powerUpManager;
 
     int firstFree = 0;
     std::vector<ParticleInstance> liveParticles;
     std::vector<StarInstance> starInstances;
-
-
     void initStarField();
 
 public:
-    VkDevice device;
-    std::shared_ptr<PowerUpManager> powerUpManager;
     VkBuffer haloVertexBuffer{VK_NULL_HANDLE};
     VkBuffer haloIndexBuffer{VK_NULL_HANDLE};
     VkBuffer haloInstanceBuffer{VK_NULL_HANDLE};
     VkDeviceMemory haloInstanceBufferMemory{VK_NULL_HANDLE};
     VkDeviceMemory haloVertexBufferMemory{VK_NULL_HANDLE};
     VkDeviceMemory haloIndexBufferMemory{VK_NULL_HANDLE};
-
-
     ParticleSystem();
-    ParticleSystem(VkDevice device, std::shared_ptr<PowerUpManager> powerUpManager);
-
+    ParticleSystem(VkDevice device,std::shared_ptr<PowerUpManager> powerUpManager);
 
     ~ParticleSystem();
 

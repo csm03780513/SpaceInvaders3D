@@ -19,22 +19,31 @@ struct PowerUpData {
     bool active;
 };
 
+struct PowerUpIndicator {
+    glm::vec2 textPos;
+    bool active;
+    uint32_t expiryTime;
+    uint32_t offset;
+};
+
 class PowerUpManager {
 private:
-
+    PowerUpManager();
     void updatePowerUpExpiry();
     void activatePowerUp(PowerUpType type);
     std::vector<PowerUpData> powerUps_;
+
+    VkDevice device_;
+    const std::shared_ptr<Util> util_;
 public:
-    std::shared_ptr<Util> util;
-    VkDevice device;
+    std::unordered_map<GameText,PowerUpIndicator> collectedPowerUps;
     bool doubleShotActive = false;
     float doubleShotTimer = 0.0f;
     bool shieldActive = false;
     float shieldTimer = 0.0f;
     VkBuffer powerUpBuffer;
     VkDeviceMemory powerUpBufferMemory;
-    explicit PowerUpManager();
+    explicit PowerUpManager(VkDevice device, const std::shared_ptr<Util> &util);
     void spawnPowerUp(PowerUpType type, const glm::vec2& pos);
     void updatePowerUpData();
     void checkIfPowerUpCollected(const Ship &ship);
