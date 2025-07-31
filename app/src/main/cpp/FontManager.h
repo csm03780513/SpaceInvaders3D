@@ -39,7 +39,6 @@ class FontManager {
 public:
     FontManager();
     ~FontManager();
-    VkDeviceSize curOffset = 0;
 
 
     void autoPackFontAtlas(

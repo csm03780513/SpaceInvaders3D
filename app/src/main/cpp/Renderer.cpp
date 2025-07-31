@@ -2335,7 +2335,6 @@ void Renderer::drawFrame() {
             allTextVertices[powerup.first] = {fontVertexBuffer_, powerupVertices, powerUpTextCDOffset};
             updateFontBuffer(device_, powerupVertices, fontBufferMemory_, powerUpTextCDOffset);
             powerUpTextCDOffset += powerupVertices.size() * sizeof(Vertex);
-            // Optionally: align curOffset here for safety
 
             offsetPos += glm::vec2(0.0f, 0.1f);
         }
