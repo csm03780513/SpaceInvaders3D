@@ -35,6 +35,7 @@ private:
 
     VkDevice device_;
     const std::shared_ptr<Util> util_;
+    float elapsedTime_ = 0.0f;
 public:
     std::unordered_map<GameText,PowerUpIndicator> collectedPowerUps;
     bool doubleShotActive = false;
