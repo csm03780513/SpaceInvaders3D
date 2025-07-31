@@ -149,7 +149,7 @@ private:
     VkBuffer fontVertexBuffer_;
     VkDeviceMemory fontBufferMemory_;
     VkDeviceSize scoreOffset_ = 0;
-    VkDeviceSize powerUpTextCDOffset;
+    VkDeviceSize powerUpTextCDOffset = 0;
 
     // Score tracking and animation
     int actualScore = 0;            // Game logic value
