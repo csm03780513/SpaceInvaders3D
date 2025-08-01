@@ -26,6 +26,7 @@ void PowerUpManager::spawnPowerUp(PowerUpType type, const glm::vec2 &pos) {
         p.fallSpeed = 0.3f + 0.2f * (rand() / float(RAND_MAX)); // vary slightly
         p.active = true;
         powerUps_.push_back(p);
+
     }
 }
 
@@ -63,6 +64,7 @@ void PowerUpManager::recordCommandBuffer(VkCommandBuffer cmd, VkPipelineLayout p
         if (powerUp.type == PowerUpType::Shield) pushConstants.texturePos = 4;
 
 
+
         VkDeviceSize offsets[] = {0};
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1,
@@ -77,7 +79,6 @@ void PowerUpManager::recordCommandBuffer(VkCommandBuffer cmd, VkPipelineLayout p
 
 
 //    util->recordDrawBoundingBox(cmd_, shipBox, {1.0f, 0.0f, 0.0f});
-
 
 
 

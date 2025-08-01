@@ -1998,6 +1998,26 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
             if (it->second.active) {
                 auto textPos = it->second.textPos;
                 fontPushConstants.pos = {textPos.x, textPos.y};
+
+                MainPushConstants pushConstants = {};
+                pushConstants.pos = {textPos.x + 0.1, textPos.y + 0.03};
+                pushConstants.scale = {0.7f,0.7f};
+                pushConstants.time = 0.0f;
+                pushConstants.canPulse = 0;
+                if (textName == GameText::DoubleShotCD) pushConstants.texturePos = 3;
+                if (textName == GameText::ShieldCD) pushConstants.texturePos = 4;
+
+                VkDeviceSize offsets[] = {0};
+                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipeline_);
+                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineLayout_, 0, 1,
+                                        &shipDescriptorSet_, 0, nullptr);
+                vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
+                                   sizeof(MainPushConstants), &pushConstants);
+
+                vkCmdBindVertexBuffers(cmd, 0, 1, &powerUpManager_->powerUpBuffer, offsets);
+                vkCmdDraw(cmd, 6, 1, 0, 0);
+
+
             } else {
                 continue;
             }
@@ -2302,9 +2322,9 @@ void Renderer::drawFrame() {
         updateCollision();
         powerUpManager_->updatePowerUpData();
         powerUpManager_->checkIfPowerUpCollected(ship_);
-        animateScore();
         updateGameState();
     }
+    animateScore();
 
     updateBullet();
     alienFireBullet();
@@ -2331,12 +2351,12 @@ void Renderer::drawFrame() {
                     std::to_string(powerup.second.expiryTime), 0.0, 0.0, 1.0f, 0.002f);
 
             powerup.second.textPos = offsetPos;
-
-            allTextVertices[powerup.first] = {fontVertexBuffer_, powerupVertices, powerUpTextCDOffset};
-            updateFontBuffer(device_, powerupVertices, fontBufferMemory_, powerUpTextCDOffset);
-            powerUpTextCDOffset += powerupVertices.size() * sizeof(Vertex);
-
-            offsetPos += glm::vec2(0.0f, 0.1f);
+            if(gameState == GameState::Playing) {
+                allTextVertices[powerup.first] = {fontVertexBuffer_, powerupVertices,powerUpTextCDOffset};
+                updateFontBuffer(device_, powerupVertices, fontBufferMemory_, powerUpTextCDOffset);
+                powerUpTextCDOffset += powerupVertices.size() * sizeof(Vertex);
+            }
+            offsetPos += glm::vec2(0.0f, 0.05f);
         }
     }
 
@@ -2369,7 +2389,7 @@ void Renderer::drawFrame() {
 }
 
 void Renderer::loadText() {
-    VkDeviceSize fontSize = 384 * 500;
+    VkDeviceSize fontSize = 512 * 500;
     createBuffer(device_, physicalDevice_,
                  fontSize,
                  VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
