@@ -84,12 +84,26 @@ struct Bullet {
     BulletType bulletType{};
     const float size = 0.05f * 0.5f; //half alien
 };
+enum AlienMovementType {
+    SnakeWave,
+    JustGoDown,
+    TogetherOne,
+    SineWave,
+    Circle,
+    LeftRight
+};
 
 struct Alien {
-    float x{}, y{};
+    float x{}, y{},vx{0.1f}, vy{0.02f};
+    float movementTimer = 0.0f;   // Used for sine phase
+    float amplitude = 0.5f;      // Sine wave width (tune for look)
+    float frequency = 0.1f;       // Sine wave speed
+    float baseFrequency = 0.1f;
+    float baseX = 0.0f;
+    AlienMovementType movementType{AlienMovementType::LeftRight};
     bool active{};
     std::array<float, 2> widthHeight{};
-    uint hp{1};
+    float hp{1};
 };
 
 enum class PowerUpType {

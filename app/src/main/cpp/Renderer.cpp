@@ -1334,23 +1334,7 @@ void Renderer::updateUniformBuffer() {
     memcpy(uniformBuffersData, &ubo_, sizeof(ubo_));
 }
 
-void Renderer::initAliens() {
-    float startX = -0.7f;
-    float startY = 0.8f;
-    float dx = 0.2f;
-    float dy = 0.15f;
-    for (int y = 0; y < NUM_ALIENS_Y; ++y) {
-        for (int x = 0; x < NUM_ALIENS_X; ++x) {
-            int idx = y * NUM_ALIENS_X + x;
-            aliens_[idx].x = startX + x * dx;
-            aliens_[idx].y = startY - y * dy;
-            aliens_[idx].active = true;
-            aliens_[idx].hp = 1;
-            aliens_[idx].widthHeight = Util::getQuadWidthHeight(alienVerts, 6, {0.5, 0.5});
-            alienPC_[idx].texturePos = 1;
-        }
-    }
-}
+
 
 void Renderer::createMainGfxPipeline() {
 
@@ -2001,7 +1985,7 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
 
                 MainPushConstants pushConstants = {};
                 pushConstants.pos = {textPos.x + 0.1, textPos.y + 0.03};
-                pushConstants.scale = {0.7f,0.7f};
+                pushConstants.scale = {0.7f, 0.7f};
                 pushConstants.time = 0.0f;
                 pushConstants.canPulse = 0;
                 if (textName == GameText::DoubleShotCD) pushConstants.texturePos = 3;
@@ -2009,7 +1993,8 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
 
                 VkDeviceSize offsets[] = {0};
                 vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipeline_);
-                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineLayout_, 0, 1,
+                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineLayout_,
+                                        0, 1,
                                         &shipDescriptorSet_, 0, nullptr);
                 vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
                                    sizeof(MainPushConstants), &pushConstants);
@@ -2142,33 +2127,118 @@ void Renderer::updateBullet() {
 
 }
 
+float timePassed = 0.0f;
+
 void Renderer::updateAliens() {
     bool hitEdge = false;
 
     for (int i = 0; i < MAX_ALIENS; ++i) {
+        timePassed += Time::deltaTime;
         if (!aliens_[i].active) continue;
         // update flash amount (fade in/out) smoothly
         alienPC_[i].flashAmount -= Time::deltaTime * 5.0f; // fade speed (0.2s)
         if (alienPC_[i].flashAmount < 0.0f) alienPC_[i].flashAmount = 0.0f;
 
-        // Clamp X position just inside the edge
-        if (aliens_[i].x > 0.85f) aliens_[i].x = 0.85f;
-        if (aliens_[i].x < -0.85f) aliens_[i].x = -0.85f;
+        switch (aliens_[i].movementType) {
+            case TogetherOne:
+                aliens_[i].y -= aliens_[i].vy * Time::deltaTime;
+                break;
+            case SineWave:
+                aliens_[i].movementTimer +=Time::deltaTime;
+                aliens_[i].x = aliens_[i].baseX + aliens_[i].amplitude * sin((aliens_[i].movementTimer * aliens_[i].frequency));
+                aliens_[i].y -= aliens_[i].vy * Time::deltaTime;
+                break;
+            case SnakeWave:
+                aliens_[i].movementTimer += Time::deltaTime;
+                aliens_[i].x = sin((aliens_[i].movementTimer + aliens_[i].baseX) * aliens_[i].frequency);
+                aliens_[i].y -= aliens_[i].vy * Time::deltaTime;
+                break;
+            case JustGoDown:
+                 aliens_[i].y -= aliens_[i].vy * Time::deltaTime;
+                break;
+            case Circle:
+                break;
+            case LeftRight:
+                // Clamp X position just inside the edge
+                if (aliens_[i].x > 0.85f) aliens_[i].x = 0.85f;
+                if (aliens_[i].x < -0.85f) aliens_[i].x = -0.85f;
 
-        aliens_[i].x += alienMoveSpeed_ * alienDirection_ * Time::deltaTime;
+                aliens_[i].x += alienMoveSpeed_ * alienDirection_ * Time::deltaTime;
 
-        // Check if any alien hits the left or right edge
-        if (aliens_[i].x > 0.85f || aliens_[i].x < -0.85f)
-            hitEdge = true;
+                // Check if any alien hits the left or right edge
+                if (aliens_[i].x > 0.85f || aliens_[i].x < -0.85f) {
+                    hitEdge = true;
+                    if (hitEdge) {
+                        alienDirection_ *= -1;
+                        // Move all aliens down a bit
+                        for (auto &alien: aliens_) {
+                            if (alien.active)
+                                alien.y -= 0.04f;
+                        }
+                    }
+                }
+                break;
+        }
+
     }
-    if (hitEdge) {
-        alienDirection_ *= -1;
-        // Move all aliens down a bit
-        for (auto &alien: aliens_) {
-            if (alien.active)
-                alien.y -= 0.04f;
+
+}
+
+uint32_t wave=0;
+uint32_t numOfAliens=100;
+uint32_t level=0;
+
+void Renderer::initAliens() {
+//    numOfAliens = Util::getRandomUint(0, NUM_ALIENS_X * NUM_ALIENS_Y);
+    float startX = -0.7f;
+    float startY = 0.8f;
+    float dx = 0.2f;
+    float dy = 0.15f;
+    level++;
+    if(wave>=4) wave = 0; // reset wave
+    for (int y = 0; y < NUM_ALIENS_Y; ++y) {
+        for (int x = 0; x < NUM_ALIENS_X; ++x) {
+            int idx = y * NUM_ALIENS_X + x;
+            aliens_[idx].x = startX + x * dx;
+            aliens_[idx].baseX = startX + x * dx;
+            aliens_[idx].movementTimer = 0.0f;
+            aliens_[idx].y = startY - y * dy;
+            aliens_[idx].active = true;
+            aliens_[idx].hp = 2;
+
+            aliens_[idx].widthHeight = Util::getQuadWidthHeight(alienVerts, 6, {1.0, 1.0});
+            alienPC_[idx].texturePos = 1;
+            if (numOfAliens >= 1) {
+                switch (wave) {
+                    case 0:
+                        aliens_[idx].hp +=0.5f;
+                        aliens_[idx].movementType = AlienMovementType::LeftRight;
+                        break;
+                    case 1:
+                        aliens_[idx].frequency = aliens_[idx].baseFrequency * 7 + (level*0.05);
+                        aliens_[idx].movementType = AlienMovementType::SnakeWave;
+                        aliens_[idx].vy += 0.02f;
+                        break;
+                    case 2:
+                        aliens_[idx].movementType = AlienMovementType::SineWave;
+                        aliens_[idx].frequency = aliens_[idx].baseFrequency * 5 + (level*0.05);
+                        aliens_[idx].vy += 0.01f;
+                        break;
+                    case 3:
+                        aliens_[idx].movementType = AlienMovementType::TogetherOne;
+                        aliens_[idx].x = 0.0f;
+                        aliens_[idx].vy += 0.02f;
+                        aliens_[idx].hp +=0.5f;
+                        break;
+                    default:
+                        aliens_[idx].movementType = AlienMovementType::JustGoDown;
+                        break;
+                }
+               // numOfAliens--;
+            }
         }
     }
+    wave++;
 }
 
 
@@ -2191,7 +2261,7 @@ void Renderer::updateCollision() {
                     aliens_[i].active = false;    // Destroy alien
                     actualScore += 100;
                     alienMoveSpeed_ += 0.005f;
-                    rateOfFire -= 0.0005f;
+                    if(rateOfFire>0.05)rateOfFire -= 0.0002f;
                     particleSystem_->spawn(glm::vec3(aliens_[i].x, -aliens_[i].y, 1.0f), 15);
 //                    sfxMixer.playSFX(explosionSFXMap[x].data(), explosionSFXMap[x].scale(), 0.3f);
                     powerUpManager_->spawnPowerUp(PowerUpType::DoubleShot,
@@ -2301,7 +2371,6 @@ void Renderer::animateScore() {
 }
 
 
-
 void Renderer::drawFrame() {
 
     uint32_t imageIndex;
@@ -2351,8 +2420,9 @@ void Renderer::drawFrame() {
                     std::to_string(powerup.second.expiryTime), 0.0, 0.0, 1.0f, 0.002f);
 
             powerup.second.textPos = offsetPos;
-            if(gameState == GameState::Playing) {
-                allTextVertices[powerup.first] = {fontVertexBuffer_, powerupVertices,powerUpTextCDOffset};
+            if (gameState == GameState::Playing) {
+                allTextVertices[powerup.first] = {fontVertexBuffer_, powerupVertices,
+                                                  powerUpTextCDOffset};
                 updateFontBuffer(device_, powerupVertices, fontBufferMemory_, powerUpTextCDOffset);
                 powerUpTextCDOffset += powerupVertices.size() * sizeof(Vertex);
             }
