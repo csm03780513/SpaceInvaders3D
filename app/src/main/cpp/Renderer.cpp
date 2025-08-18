@@ -1912,7 +1912,7 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
 
     auto shipAABB = Collision::getAABB(ship_.x, ship_.y, ship_.widthHeight[0],
                                        ship_.widthHeight[1]);
-    util_->recordDrawBoundingBox(cmd, shipAABB, {0.0f, 1.0f, 1.0f});
+//    util_->recordDrawBoundingBox(cmd, shipAABB, {0.0f, 1.0f, 1.0f});
 
 
     // --- Draw bullets (for each active bullet, updateExplosionParticles buffer and draw)
