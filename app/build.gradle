@@ -4,12 +4,12 @@ plugins {
 
 android {
     namespace 'com.csm.spaceinvaders3d'
-    compileSdk 36
+    compileSdk 34
 
     defaultConfig {
         applicationId "com.csm.spaceinvaders3d"
         minSdk 24
-        targetSdk 36
+        targetSdk 34
         //noinspection OldTargetApi
         versionCode 1
         versionName "1.0"
@@ -50,12 +50,8 @@ android {
         }
     }
 
-    // REMOVE for Native Activity:
-    // buildFeatures {
-    //     viewBinding true
-    // }
-    ndkVersion '29.0.13599879 rc2'
-    buildToolsVersion '36.0.0 rc5'
+    ndkVersion '26.1.10909125'
+    buildToolsVersion '34.0.0'
 }
 
 dependencies {

@@ -1,63 +1,62 @@
-#include "oboe/Oboe.h"
+#pragma once
 
-struct SFXInstance {
-    const float* buffer;
-    size_t length;
-    size_t cursor;
-    float volume;
-    bool active;
-};
+#include <oboe/Oboe.h>
+#include <android/asset_manager.h>
+
+#include <cstdint>
+#include <memory>
+#include <mutex>
+#include <string>
+#include <unordered_map>
+#include <vector>
 
 class SFXMixer : public oboe::AudioStreamCallback {
 public:
-    std::vector<SFXInstance> activeSFX;
-    std::shared_ptr<oboe::AudioStream> stream;
-    // ... (init and load code)
+    SFXMixer() = default;
+    ~SFXMixer() override = default;
 
-    // Call this at init (with your desired sample rate and channel count)
-    void start(int sampleRate, int channelCount = 1) {
-        oboe::AudioStreamBuilder builder;
-        builder.setFormat(oboe::AudioFormat::Float)
-                ->setPerformanceMode(oboe::PerformanceMode::LowLatency)
-                ->setSharingMode(oboe::SharingMode::Shared)
-                ->setSampleRate(sampleRate)
-                ->setChannelCount(channelCount)
-                ->setCallback(this);
+    void initialize(AAssetManager *assetManager, int sampleRate, int channelCount = 1);
 
-        oboe::Result result = builder.openStream(stream);
-        if (result != oboe::Result::OK) {
-            throw std::runtime_error("Failed to open Oboe SFX stream");
-        }
-        stream->requestStart();
-    }
+    void loadClip(const std::string &clipId, const std::string &assetName);
+    void playClip(const std::string &clipId, float volume = 1.0f);
 
-    void playSFX(const float* buffer, size_t length, float volume=1.0f) {
-        // Find a free slot, or add new instance
-        for (auto& sfx : activeSFX) {
-            if (!sfx.active) {
-                sfx = {buffer, length, 0, volume, true};
-                return;
-            }
-        }
-        activeSFX.push_back({buffer, length, 0, volume, true});
-    }
+    void playSamples(const float *buffer, size_t length, float volume = 1.0f);
 
-    oboe::DataCallbackResult onAudioReady(oboe::AudioStream*, void* audioData, int32_t numFrames) override {
-        float* out = static_cast<float*>(audioData);
-        memset(out, 0, sizeof(float) * numFrames);
+    void stop();
+    void resume();
+    void shutdown();
 
-        for (auto& sfx : activeSFX) {
-            if (!sfx.active) continue;
-            size_t remain = sfx.length - sfx.cursor;
-            size_t toCopy = std::min<size_t>(numFrames, remain);
-            for (size_t i = 0; i < toCopy; ++i) {
-                out[i] += sfx.buffer[sfx.cursor + i] * sfx.volume;
-            }
-            sfx.cursor += toCopy;
-            if (sfx.cursor >= sfx.length) sfx.active = false;
-        }
+    oboe::DataCallbackResult onAudioReady(oboe::AudioStream *stream,
+                                          void *audioData,
+                                          int32_t numFrames) override;
 
-        // Optionally clip output if needed
-        return oboe::DataCallbackResult::Continue;
-    }
+private:
+    struct Clip {
+        std::vector<float> samples;
+    };
+
+    struct SFXInstance {
+        const float *buffer = nullptr;
+        size_t length = 0;
+        size_t cursor = 0;
+        float volume = 1.0f;
+        bool active = false;
+    };
+
+    void ensureStream();
+    std::vector<uint8_t> loadAssetToMemory(const std::string &assetName) const;
+    std::vector<float> decodeAudio(const std::vector<uint8_t> &bytes,
+                                   const std::string &assetName) const;
+    std::vector<float> decodeWav(const std::vector<uint8_t> &bytes) const;
+    std::vector<float> decodeMp3(const std::vector<uint8_t> &bytes) const;
+
+    AAssetManager *assetManager_ = nullptr;
+    int sampleRate_ = 0;
+    int channelCount_ = 0;
+
+    std::shared_ptr<oboe::AudioStream> stream_;
+
+    mutable std::mutex mutex_;
+    std::unordered_map<std::string, Clip> clips_;
+    std::vector<SFXInstance> activeSFX_;
 };

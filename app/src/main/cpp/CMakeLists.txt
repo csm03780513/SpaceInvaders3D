@@ -25,6 +25,7 @@ add_library(SpaceInvaders3D SHARED
         Time.cpp
         Util.cpp
         Collision.cpp
+        SFXMixer.cpp
         #        volk/volk.c
 )
 target_include_directories(SpaceInvaders3D PRIVATE

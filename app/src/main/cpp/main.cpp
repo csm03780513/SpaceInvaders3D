@@ -5,19 +5,26 @@
 #include "Renderer.h"
 #include "Time.h"
 #include <stdexcept>
+#include <atomic>
 
 
 #define LOGI(...) __android_log_print(ANDROID_LOG_ERROR, "Vulkan", __VA_ARGS__)
 Renderer *g_renderer = nullptr; // global pointer
 volatile bool g_pendingRestart = false;
 
-void set_ship_x(float x, float y);
+std::atomic<bool> g_touchActive{false};
+std::atomic<float> g_touchX{0.0f};
+std::atomic<float> g_touchY{0.0f};
+
+void set_ship_x(float x, float y, bool fireBullet);
 
 
 static int32_t handle_input(struct android_app *app, AInputEvent *event) {
     if (AInputEvent_getType(event) == AINPUT_EVENT_TYPE_MOTION) {
-        if (AMotionEvent_getAction(event) == AMOTION_EVENT_ACTION_DOWN ||
-            AMotionEvent_getAction(event) == AMOTION_EVENT_ACTION_MOVE) {
+        int32_t action = AMotionEvent_getAction(event) & AMOTION_EVENT_ACTION_MASK;
+
+        if (action == AMOTION_EVENT_ACTION_DOWN || action == AMOTION_EVENT_ACTION_MOVE ||
+            action == AMOTION_EVENT_ACTION_POINTER_DOWN) {
             float x = AMotionEvent_getX(event, 0);
             float y = AMotionEvent_getY(event, 0);
             int32_t width = ANativeWindow_getWidth(app->window);
@@ -25,17 +32,22 @@ static int32_t handle_input(struct android_app *app, AInputEvent *event) {
             // Convert X to normalized device coordinate [-1, 1]
             float ndcX = (x / (float) width) * 2.0f - 1.0f;
             float ndcY = (y / (float) height) * 2.0f - 1.0f;
+            g_touchX.store(ndcX);
+            g_touchY.store(ndcY);
             if (g_renderer && g_renderer->gameState == GameState::Playing) {
-                // Move ship and fire bullet
-                if (AMotionEvent_getAction(event) == AMOTION_EVENT_ACTION_DOWN ||
-                    AMotionEvent_getAction(event) == AMOTION_EVENT_ACTION_MOVE) {
-                    set_ship_x(ndcX,ndcY);
-                }
+                g_touchActive.store(true);
+                // Move ship immediately so visual stays in sync with finger
+                set_ship_x(ndcX, ndcY, false);
             } else if (g_renderer && g_renderer->gameState != GameState::Playing) {
                 // TAP = RESTART GAME when game over/won
-                if (AMotionEvent_getAction(event) == AMOTION_EVENT_ACTION_DOWN) {
+                if (action == AMOTION_EVENT_ACTION_DOWN) {
                     g_pendingRestart = true; // Set a flag to restart in the updateExplosionParticles loop
                 }
+            }
+        } else if (action == AMOTION_EVENT_ACTION_UP || action == AMOTION_EVENT_ACTION_POINTER_UP ||
+                   action == AMOTION_EVENT_ACTION_CANCEL) {
+            if (AMotionEvent_getPointerCount(event) <= 1) {
+                g_touchActive.store(false);
             }
         }
         return 1; // Handled touch events
@@ -44,11 +56,13 @@ static int32_t handle_input(struct android_app *app, AInputEvent *event) {
     return 0;
 }
 
-void set_ship_x(float x, float y) {
+void set_ship_x(float x, float y, bool fireBullet) {
     if (g_renderer) {
         g_renderer->shipX_ = x;
         g_renderer->shipY_ = y - 0.12f;
-        g_renderer->spawnBullet(BulletType::Ship, {x, y - 0.12f});
+        if (fireBullet) {
+            g_renderer->spawnBullet(BulletType::Ship, {x, y - 0.12f});
+        }
     }
 }
 
@@ -85,6 +99,8 @@ void handle_cmd(android_app *app, int32_t cmd) {
                 delete g_renderer;
                 g_renderer = nullptr;
             }
+            break;
+        default:
             break;
     }
 }
@@ -126,6 +142,12 @@ void android_main(struct android_app *app) {
         if (g_pendingRestart) {
             g_renderer->restartGame();
             g_pendingRestart = false;
+        }
+
+        if (g_touchActive.load() && renderer && renderer->gameState == GameState::Playing) {
+            float touchX = g_touchX.load();
+            float touchY = g_touchY.load();
+            set_ship_x(touchX, touchY, true);
         }
 
         if (renderer) renderer->drawFrame();

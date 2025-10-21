@@ -3,6 +3,7 @@
 #include "FontManager.h"
 #include "ParticleSystem.h"
 #include <memory>
+#include <vector>
 #include <string>
 #include "Time.h"
 #include "PowerUpManager.h"
@@ -56,6 +57,8 @@ private:
     std::unique_ptr<FontManager> fontManager_;
     std::unique_ptr<ParticleSystem> particleSystem_;
     std::shared_ptr<PowerUpManager> powerUpManager_;
+    std::shared_ptr<SFXMixer> sfxMixer_;
+    std::vector<std::string> explosionClipIds_;
     std::shared_ptr<Util> util_;
     UniformBufferObject ubo_;
     android_app *app_;
@@ -150,6 +153,7 @@ private:
     VkDeviceMemory fontBufferMemory_;
     VkDeviceSize scoreOffset_ = 0;
     VkDeviceSize powerUpTextCDOffset = 0;
+    VkDeviceSize floatingDamageTextOffset_ = 0;
 
     // Score tracking and animation
     int actualScore = 0;            // Game logic value
@@ -274,4 +278,6 @@ private:
                                VkDeviceSize size,VkBufferUsageFlags usage);
 
     void alienFireBullet();
+
+    void showDamage(Alien alien);
 };

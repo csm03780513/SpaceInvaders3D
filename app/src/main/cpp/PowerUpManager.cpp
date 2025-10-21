@@ -132,12 +132,18 @@ void PowerUpManager::checkIfPowerUpCollected(const Ship &ship) {
 
         if (Collision::isColliding(powerupBox, shipBox)) {
             powerup.active = false;
+            sfxMixer_->playClip("shield");
             activatePowerUp(powerup.type);
         }
     }
 }
 
-PowerUpManager::PowerUpManager(VkDevice device, const std::shared_ptr<Util> &util) : device_(
-        device), util_(util) {
 
+PowerUpManager::PowerUpManager(VkDevice device, const std::shared_ptr<Util> &util, const std::shared_ptr<SFXMixer> &sfxMixer) : device_(
+        device), util_(util), sfxMixer_(sfxMixer) {
+
+}
+
+PowerUpManager::~PowerUpManager() {
+// todo
 }

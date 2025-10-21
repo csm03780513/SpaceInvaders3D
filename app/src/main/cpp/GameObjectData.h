@@ -90,7 +90,8 @@ enum AlienMovementType {
     TogetherOne,
     SineWave,
     Circle,
-    LeftRight
+    LeftRight,
+    MySnakeWave
 };
 
 struct Alien {
@@ -157,6 +158,7 @@ struct GfxPipelineData {
 };
 
 enum class GameState {
+    MainMenu,
     Playing,
     Won,
     Lost
@@ -167,7 +169,8 @@ enum class GameText {
     Title,
     ShieldCD,
     DoubleShotCD,
-    HP
+    HP,
+    FloatingDamageNumbers
 };
 
 enum class GameTextureType {

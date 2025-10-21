@@ -1,18 +1,7 @@
 #include "Renderer.h"
-#include "SimpleSFXPlayer.h"
 #include "SFXMixer.h"
 
-#define DR_WAV_IMPLEMENTATION
-
-#include <dr_wav.h>
-
-#define DR_MP3_IMPLEMENTATION
-
-#include <dr_mp3.h>
-
-
 #define STB_IMAGE_IMPLEMENTATION
-
 #include <stb_image.h>
 #include <android/native_window.h>
 #include <vector>
@@ -102,14 +91,6 @@ void updateFontBuffer(VkDevice device, const std::vector<Vertex> &vertices, VkDe
 void uploadDataBuffer(VkDevice device, const void *dataToUpload, VkDeviceSize sizeOfData,
                       VkDeviceMemory bufferMemory);
 
-std::vector<float>
-decodeWAV(const std::vector<uint8_t> &wavBytes, int &outChannels, int &outSampleRate);
-
-std::vector<float>
-decodeMP3(const std::vector<uint8_t> &mp3Bytes, int &outChannels, int &outSampleRate);
-
-std::vector<uint8_t> loadMusicAssetToMemory(AAssetManager *mgr, const char *filename);
-
 VkResult CreateDebugUtilsMessengerEXT(VkInstance instance,
                                       const VkDebugUtilsMessengerCreateInfoEXT *pCreateInfo,
                                       const VkAllocationCallbacks *pAllocator,
@@ -175,57 +156,6 @@ std::vector<char> loadShaderAsset(AAssetManager *mgr, const char *filename) {
     AAsset_read(asset, buffer.data(), size);
     AAsset_close(asset);
     return buffer;
-}
-
-
-std::vector<uint8_t> loadMusicAssetToMemory(AAssetManager *mgr, const char *filename) {
-    std::string fullPath = "audio/" + std::string(filename);
-    AAsset *asset = AAssetManager_open(mgr, fullPath.c_str(), AASSET_MODE_STREAMING);
-    if (!asset) throw std::runtime_error("Asset not found!");
-    size_t fileSize = AAsset_getLength(asset);
-    std::vector<uint8_t> data(fileSize);
-    AAsset_read(asset, data.data(), fileSize);
-    AAsset_close(asset);
-    LOGE("Asset scale: %zu", data.size());
-    return data;
-}
-
-std::vector<float>
-decodeWAV(const std::vector<uint8_t> &wavBytes, int &outChannels, int &outSampleRate) {
-    drwav wav;
-    if (!drwav_init_memory(&wav, wavBytes.data(), wavBytes.size(), nullptr))
-        throw std::runtime_error("Failed to decode WAV");
-    outChannels = wav.channels;
-    outSampleRate = wav.sampleRate;
-    size_t totalSamples = wav.totalPCMFrameCount * wav.channels;
-    std::vector<float> samples(totalSamples);
-    drwav_read_pcm_frames_f32(&wav, wav.totalPCMFrameCount, samples.data());
-    drwav_uninit(&wav);
-    return samples;
-}
-
-std::vector<float>
-decodeMP3(const std::vector<uint8_t> &mp3Bytes, int &outChannels, int &outSampleRate) {
-    drmp3 mp3;
-    if (mp3Bytes.empty()) {
-        LOGE("MP3 asset not loaded!");
-        throw std::runtime_error("MP3 asset not loaded!");
-    }
-
-    if (!drmp3_init_memory(&mp3, mp3Bytes.data(), mp3Bytes.size(), nullptr)) {
-        LOGE("Failed to decode MP3");
-        throw std::runtime_error("Failed to decode MP3");
-    }
-
-    outChannels = mp3.channels;
-    outSampleRate = mp3.sampleRate;
-    drmp3_uint64 totalFrames = mp3.totalPCMFrameCount;
-
-    std::vector<float> samples(totalFrames * outChannels); // CORRECT!
-    drmp3_read_pcm_frames_f32(&mp3, totalFrames, samples.data());
-    drmp3_uninit(&mp3);
-
-    return samples;
 }
 
 
@@ -566,35 +496,35 @@ void createTextureSampler(VkDevice device, VkSampler &sampler, GameTextureType t
     vkCreateSampler(device, &samplerInfo, nullptr, &sampler);
 }
 
-SimpleSFXPlayer player;
-SFXMixer sfxMixer;
-
-
 void Renderer::stopAudioPlayer() {
-    sfxMixer.stream->stop();
-    if (player.stream) {
-        player.stream->stop();
+    if (sfxMixer_) {
+        sfxMixer_->stop();
     }
 }
 
 void Renderer::resumeAudioPlayer() {
-    sfxMixer.stream->start();
-    if (player.stream) {
-        player.stream->start();
+    if (sfxMixer_) {
+        sfxMixer_->resume();
     }
 }
-
-std::vector<float> shootSFXSample, explodeSFXSample1, explodeSFXSample2;
-std::unordered_map<uint, std::vector<float>> explosionSFXMap;
 
 Renderer::Renderer(android_app *app) : app_(app) {
 
     initVulkan();
     assetManager_ = app_->activity->assetManager;
+    sfxMixer_ = std::make_shared<SFXMixer>();
+    sfxMixer_->initialize(assetManager_, SFX_SAMPLE_RATE, SFX_CHANNELS);
+    sfxMixer_->loadClip("shoot", "shoot.wav");
+    sfxMixer_->loadClip("explode_1", "explode_1.wav");
+    sfxMixer_->loadClip("explode_2", "explode_2.wav");
+    sfxMixer_->loadClip("shield", "explode_2.wav");
+    explosionClipIds_ = {"explode_1", "explode_2"};
+
     fontManager_ = std::make_unique<FontManager>();
     util_ = std::make_shared<Util>(device_);
-    powerUpManager_ = std::make_shared<PowerUpManager>(device_, util_);
+    powerUpManager_ = std::make_shared<PowerUpManager>(device_, util_, sfxMixer_);
     particleSystem_ = std::make_unique<ParticleSystem>(device_, powerUpManager_);
+
 
     loadAllTextures();
     loadText();
@@ -611,47 +541,6 @@ Renderer::Renderer(android_app *app) : app_(app) {
     createParticlesGfxPipeline(GfxPipelineType::HaloEffect);
 
     createGfxPipeline(GfxPipelineType::AxisAlignedBoundingBoxes);
-
-    // 1. Load file from assets
-    std::vector<uint8_t> shootSFX = loadMusicAssetToMemory(assetManager_, "shoot.wav");
-    std::vector<uint8_t> bgMusicBytes = loadMusicAssetToMemory(assetManager_, "space-invaders.mp3");
-    std::vector<uint8_t> explosionBytes1 = loadMusicAssetToMemory(assetManager_, "explode_1.wav");
-    std::vector<uint8_t> explosionBytes2 = loadMusicAssetToMemory(assetManager_, "explode_2.wav");
-
-
-// 2. Decode WAV to float samples
-    int channels, sampleRate;
-    auto bgSamples = decodeMP3(bgMusicBytes, channels, sampleRate);
-    if (sampleRate != SFX_SAMPLE_RATE || channels != SFX_CHANNELS) {
-        LOGE("bgSamples SFX file must be 44100 Hz mono!");
-    }
-
-    shootSFXSample = decodeWAV(shootSFX, channels, sampleRate);
-    if (sampleRate != SFX_SAMPLE_RATE || channels != SFX_CHANNELS) {
-        LOGE("channels=%d, sampleRate=%d", channels, sampleRate);
-        LOGE("shootSFXSample SFX file must be 44100 Hz mono!");
-    }
-    explodeSFXSample1 = decodeWAV(explosionBytes1, channels, sampleRate);
-    if (sampleRate != SFX_SAMPLE_RATE || channels != SFX_CHANNELS) {
-        LOGE("channels=%d, sampleRate=%d", channels, sampleRate);
-        LOGE("explodeSFXSample1 SFX file must be 44100 Hz mono!");
-    }
-    explodeSFXSample2 = decodeWAV(explosionBytes2, channels, sampleRate);
-    if (sampleRate != SFX_SAMPLE_RATE || channels != SFX_CHANNELS) {
-        LOGE("channels=%d, sampleRate=%d", channels, sampleRate);
-        LOGE("explodeSFXSample2 SFX file must be 44100 Hz mono!");
-    }
-    explosionSFXMap[0] = explodeSFXSample1;
-    explosionSFXMap[1] = explodeSFXSample2;
-
-    sfxMixer.start(SFX_SAMPLE_RATE, SFX_CHANNELS);
-
-//    player.buffer = std::move(bgSamples);
-//    player.start(sampleRate);
-
-//    player.play();
-
-
 }
 
 void Renderer::loadAllTextures() {
@@ -1335,7 +1224,6 @@ void Renderer::updateUniformBuffer() {
 }
 
 
-
 void Renderer::createMainGfxPipeline() {
 
     // One binding (per-vertex data)
@@ -1988,6 +1876,8 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
                 pushConstants.scale = {0.7f, 0.7f};
                 pushConstants.time = 0.0f;
                 pushConstants.canPulse = 0;
+
+                //show power up icons
                 if (textName == GameText::DoubleShotCD) pushConstants.texturePos = 3;
                 if (textName == GameText::ShieldCD) pushConstants.texturePos = 4;
 
@@ -2006,6 +1896,11 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
             } else {
                 continue;
             }
+        }
+
+        if(textName == GameText::FloatingDamageNumbers){
+
+            continue;
         }
 
 
@@ -2071,14 +1966,14 @@ void Renderer::spawnBullet(BulletType bulletType, glm::vec2 spawnPos) {
                     bullets_[i].x = spawnPos.x - 0.05f;
                     bullets_[i].y = spawnPos.y - 0.04f;
                     bullets_[i].active = true;
-                    sfxMixer.playSFX(shootSFXSample.data(), shootSFXSample.size(), 0.05f);
+                    if (sfxMixer_) sfxMixer_->playClip("shoot", 0.05f);
                     spawned++;
                 } else if (doubleShot && spawned == 1) {
                     // Right bullet
                     bullets_[i].x = spawnPos.x + 0.05f;
                     bullets_[i].y = spawnPos.y - 0.04f;
                     bullets_[i].active = true;
-                    sfxMixer.playSFX(shootSFXSample.data(), shootSFXSample.size(), 0.05f);
+                    if (sfxMixer_) sfxMixer_->playClip("shoot", 0.05f);
                     spawned++;
                     break; // Spawned both bullets
                 } else if (!doubleShot) {
@@ -2086,7 +1981,7 @@ void Renderer::spawnBullet(BulletType bulletType, glm::vec2 spawnPos) {
                     bullets_[i].x = spawnPos.x;
                     bullets_[i].y = spawnPos.y - 0.04f;
                     bullets_[i].active = true;
-                    sfxMixer.playSFX(shootSFXSample.data(), shootSFXSample.size(), 0.05f);
+                  //  if (sfxMixer_) sfxMixer_->playClip("shoot", 0.05f);
                     break;
                 }
 //                 canFire = false;
@@ -2144,17 +2039,47 @@ void Renderer::updateAliens() {
                 aliens_[i].y -= aliens_[i].vy * Time::deltaTime;
                 break;
             case SineWave:
-                aliens_[i].movementTimer +=Time::deltaTime;
-                aliens_[i].x = aliens_[i].baseX + aliens_[i].amplitude * sin((aliens_[i].movementTimer * aliens_[i].frequency));
+                aliens_[i].movementTimer += Time::deltaTime;
+                aliens_[i].x = aliens_[i].baseX + aliens_[i].amplitude *
+                                                  sin((aliens_[i].movementTimer *
+                                                       aliens_[i].frequency));
                 aliens_[i].y -= aliens_[i].vy * Time::deltaTime;
                 break;
-            case SnakeWave:
+            case MySnakeWave:
                 aliens_[i].movementTimer += Time::deltaTime;
                 aliens_[i].x = sin((aliens_[i].movementTimer + aliens_[i].baseX) * aliens_[i].frequency);
                 aliens_[i].y -= aliens_[i].vy * Time::deltaTime;
                 break;
+            case SnakeWave: {
+                aliens_[i].movementTimer += Time::deltaTime;
+
+                const int row = i / NUM_ALIENS_X;
+                const int col = i % NUM_ALIENS_X;
+
+                // Travelling wave that offsets rows/columns for a snaking motion.
+                const float basePhase = aliens_[i].movementTimer * aliens_[i].frequency;
+                const float rowPhase = row * 0.45f;
+                const float colPhase = col * 0.25f;
+
+                const float primaryWave = sin(basePhase + rowPhase);
+                const float secondaryWave = sin(basePhase * 0.65f + colPhase);
+
+                aliens_[i].x = aliens_[i].baseX +
+                               aliens_[i].amplitude * (0.75f * primaryWave + 0.35f * secondaryWave);
+
+                // Add a subtle vertical bob to make the formation feel alive.
+                const float verticalBobVelocity =
+                        cos(basePhase + rowPhase) * aliens_[i].frequency * 0.12f;
+                aliens_[i].y -= aliens_[i].vy * Time::deltaTime;
+                aliens_[i].y += verticalBobVelocity * Time::deltaTime;
+
+                // Nudge columns out of phase to emphasize the snake-like trail.
+                aliens_[i].x += 0.05f * sin(basePhase * 1.8f + colPhase + rowPhase);
+
+                break;
+            }
             case JustGoDown:
-                 aliens_[i].y -= aliens_[i].vy * Time::deltaTime;
+                aliens_[i].y -= aliens_[i].vy * Time::deltaTime;
                 break;
             case Circle:
                 break;
@@ -2184,9 +2109,9 @@ void Renderer::updateAliens() {
 
 }
 
-uint32_t wave=0;
-uint32_t numOfAliens=100;
-uint32_t level=0;
+uint32_t wave = 0;
+uint32_t numOfAliens = 100;
+uint32_t level = 0;
 
 void Renderer::initAliens() {
 //    numOfAliens = Util::getRandomUint(0, NUM_ALIENS_X * NUM_ALIENS_Y);
@@ -2195,7 +2120,7 @@ void Renderer::initAliens() {
     float dx = 0.2f;
     float dy = 0.15f;
     level++;
-    if(wave>=4) wave = 0; // reset wave
+    if (wave >= 4) wave = 0; // reset wave
     for (int y = 0; y < NUM_ALIENS_Y; ++y) {
         for (int x = 0; x < NUM_ALIENS_X; ++x) {
             int idx = y * NUM_ALIENS_X + x;
@@ -2211,30 +2136,30 @@ void Renderer::initAliens() {
             if (numOfAliens >= 1) {
                 switch (wave) {
                     case 0:
-                        aliens_[idx].hp +=0.5f;
+                        aliens_[idx].hp += 0.5f;
                         aliens_[idx].movementType = AlienMovementType::LeftRight;
                         break;
                     case 1:
-                        aliens_[idx].frequency = aliens_[idx].baseFrequency * 7 + (level*0.05);
+                        aliens_[idx].frequency = aliens_[idx].baseFrequency * 7 + (level * 0.05);
                         aliens_[idx].movementType = AlienMovementType::SnakeWave;
                         aliens_[idx].vy += 0.02f;
                         break;
                     case 2:
                         aliens_[idx].movementType = AlienMovementType::SineWave;
-                        aliens_[idx].frequency = aliens_[idx].baseFrequency * 5 + (level*0.05);
+                        aliens_[idx].frequency = aliens_[idx].baseFrequency * 5 + (level * 0.05);
                         aliens_[idx].vy += 0.01f;
                         break;
                     case 3:
                         aliens_[idx].movementType = AlienMovementType::TogetherOne;
                         aliens_[idx].x = 0.0f;
                         aliens_[idx].vy += 0.02f;
-                        aliens_[idx].hp +=0.5f;
+                        aliens_[idx].hp += 0.5f;
                         break;
                     default:
                         aliens_[idx].movementType = AlienMovementType::JustGoDown;
                         break;
                 }
-               // numOfAliens--;
+                // numOfAliens--;
             }
         }
     }
@@ -2256,18 +2181,20 @@ void Renderer::updateCollision() {
                 aliens_[i].hp--;
                 // On hit:
                 alienPC_[i].flashAmount = 1.0f;
-
+                showDamage(aliens_[i]);
                 if (aliens_[i].hp <= 0) {
                     aliens_[i].active = false;    // Destroy alien
                     actualScore += 100;
                     alienMoveSpeed_ += 0.005f;
-                    if(rateOfFire>0.05)rateOfFire -= 0.0002f;
+                    if (rateOfFire > 0.05) rateOfFire -= 0.0002f;
                     particleSystem_->spawn(glm::vec3(aliens_[i].x, -aliens_[i].y, 1.0f), 15);
-//                    sfxMixer.playSFX(explosionSFXMap[x].data(), explosionSFXMap[x].scale(), 0.3f);
+                    if (sfxMixer_ && !explosionClipIds_.empty()) {
+                        const std::string &clipId = explosionClipIds_[x % explosionClipIds_.size()];
+//                        sfxMixer_->playClip(clipId, 0.3f);
+                        x = (x + 1) % explosionClipIds_.size();
+                    }
                     powerUpManager_->spawnPowerUp(PowerUpType::DoubleShot,
                                                   {aliens_[i].x, aliens_[i].y});
-                    x++;
-                    x == explosionSFXMap.size() ? x = 0 : x;
                     shakeTimer = 0.2f;
                 }
                 break; // Stop checking this bullet (it's now gone)
@@ -2321,7 +2248,13 @@ void Renderer::updateGameState() {
 
 }
 
-
+void Renderer::showDamage(Alien alien) {
+    std::vector<Vertex> floatingDamageVertices = fontManager_->buildTextVertices(
+            "1", -alien.x, -alien.y, 1.0f, scoreScale_);
+    allTextVertices[GameText::FloatingDamageNumbers] = {fontVertexBuffer_, floatingDamageVertices, powerUpTextCDOffset};
+    updateFontBuffer(device_, floatingDamageVertices, fontBufferMemory_, powerUpTextCDOffset);
+    floatingDamageTextOffset_ = powerUpTextCDOffset + floatingDamageVertices.size() * sizeof(Vertex);
+}
 void Renderer::animateScore() {
     int newScore = actualScore;
     int prevDisplay = static_cast<int>(displayedScore_);
@@ -2479,6 +2412,7 @@ void Renderer::loadText() {
     scoreOffset_ = titleOffset + titleVertices.size() * sizeof(Vertex);
     updateFontBuffer(device_, scoreVertices, fontBufferMemory_, scoreOffset_);
     allTextVertices[GameText::Score] = {fontVertexBuffer_, scoreVertices, scoreOffset_};
+
 }
 
 void Renderer::createAndUploadBuffer(const void *vertices, VkBuffer &buffer,
@@ -2551,6 +2485,10 @@ void Renderer::loadGameObjects() {
 }
 
 Renderer::~Renderer() {
+
+    if (sfxMixer_) {
+        sfxMixer_->shutdown();
+    }
 
     vkDestroySampler(device_, fontAtlasSampler_, nullptr);
     vkDestroyImageView(device_, fontAtlasImageView_, nullptr);

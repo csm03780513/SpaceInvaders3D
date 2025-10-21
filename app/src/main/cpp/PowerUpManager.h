@@ -9,6 +9,7 @@
 #include "Time.h"
 #include "Util.h"
 #include "Collision.h"
+#include "SFXMixer.h"
 
 struct PowerUpData {
     PowerUpType type;
@@ -35,6 +36,7 @@ private:
 
     VkDevice device_;
     const std::shared_ptr<Util> util_;
+    const std::shared_ptr<SFXMixer> sfxMixer_;
     float elapsedTime_ = 0.0f;
 public:
     std::unordered_map<GameText,PowerUpIndicator> collectedPowerUps;
@@ -44,7 +46,9 @@ public:
     float shieldTimer = 0.0f;
     VkBuffer powerUpBuffer;
     VkDeviceMemory powerUpBufferMemory;
-    explicit PowerUpManager(VkDevice device, const std::shared_ptr<Util> &util);
+    explicit PowerUpManager(VkDevice device, const std::shared_ptr<Util> &util, const std::shared_ptr<SFXMixer> &sfxMixer);
+    ~PowerUpManager();
+    void update(float deltaTime);
     void spawnPowerUp(PowerUpType type, const glm::vec2& pos);
     void updatePowerUpData();
     void checkIfPowerUpCollected(const Ship &ship);
