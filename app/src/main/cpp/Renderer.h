@@ -153,7 +153,25 @@ private:
     VkDeviceMemory fontBufferMemory_;
     VkDeviceSize scoreOffset_ = 0;
     VkDeviceSize powerUpTextCDOffset = 0;
-    VkDeviceSize floatingDamageTextOffset_ = 0;
+    VkDeviceSize floatingDamageBufferCursor_ = 0;
+    struct FloatingDamageInstance {
+        std::string text;
+        VkDeviceSize vertexOffset = 0;
+        uint32_t vertexCount = 0;
+        glm::vec2 basePos{};
+        float startTime = 0.0f;
+        float lifetime = 0.0f;
+        float riseSpeed = 0.0f;
+        float startScale = 0.0f;
+        float endScale = 0.0f;
+        float fadeStart = 0.7f;
+    };
+    std::vector<FloatingDamageInstance> floatingDamageInstances_;
+    float floatingDamageGlobalTime_ = 0.0f;
+    float floatingDamageLifetime_ = 0.9f;
+    float floatingDamageRiseSpeed_ = 0.45f;
+    float floatingDamageStartScale_ = 0.0025f;
+    float floatingDamageEndScale_ = 0.0003f;
 
     // Score tracking and animation
     int actualScore = 0;            // Game logic value
@@ -280,4 +298,6 @@ private:
     void alienFireBullet();
 
     void showDamage(Alien alien);
+    void updateFloatingDamage();
+    void drawFloatingDamageTexts(VkCommandBuffer cmd);
 };

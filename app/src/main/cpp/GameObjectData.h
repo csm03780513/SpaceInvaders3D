@@ -135,7 +135,13 @@ struct MainPushConstants {
 
 struct FontPushConstants {
     glm::vec2 pos{0.0f, 0.0f};
-    glm::vec2 uv{0.0f, 0.0f};
+    float currentTime{0.0f};
+    float startTime{0.0f};
+    float lifetime{0.0f};
+    float riseSpeed{0.0f};
+    float startScale{1.0f};
+    float endScale{1.0f};
+    float fadeStart{0.8f};
 };
 
 

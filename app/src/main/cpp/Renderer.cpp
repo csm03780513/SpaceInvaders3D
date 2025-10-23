@@ -6,6 +6,8 @@
 #include <android/native_window.h>
 #include <vector>
 #include <stdexcept>
+#include <unordered_map>
+#include <algorithm>
 
 struct TextData {
     VkBuffer buffer;
@@ -1865,6 +1867,13 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
 
     for (const auto &[textName, textData]: allTextVertices) {
         FontPushConstants fontPushConstants{};
+        fontPushConstants.currentTime = floatingDamageGlobalTime_;
+        fontPushConstants.startTime = 0.0f;
+        fontPushConstants.lifetime = 0.0f;
+        fontPushConstants.riseSpeed = 0.0f;
+        fontPushConstants.startScale = 1.0f;
+        fontPushConstants.endScale = 1.0f;
+        fontPushConstants.fadeStart = 1.0f;
         auto it = powerUpManager_->collectedPowerUps.find(textName);
         if (it != powerUpManager_->collectedPowerUps.end()) {
             if (it->second.active) {
@@ -1898,12 +1907,6 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
             }
         }
 
-        if(textName == GameText::FloatingDamageNumbers){
-
-            continue;
-        }
-
-
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, fontPipeline_);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, fontPipelineLayout_, 0, 1,
                                 &fontDescriptorSet_, 0, nullptr);
@@ -1914,6 +1917,8 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
         vkCmdBindVertexBuffers(cmd, 0, 1, &textData.buffer, &vertexOffset);
         vkCmdDraw(cmd, static_cast<uint32_t>(textData.vertices.size()), 1, 0, 0);
     }
+
+    drawFloatingDamageTexts(cmd);
 
 
     particleSystem_->recordCommandBuffer(cmd,
@@ -1948,6 +1953,10 @@ void Renderer::restartGame() {
     for (auto &bullet: bullets_) {
         bullet.active = false;
     }
+
+    floatingDamageInstances_.clear();
+    floatingDamageBufferCursor_ = powerUpTextCDOffset;
+    floatingDamageGlobalTime_ = 0.0f;
 
     // Reset score, level, etc.
     gameState = GameState::Playing;
@@ -2249,11 +2258,74 @@ void Renderer::updateGameState() {
 }
 
 void Renderer::showDamage(Alien alien) {
-    std::vector<Vertex> floatingDamageVertices = fontManager_->buildTextVertices(
-            "1", -alien.x, -alien.y, 1.0f, scoreScale_);
-    allTextVertices[GameText::FloatingDamageNumbers] = {fontVertexBuffer_, floatingDamageVertices, powerUpTextCDOffset};
-    updateFontBuffer(device_, floatingDamageVertices, fontBufferMemory_, powerUpTextCDOffset);
-    floatingDamageTextOffset_ = powerUpTextCDOffset + floatingDamageVertices.size() * sizeof(Vertex);
+    std::vector<Vertex> vertices = fontManager_->buildTextVertices(
+            "1", 0.0f, 0.0f, 1.0f, floatingDamageStartScale_);
+
+    VkDeviceSize vertexBytes = vertices.size() * sizeof(Vertex);
+    floatingDamageBufferCursor_ = std::max(floatingDamageBufferCursor_, powerUpTextCDOffset);
+    VkDeviceSize allocationOffset = floatingDamageBufferCursor_;
+
+    updateFontBuffer(device_, vertices, fontBufferMemory_, allocationOffset);
+
+    FloatingDamageInstance instance{};
+    instance.text = "1";
+    instance.vertexOffset = allocationOffset;
+    instance.vertexCount = static_cast<uint32_t>(vertices.size());
+    instance.basePos = {alien.x, -alien.y};
+    instance.startTime = floatingDamageGlobalTime_;
+    instance.lifetime = floatingDamageLifetime_;
+    instance.riseSpeed = -floatingDamageRiseSpeed_;
+    instance.startScale = floatingDamageStartScale_;
+    instance.endScale = floatingDamageEndScale_;
+    instance.fadeStart = 0.7f;
+
+    floatingDamageInstances_.push_back(instance);
+    floatingDamageBufferCursor_ += vertexBytes;
+}
+
+void Renderer::updateFloatingDamage() {
+    if (floatingDamageInstances_.empty()) {
+        return;
+    }
+
+    const float currentTime = floatingDamageGlobalTime_;
+    floatingDamageInstances_.erase(
+            std::remove_if(floatingDamageInstances_.begin(),
+                           floatingDamageInstances_.end(),
+                           [currentTime](const FloatingDamageInstance &instance) {
+                               return (currentTime - instance.startTime) >= instance.lifetime;
+                           }),
+            floatingDamageInstances_.end());
+}
+
+void Renderer::drawFloatingDamageTexts(VkCommandBuffer cmd) {
+    if (floatingDamageInstances_.empty()) {
+        return;
+    }
+
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, fontPipeline_);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, fontPipelineLayout_, 0, 1,
+                            &fontDescriptorSet_, 0, nullptr);
+
+    for (const auto &instance: floatingDamageInstances_) {
+        FontPushConstants push{};
+        push.pos = instance.basePos;
+        push.currentTime = floatingDamageGlobalTime_;
+        push.startTime = instance.startTime;
+        push.lifetime = instance.lifetime;
+        push.riseSpeed = instance.riseSpeed;
+        push.startScale = instance.startScale;
+        push.endScale = instance.endScale;
+        push.fadeStart = instance.fadeStart;
+        LOGE("data--%f",instance.startScale);
+
+        vkCmdPushConstants(cmd, fontPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
+                           sizeof(FontPushConstants), &push);
+
+        VkDeviceSize offset = instance.vertexOffset;
+        vkCmdBindVertexBuffers(cmd, 0, 1, &fontVertexBuffer_, &offset);
+        vkCmdDraw(cmd, instance.vertexCount, 1, 0, 0);
+    }
 }
 void Renderer::animateScore() {
     int newScore = actualScore;
@@ -2363,6 +2435,10 @@ void Renderer::drawFrame() {
         }
     }
 
+    floatingDamageBufferCursor_ = std::max(floatingDamageBufferCursor_, powerUpTextCDOffset);
+    floatingDamageGlobalTime_ += Time::deltaTime;
+    updateFloatingDamage();
+
 
     recordCommandBuffer(imageIndex);
 
@@ -2412,6 +2488,10 @@ void Renderer::loadText() {
     scoreOffset_ = titleOffset + titleVertices.size() * sizeof(Vertex);
     updateFontBuffer(device_, scoreVertices, fontBufferMemory_, scoreOffset_);
     allTextVertices[GameText::Score] = {fontVertexBuffer_, scoreVertices, scoreOffset_};
+    powerUpTextCDOffset = scoreOffset_ + scoreVertices.size() * sizeof(Vertex);
+    floatingDamageBufferCursor_ = powerUpTextCDOffset;
+    floatingDamageInstances_.clear();
+    floatingDamageGlobalTime_ = 0.0f;
 
 }
 
