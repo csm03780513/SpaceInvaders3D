@@ -168,8 +168,8 @@ private:
     };
     std::vector<FloatingDamageInstance> floatingDamageInstances_;
     float floatingDamageGlobalTime_ = 0.0f;
-    float floatingDamageLifetime_ = 0.9f;
-    float floatingDamageRiseSpeed_ = 0.45f;
+    float floatingDamageLifetime_ = 0.5f;
+    float floatingDamageRiseSpeed_ = 0.05f;
     float floatingDamageStartScale_ = 0.0025f;
     float floatingDamageEndScale_ = 0.0003f;
 
@@ -297,7 +297,7 @@ private:
 
     void alienFireBullet();
 
-    void showDamage(Alien alien);
+    void showDamage(Alien &alien);
     void updateFloatingDamage();
     void drawFloatingDamageTexts(VkCommandBuffer cmd);
 };

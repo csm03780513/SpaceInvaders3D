@@ -1975,14 +1975,14 @@ void Renderer::spawnBullet(BulletType bulletType, glm::vec2 spawnPos) {
                     bullets_[i].x = spawnPos.x - 0.05f;
                     bullets_[i].y = spawnPos.y - 0.04f;
                     bullets_[i].active = true;
-                    if (sfxMixer_) sfxMixer_->playClip("shoot", 0.05f);
+//                    if (sfxMixer_) sfxMixer_->playClip("shoot", 0.05f);
                     spawned++;
                 } else if (doubleShot && spawned == 1) {
                     // Right bullet
                     bullets_[i].x = spawnPos.x + 0.05f;
                     bullets_[i].y = spawnPos.y - 0.04f;
                     bullets_[i].active = true;
-                    if (sfxMixer_) sfxMixer_->playClip("shoot", 0.05f);
+//                    if (sfxMixer_) sfxMixer_->playClip("shoot", 0.05f);
                     spawned++;
                     break; // Spawned both bullets
                 } else if (!doubleShot) {
@@ -2257,7 +2257,7 @@ void Renderer::updateGameState() {
 
 }
 
-void Renderer::showDamage(Alien alien) {
+void Renderer::showDamage(Alien &alien) {
     std::vector<Vertex> vertices = fontManager_->buildTextVertices(
             "1", 0.0f, 0.0f, 1.0f, floatingDamageStartScale_);
 
@@ -2317,7 +2317,6 @@ void Renderer::drawFloatingDamageTexts(VkCommandBuffer cmd) {
         push.startScale = instance.startScale;
         push.endScale = instance.endScale;
         push.fadeStart = instance.fadeStart;
-        LOGE("data--%f",instance.startScale);
 
         vkCmdPushConstants(cmd, fontPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
                            sizeof(FontPushConstants), &push);
