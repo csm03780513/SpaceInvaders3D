@@ -583,7 +583,7 @@ namespace glm {
 				/* Arm assembler reference:
 				 *
 				 * The Newton-Raphson iteration: x[n+1] = x[n] * (2 - d * x[n])
-				 * converges to (1/d) if x0 is the result of VRECPE applied to d.
+				 * converges to (1/d) if x0 is the result of VRECPE dmgApplied_ to d.
 				 *
 				 * Note: The precision usually improves with two interactions, but more than two iterations are not helpful. */
 				float32x4_t x = vrecpeq_f32(b.data);

@@ -1,6 +1,7 @@
 #version 450
 
 layout (push_constant) uniform FontPush {
+    vec4 color;
     vec2 pos;
     float currentTime;
     float startTime;
@@ -44,6 +45,6 @@ void main() {
     }
 
     outUV = inUV;
-    outFragColor = inColor;
+    outFragColor = vec4(inColor.rgb * fp.color.rgb, inColor.a * fp.color.a);
     outFade = fade;
 }

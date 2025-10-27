@@ -33,6 +33,8 @@
 #include <random>
 #include <cmath>
 #include <utility>
+#include "ECS/components/CombatComponents.h"
+#include "mechanics/Damage.h"
 
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "Vulkan", __VA_ARGS__)
 constexpr int MAX_POWERUPS = 10;
@@ -72,10 +74,12 @@ struct OverlayVertex {
     float pos[3];
     float uv[2];
 };
+
 enum class BulletType {
     Ship,
     Alien
 };
+
 
 struct Bullet {
     float x{}, y{};
@@ -83,7 +87,9 @@ struct Bullet {
     std::array<float, 2> widthHeight{};
     BulletType bulletType{};
     const float size = 0.05f * 0.5f; //half alien
+    DamagePayload payload{};
 };
+
 enum AlienMovementType {
     SnakeWave,
     JustGoDown,
@@ -95,7 +101,7 @@ enum AlienMovementType {
 };
 
 struct Alien {
-    float x{}, y{},vx{0.1f}, vy{0.02f};
+    float x{}, y{}, vx{0.1f}, vy{0.02f};
     float movementTimer = 0.0f;   // Used for sine phase
     float amplitude = 0.5f;      // Sine wave width (tune for look)
     float frequency = 0.1f;       // Sine wave speed
@@ -104,7 +110,11 @@ struct Alien {
     AlienMovementType movementType{AlienMovementType::LeftRight};
     bool active{};
     std::array<float, 2> widthHeight{};
-    float hp{1};
+
+    Health health;
+    Armor armor;
+    Resistances resistances;
+    Ailments ailments;
 };
 
 enum class PowerUpType {
@@ -118,8 +128,12 @@ struct Ship {
     float x{}, y{};
     float color[3]{};
     std::array<float, 2> widthHeight{};
-    uint hp{3};
     float size{0.1f};
+
+    Health health;
+    Armor armor;
+    Resistances resistances;
+    Ailments ailments;
 };
 
 
@@ -134,6 +148,7 @@ struct MainPushConstants {
 };
 
 struct FontPushConstants {
+    glm::vec4 color{1.0f, 1.0f, 1.0f, 1.0f};
     glm::vec2 pos{0.0f, 0.0f};
     float currentTime{0.0f};
     float startTime{0.0f};
@@ -142,7 +157,10 @@ struct FontPushConstants {
     float startScale{1.0f};
     float endScale{1.0f};
     float fadeStart{0.8f};
+    float padding[3]{0.0f, 0.0f, 0.0f};
 };
+
+static_assert(sizeof(FontPushConstants) == 64, "FontPushConstants must match shader layout");
 
 
 struct GfxPipelineData {
@@ -259,9 +277,9 @@ static OverlayVertex overlayQuadVerts[6] = {
 
 static Vertex quadVerts[6] = {
         // Rectangle centered at (0, 0), width 0.12, height 0.07
-        {{-0.08f, -0.045f, 0.0f}, {0.3f, 1.0f, 0.3f}, {0.0f, 0.0f}}, // green
-        {{0.08f,  -0.045f, 0.0f}, {0.3f, 1.0f, 0.3f}, {1.0f, 0.0f}},
-        {{-0.08f, 0.045f,  0.0f}, {0.6f, 1.0f, 0.6f}, {0.0f, 1.0f}},
+        {{-0.08f, -0.045f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 0.0f}}, // green
+        {{0.08f,  -0.045f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 0.0f}},
+        {{-0.08f, 0.045f,  0.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}},
 
         {{0.08f,  0.045f,  0.0f}, {0.3f, 1.0f, 0.3f}, {1.0f, 1.0f}},
         {{-0.08f, 0.045f,  0.0f}, {0.6f, 1.0f, 0.6f}, {0.0f, 1.0f}},

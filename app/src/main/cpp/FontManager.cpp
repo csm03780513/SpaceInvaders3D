@@ -137,13 +137,13 @@ FontManager::buildTextVertices(const std::string &text, float x, float y, float 
             float v1 = (g.cellY + g.maxY + 1) / (float)fontAtlasMetrics_.imgH;
 
             Vertex vtx[6] = {
-                    {{x0, y0, z},{1.0f,1.0f,0.0f}, {u0, v0}},
-                    {{x1, y0, z},{1.0f,1.0f,0.0f}, {u1, v0}},
-                    {{x0, y1, z},{0.0f,1.0f,0.0f}, {u0, v1}},
+                    {{x0, y0, z},{1.0f,1.0f,1.0f}, {u0, v0}},
+                    {{x1, y0, z},{1.0f,1.0f,1.0f}, {u1, v0}},
+                    {{x0, y1, z},{1.0f,1.0f,1.0f}, {u0, v1}},
 
-                    {{x1, y0, z},{1.0f,1.0f,0.0f}, {u1, v0}},
-                    {{x1, y1, z},{1.0f,1.0f,0.0f}, {u1, v1}},
-                    {{x0, y1, z},{0.0f,1.0f,1.0f}, {u0, v1}},
+                    {{x1, y0, z},{1.0f,1.0f,1.0f}, {u1, v0}},
+                    {{x1, y1, z},{1.0f,1.0f,1.0f}, {u1, v1}},
+                    {{x0, y1, z},{1.0f,1.0f,1.0f}, {u0, v1}},
             };
             outVerts.insert(outVerts.end(), vtx, vtx+6);
             penX += g.advance * scale + charSpacing;

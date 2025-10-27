@@ -58,7 +58,7 @@ namespace glm
 	///
 	/// @tparam genIUType Integer scalar or vector types.
 	///
-	/// @param v Source value to which is applied the function
+	/// @param v Source value to which is dmgApplied_ the function
 	/// @param Multiple Must be a null or positive value
 	///
 	/// @see ext_scalar_integer
@@ -69,7 +69,7 @@ namespace glm
 	///
 	/// @tparam genIUType Integer scalar or vector types.
 	///
-	/// @param v Source value to which is applied the function
+	/// @param v Source value to which is dmgApplied_ the function
 	/// @param Multiple Must be a null or positive value
 	///
 	/// @see ext_scalar_integer

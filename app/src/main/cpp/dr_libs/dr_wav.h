@@ -726,7 +726,7 @@ typedef struct
 
     /*
     Unrestricted ASCII characters containing a collection of strings terminated by CR/LF. Each
-    string shall contain a description of a coding process applied to the audio data.
+    string shall contain a description of a coding process dmgApplied_ to the audio data.
     */
     char* pCodingHistory;
     drwav_uint32 codingHistorySize;

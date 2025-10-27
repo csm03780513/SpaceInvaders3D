@@ -86,7 +86,7 @@ namespace glm
 	///
 	/// @tparam genType Floating-point or integer scalar or vector types.
 	///
-	/// @param v Source value to which is applied the function
+	/// @param v Source value to which is dmgApplied_ the function
 	/// @param Multiple Must be a null or positive value
 	///
 	/// @see gtc_round
@@ -99,7 +99,7 @@ namespace glm
 	/// @tparam T Floating-point or integer scalar types
 	/// @tparam Q Value from qualifier enum
 	///
-	/// @param v Source values to which is applied the function
+	/// @param v Source values to which is dmgApplied_ the function
 	/// @param Multiple Must be a null or positive value
 	///
 	/// @see gtc_round
@@ -110,7 +110,7 @@ namespace glm
 	///
 	/// @tparam genType Floating-point or integer scalar or vector types.
 	///
-	/// @param v Source value to which is applied the function
+	/// @param v Source value to which is dmgApplied_ the function
 	/// @param Multiple Must be a null or positive value
 	///
 	/// @see gtc_round
@@ -123,7 +123,7 @@ namespace glm
 	/// @tparam T Floating-point or integer scalar types
 	/// @tparam Q Value from qualifier enum
 	///
-	/// @param v Source values to which is applied the function
+	/// @param v Source values to which is dmgApplied_ the function
 	/// @param Multiple Must be a null or positive value
 	///
 	/// @see gtc_round
@@ -134,7 +134,7 @@ namespace glm
 	///
 	/// @tparam genType Floating-point or integer scalar or vector types.
 	///
-	/// @param v Source value to which is applied the function
+	/// @param v Source value to which is dmgApplied_ the function
 	/// @param Multiple Must be a null or positive value
 	///
 	/// @see gtc_round
@@ -147,7 +147,7 @@ namespace glm
 	/// @tparam T Floating-point or integer scalar types
 	/// @tparam Q Value from qualifier enum
 	///
-	/// @param v Source values to which is applied the function
+	/// @param v Source values to which is dmgApplied_ the function
 	/// @param Multiple Must be a null or positive value
 	///
 	/// @see gtc_round

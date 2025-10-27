@@ -8,6 +8,8 @@
 #include "Time.h"
 #include "PowerUpManager.h"
 #include "Util.h"
+#include "ECS/events/CombatEvents.h"
+#include "ECS/systems/AilmentSystem.h"
 
 static constexpr int NUM_ALIENS_X = 8;
 static constexpr int NUM_ALIENS_Y = 3;
@@ -153,7 +155,12 @@ private:
     VkDeviceMemory fontBufferMemory_;
     VkDeviceSize scoreOffset_ = 0;
     VkDeviceSize powerUpTextCDOffset = 0;
+    VkDeviceSize powerUpTextStartOffset_ = 0;
     VkDeviceSize floatingDamageBufferCursor_ = 0;
+    struct PendingFloatingDamageUpload {
+        size_t instanceIndex = 0;
+        std::vector<Vertex> vertices;
+    };
     struct FloatingDamageInstance {
         std::string text;
         VkDeviceSize vertexOffset = 0;
@@ -165,13 +172,24 @@ private:
         float startScale = 0.0f;
         float endScale = 0.0f;
         float fadeStart = 0.7f;
+        glm::vec4 color{1.0f, 1.0f, 1.0f, 1.0f};
     };
     std::vector<FloatingDamageInstance> floatingDamageInstances_;
+    std::vector<PendingFloatingDamageUpload> pendingFloatingDamageUploads_;
     float floatingDamageGlobalTime_ = 0.0f;
     float floatingDamageLifetime_ = 0.5f;
     float floatingDamageRiseSpeed_ = 0.05f;
     float floatingDamageStartScale_ = 0.0025f;
     float floatingDamageEndScale_ = 0.0003f;
+
+    std::vector<HitEvent> hitEvents_;
+    std::vector<DamageAppliedEvent> dmgApplied_;
+    std::vector<DamagePopupSpawned> dmgPopups_;
+    // Apply DOTs
+    AilmentSystem ailSys_;
+    AilmentRules ailRules_;
+    ShieldRules  shieldRules_{ .kineticHalfOnShield = true, .darkMatterIgnoresArmor = true };
+
 
     // Score tracking and animation
     int actualScore = 0;            // Game logic value
@@ -297,7 +315,9 @@ private:
 
     void alienFireBullet();
 
-    void showDamage(Alien &alien);
+    void spawnDamageText(const DamagePopupSpawned &damagePopupSpawned);
     void updateFloatingDamage();
     void drawFloatingDamageTexts(VkCommandBuffer cmd);
+    void updateHitEvents();
+    void initShip();
 };

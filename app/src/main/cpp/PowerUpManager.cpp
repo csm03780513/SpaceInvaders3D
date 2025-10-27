@@ -17,7 +17,7 @@ AABB shipBox;
 //            a.minY < b.maxY && a.maxY > b.minY);
 //}
 
-void PowerUpManager::spawnPowerUp(PowerUpType type, const glm::vec2 &pos) {
+void PowerUpManager::spawnPowerUp(const glm::vec2 &pos) {
     float randomChance = rand() / float(RAND_MAX);
     if (randomChance < 0.1f) { // 10% chance
         PowerUpData p{};

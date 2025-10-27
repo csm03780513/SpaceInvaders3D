@@ -86,7 +86,7 @@ namespace glm
 	/// @tparam T Signed or unsigned integer scalar types.
 	/// @tparam Q Value from qualifier enum
 	///
-	/// @param v Source values to which is applied the function
+	/// @param v Source values to which is dmgApplied_ the function
 	/// @param Multiple Must be a null or positive value
 	///
 	/// @see ext_vector_integer
@@ -99,7 +99,7 @@ namespace glm
 	/// @tparam T Signed or unsigned integer scalar types.
 	/// @tparam Q Value from qualifier enum
 	///
-	/// @param v Source values to which is applied the function
+	/// @param v Source values to which is dmgApplied_ the function
 	/// @param Multiple Must be a null or positive value
 	///
 	/// @see ext_vector_integer
@@ -112,7 +112,7 @@ namespace glm
 	/// @tparam T Signed or unsigned integer scalar types.
 	/// @tparam Q Value from qualifier enum
 	///
-	/// @param v Source values to which is applied the function
+	/// @param v Source values to which is dmgApplied_ the function
 	/// @param Multiple Must be a null or positive value
 	///
 	/// @see ext_vector_integer
@@ -125,7 +125,7 @@ namespace glm
 	/// @tparam T Signed or unsigned integer scalar types.
 	/// @tparam Q Value from qualifier enum
 	///
-	/// @param v Source values to which is applied the function
+	/// @param v Source values to which is dmgApplied_ the function
 	/// @param Multiple Must be a null or positive value
 	///
 	/// @see ext_vector_integer

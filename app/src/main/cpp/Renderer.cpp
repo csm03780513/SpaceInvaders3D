@@ -1,5 +1,7 @@
 #include "Renderer.h"
 #include "SFXMixer.h"
+#include "ECS/systems/DamageSystem.h"
+#include "ECS/systems/AilmentSystem.h"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
@@ -8,6 +10,7 @@
 #include <stdexcept>
 #include <unordered_map>
 #include <algorithm>
+#include <utility>
 
 struct TextData {
     VkBuffer buffer;
@@ -33,14 +36,14 @@ const bool enableValidationLayers = true;
 
 
 Bullet bullets_[MAX_BULLETS] = {};
-Ship ship_ = {
-        .widthHeight = Util::getQuadWidthHeight(shipVerts, 6, {1, 1})
-};
+Ship ship_ ={};
 Alien aliens_[MAX_ALIENS] = {};
 
 float alienMoveSpeed_ = 0.3f;
 float bulletMoveSpeed_ = 2.0f;
 float alienDirection_ = 1.0f; // 1 = right, -1 = left
+
+DamageSystem dmgSys;
 
 
 std::vector<char> loadShaderAsset(AAssetManager *mgr, const char *filename);
@@ -533,6 +536,7 @@ Renderer::Renderer(android_app *app) : app_(app) {
     loadGameObjects();
     createUniformBuffer();
     initAliens();
+    initShip();
 
     createMainGfxPipeline();
     createOverlayGfxPipeline();
@@ -1874,6 +1878,20 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
         fontPushConstants.startScale = 1.0f;
         fontPushConstants.endScale = 1.0f;
         fontPushConstants.fadeStart = 1.0f;
+        fontPushConstants.color = {1.0f, 1.0f, 1.0f, 1.0f};
+        switch (textName) {
+            case GameText::Title:
+                fontPushConstants.color = {0.85f, 0.95f, 1.0f, 1.0f};
+                break;
+            case GameText::DoubleShotCD:
+                fontPushConstants.color = {1.0f, 0.85f, 0.35f, 1.0f};
+                break;
+            case GameText::ShieldCD:
+                fontPushConstants.color = {0.4f, 0.9f, 1.0f, 1.0f};
+                break;
+            default:
+                break;
+        }
         auto it = powerUpManager_->collectedPowerUps.find(textName);
         if (it != powerUpManager_->collectedPowerUps.end()) {
             if (it->second.active) {
@@ -1946,7 +1964,7 @@ void Renderer::restartGame() {
 
     // Reset aliens
     initAliens();
-    ship_.hp = 3;
+    ship_.health.hull = 100.0f;
     alienMoveSpeed_ = 0.3f;
 
     // Reset bullets
@@ -1955,6 +1973,8 @@ void Renderer::restartGame() {
     }
 
     floatingDamageInstances_.clear();
+    pendingFloatingDamageUploads_.clear();
+    powerUpTextCDOffset = powerUpTextStartOffset_;
     floatingDamageBufferCursor_ = powerUpTextCDOffset;
     floatingDamageGlobalTime_ = 0.0f;
 
@@ -1975,6 +1995,7 @@ void Renderer::spawnBullet(BulletType bulletType, glm::vec2 spawnPos) {
                     bullets_[i].x = spawnPos.x - 0.05f;
                     bullets_[i].y = spawnPos.y - 0.04f;
                     bullets_[i].active = true;
+                    bullets_[i].payload = makeKinetic(Util::getRandomFloat(10.0f,40.0f), 0.2f);
 //                    if (sfxMixer_) sfxMixer_->playClip("shoot", 0.05f);
                     spawned++;
                 } else if (doubleShot && spawned == 1) {
@@ -1982,6 +2003,7 @@ void Renderer::spawnBullet(BulletType bulletType, glm::vec2 spawnPos) {
                     bullets_[i].x = spawnPos.x + 0.05f;
                     bullets_[i].y = spawnPos.y - 0.04f;
                     bullets_[i].active = true;
+                    bullets_[i].payload = makeKinetic(Util::getRandomFloat(10.0f,40.0f));
 //                    if (sfxMixer_) sfxMixer_->playClip("shoot", 0.05f);
                     spawned++;
                     break; // Spawned both bullets
@@ -1990,6 +2012,7 @@ void Renderer::spawnBullet(BulletType bulletType, glm::vec2 spawnPos) {
                     bullets_[i].x = spawnPos.x;
                     bullets_[i].y = spawnPos.y - 0.04f;
                     bullets_[i].active = true;
+                    bullets_[i].payload = makePlasma(Util::getRandomFloat(10.0f,40.0f));
                   //  if (sfxMixer_) sfxMixer_->playClip("shoot", 0.05f);
                     break;
                 }
@@ -2002,6 +2025,7 @@ void Renderer::spawnBullet(BulletType bulletType, glm::vec2 spawnPos) {
                 bullets_[i].y = spawnPos.y + 0.04f;
                 bullets_[i].active = true;
                 bullets_[i].bulletType = bulletType;
+                bullets_[i].payload = makeKinetic(Util::getRandomFloat(10.0f,30.0f));
                 break;
             }
         }
@@ -2031,13 +2055,13 @@ void Renderer::updateBullet() {
 
 }
 
-float timePassed = 0.0f;
+//float timePassed = 0.0f;
 
 void Renderer::updateAliens() {
     bool hitEdge = false;
 
     for (int i = 0; i < MAX_ALIENS; ++i) {
-        timePassed += Time::deltaTime;
+//        timePassed += Time::deltaTime;
         if (!aliens_[i].active) continue;
         // update flash amount (fade in/out) smoothly
         alienPC_[i].flashAmount -= Time::deltaTime * 5.0f; // fade speed (0.2s)
@@ -2123,6 +2147,16 @@ uint32_t numOfAliens = 100;
 uint32_t level = 0;
 
 void Renderer::initAliens() {
+    Resistances enemyRes{};
+    enemyRes.byType[(int)DamageType::Kinetic]   = 0.10f;
+    enemyRes.byType[(int)DamageType::Fire]      = 0.10f;
+    enemyRes.byType[(int)DamageType::Lightning] = 0.05f;
+    enemyRes.byType[(int)DamageType::Cold]      = 0.00f;
+    enemyRes.byType[(int)DamageType::Poison]    = 0.00f;
+    enemyRes.byType[(int)DamageType::Radiation] = 0.15f;
+    enemyRes.byType[(int)DamageType::Plasma]    = 0.05f;
+    enemyRes.byType[(int)DamageType::DarkMatter]= -0.10f; // vulnerable
+    enemyRes.byType[(int)DamageType::Cosmic]    = 0.20f;
 //    numOfAliens = Util::getRandomUint(0, NUM_ALIENS_X * NUM_ALIENS_Y);
     float startX = -0.7f;
     float startY = 0.8f;
@@ -2138,20 +2172,22 @@ void Renderer::initAliens() {
             aliens_[idx].movementTimer = 0.0f;
             aliens_[idx].y = startY - y * dy;
             aliens_[idx].active = true;
-            aliens_[idx].hp = 2;
+            aliens_[idx].health.hull = 100.0f;
+            aliens_[idx].health.dead = false;
+            aliens_[idx].resistances = enemyRes;
+            aliens_[idx].ailments = {};
 
             aliens_[idx].widthHeight = Util::getQuadWidthHeight(alienVerts, 6, {1.0, 1.0});
             alienPC_[idx].texturePos = 1;
             if (numOfAliens >= 1) {
                 switch (wave) {
                     case 0:
-                        aliens_[idx].hp += 0.5f;
                         aliens_[idx].movementType = AlienMovementType::LeftRight;
                         break;
                     case 1:
                         aliens_[idx].frequency = aliens_[idx].baseFrequency * 7 + (level * 0.05);
                         aliens_[idx].movementType = AlienMovementType::SnakeWave;
-                        aliens_[idx].vy += 0.02f;
+                        aliens_[idx].vy += 0.01f;
                         break;
                     case 2:
                         aliens_[idx].movementType = AlienMovementType::SineWave;
@@ -2161,8 +2197,7 @@ void Renderer::initAliens() {
                     case 3:
                         aliens_[idx].movementType = AlienMovementType::TogetherOne;
                         aliens_[idx].x = 0.0f;
-                        aliens_[idx].vy += 0.02f;
-                        aliens_[idx].hp += 0.5f;
+                        aliens_[idx].vy += 0.01f;
                         break;
                     default:
                         aliens_[idx].movementType = AlienMovementType::JustGoDown;
@@ -2175,49 +2210,70 @@ void Renderer::initAliens() {
     wave++;
 }
 
+void Renderer::initShip() {
+    Resistances enemyRes{};
+    enemyRes.byType[(int)DamageType::Kinetic]   = 0.10f;
+    enemyRes.byType[(int)DamageType::Fire]      = 0.10f;
+    enemyRes.byType[(int)DamageType::Lightning] = 0.05f;
+    enemyRes.byType[(int)DamageType::Cold]      = 0.00f;
+    enemyRes.byType[(int)DamageType::Poison]    = 0.00f;
+    enemyRes.byType[(int)DamageType::Radiation] = 0.15f;
+    enemyRes.byType[(int)DamageType::Plasma]    = 0.05f;
+    enemyRes.byType[(int)DamageType::DarkMatter]= -0.10f; // vulnerable
+    enemyRes.byType[(int)DamageType::Cosmic]    = 0.20f;
+
+    ship_.resistances = enemyRes;
+    ship_.widthHeight = Util::getQuadWidthHeight(shipVerts, 6, {1, 1});
+
+}
+
 
 uint x = 0;
 
+// process only spawned projectile collisions
 void Renderer::updateCollision() {
-    for (auto &bullet: bullets_) {
+    hitEvents_.clear(); // clear from last frame
+
+    for (auto& bullet : bullets_) {
         if (!bullet.active) continue;
 
-        for (int i = 0; i < MAX_ALIENS; i++) {
+        for (uint i = 0; i < MAX_ALIENS; i++) {
             if (!aliens_[i].active) continue;
 
+            // Player bullet hits alien
             if (isCollision(aliens_[i], bullet) && bullet.bulletType == BulletType::Ship) {
-                bullet.active = false;   // Destroy bullet
-                aliens_[i].hp--;
-                // On hit:
+                bullet.active = false;
+
+                // Queue a HitEvent for later DamageSystem processing
+                hitEvents_.push_back(HitEvent{
+                        .attacker   = /* optional: player entity id */ 0,
+                        .target     = i, // or aliens_[i].entityId
+                        .payload    = bullet.payload,
+                        .hitWorldPos= glm::vec2(aliens_[i].x, aliens_[i].y)
+                });
+
+                // simple visual feedback
                 alienPC_[i].flashAmount = 1.0f;
-                showDamage(aliens_[i]);
-                if (aliens_[i].hp <= 0) {
-                    aliens_[i].active = false;    // Destroy alien
-                    actualScore += 100;
-                    alienMoveSpeed_ += 0.005f;
-                    if (rateOfFire > 0.05) rateOfFire -= 0.0002f;
-                    particleSystem_->spawn(glm::vec3(aliens_[i].x, -aliens_[i].y, 1.0f), 15);
-                    if (sfxMixer_ && !explosionClipIds_.empty()) {
-                        const std::string &clipId = explosionClipIds_[x % explosionClipIds_.size()];
-//                        sfxMixer_->playClip(clipId, 0.3f);
-                        x = (x + 1) % explosionClipIds_.size();
-                    }
-                    powerUpManager_->spawnPowerUp(PowerUpType::DoubleShot,
-                                                  {aliens_[i].x, aliens_[i].y});
-                    shakeTimer = 0.2f;
-                }
-                break; // Stop checking this bullet (it's now gone)
+
+                // short particle burst on hit
+                particleSystem_->spawn(glm::vec3(aliens_[i].x, -aliens_[i].y, 1.0f), 5);
+                break;
             }
-            if (isCollision(aliens_[i], bullet) && bullet.bulletType == BulletType::Alien &&
-                !powerUpManager_->shieldActive) {
-                particleSystem_->spawn(glm::vec3(bullet.x, bullet.y, 0.0f), 15);
-                bullet.active = false;   // Destroy bullet
+
+            // Alien bullet hits ship
+            if (isCollision(aliens_[i], bullet) && bullet.bulletType == BulletType::Alien && !powerUpManager_->shieldActive) {
+
+                bullet.active = false;
+
+                hitEvents_.push_back(HitEvent{
+                        .attacker   = i,  // alien index
+                        .target     = /* ship entity id */ 999,
+                        .payload    = bullet.payload,
+                        .hitWorldPos= glm::vec2(ship_.x, ship_.y)
+                });
+
                 shipPC_.flashAmount = 1.0f;
-                ship_.hp--;
-                if (ship_.hp <= 0) {
-                    gameState = GameState::Lost;
-                    LOGE("Game over: %i", ship_.hp);
-                }
+                particleSystem_->spawn(glm::vec3(bullet.x, bullet.y, 0.0f), 10);
                 break;
             }
         }
@@ -2257,30 +2313,29 @@ void Renderer::updateGameState() {
 
 }
 
-void Renderer::showDamage(Alien &alien) {
-    std::vector<Vertex> vertices = fontManager_->buildTextVertices(
-            "1", 0.0f, 0.0f, 1.0f, floatingDamageStartScale_);
-
-    VkDeviceSize vertexBytes = vertices.size() * sizeof(Vertex);
-    floatingDamageBufferCursor_ = std::max(floatingDamageBufferCursor_, powerUpTextCDOffset);
-    VkDeviceSize allocationOffset = floatingDamageBufferCursor_;
-
-    updateFontBuffer(device_, vertices, fontBufferMemory_, allocationOffset);
+void Renderer::spawnDamageText(const DamagePopupSpawned &damagePopupSpawned) {
+    std::vector<Vertex> vertices = fontManager_->buildTextVertices(damagePopupSpawned.text, 0.0f, 0.0f, 1.0f, floatingDamageStartScale_);
 
     FloatingDamageInstance instance{};
-    instance.text = "1";
-    instance.vertexOffset = allocationOffset;
-    instance.vertexCount = static_cast<uint32_t>(vertices.size());
-    instance.basePos = {alien.x, -alien.y};
+    instance.text = damagePopupSpawned.text;
+    instance.vertexOffset = 0;
+    instance.vertexCount = 0;
+    instance.basePos = {damagePopupSpawned.worldPos.x, -damagePopupSpawned.worldPos.y};
     instance.startTime = floatingDamageGlobalTime_;
     instance.lifetime = floatingDamageLifetime_;
     instance.riseSpeed = -floatingDamageRiseSpeed_;
     instance.startScale = floatingDamageStartScale_;
     instance.endScale = floatingDamageEndScale_;
     instance.fadeStart = 0.7f;
+    instance.color = damagePopupSpawned.rgba;
 
+    size_t instanceIndex = floatingDamageInstances_.size();
     floatingDamageInstances_.push_back(instance);
-    floatingDamageBufferCursor_ += vertexBytes;
+
+    PendingFloatingDamageUpload upload{};
+    upload.instanceIndex = instanceIndex;
+    upload.vertices = std::move(vertices);
+    pendingFloatingDamageUploads_.push_back(std::move(upload));
 }
 
 void Renderer::updateFloatingDamage() {
@@ -2317,6 +2372,7 @@ void Renderer::drawFloatingDamageTexts(VkCommandBuffer cmd) {
         push.startScale = instance.startScale;
         push.endScale = instance.endScale;
         push.fadeStart = instance.fadeStart;
+        push.color = instance.color;
 
         vkCmdPushConstants(cmd, fontPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
                            sizeof(FontPushConstants), &push);
@@ -2370,7 +2426,8 @@ void Renderer::animateScore() {
                 scoreText_, -0.95f, -0.80f, 1.0f, scoreScale_);
         allTextVertices[GameText::Score] = {fontVertexBuffer_, scoreVertices, scoreOffset_};
         updateFontBuffer(device_, scoreVertices, fontBufferMemory_, scoreOffset_);
-        powerUpTextCDOffset = scoreOffset_ + scoreVertices.size() * sizeof(Vertex);
+        powerUpTextStartOffset_ = scoreOffset_ + scoreVertices.size() * sizeof(Vertex);
+        powerUpTextCDOffset = std::max(powerUpTextCDOffset, powerUpTextStartOffset_);
     }
 }
 
@@ -2393,8 +2450,10 @@ void Renderer::drawFrame() {
 
         updateAliens();
         updateCollision();
+        updateHitEvents();
         powerUpManager_->updatePowerUpData();
         powerUpManager_->checkIfPowerUpCollected(ship_);
+
         updateGameState();
     }
     animateScore();
@@ -2417,21 +2476,39 @@ void Renderer::drawFrame() {
 
     glm::vec2 offsetPos{0.75, -0.8f};
 
-
+    VkDeviceSize powerUpWriteCursor = powerUpTextStartOffset_;
     for (auto &powerup: powerUpManager_->collectedPowerUps) {
-        if (powerup.second.active) {
-            std::vector<Vertex> powerupVertices = fontManager_->buildTextVertices(
-                    std::to_string(powerup.second.expiryTime), 0.0, 0.0, 1.0f, 0.002f);
-
-            powerup.second.textPos = offsetPos;
-            if (gameState == GameState::Playing) {
-                allTextVertices[powerup.first] = {fontVertexBuffer_, powerupVertices,
-                                                  powerUpTextCDOffset};
-                updateFontBuffer(device_, powerupVertices, fontBufferMemory_, powerUpTextCDOffset);
-                powerUpTextCDOffset += powerupVertices.size() * sizeof(Vertex);
-            }
-            offsetPos += glm::vec2(0.0f, 0.05f);
+        if (!powerup.second.active) {
+            continue;
         }
+
+        std::vector<Vertex> powerupVertices = fontManager_->buildTextVertices(
+                std::to_string(powerup.second.expiryTime), 0.0, 0.0, 1.0f, 0.002f);
+
+        powerup.second.textPos = offsetPos;
+        if (gameState == GameState::Playing) {
+            allTextVertices[powerup.first] = {fontVertexBuffer_, powerupVertices, powerUpWriteCursor};
+            updateFontBuffer(device_, powerupVertices, fontBufferMemory_, powerUpWriteCursor);
+        }
+        powerUpWriteCursor += powerupVertices.size() * sizeof(Vertex);
+        offsetPos += glm::vec2(0.0f, 0.05f);
+    }
+
+    powerUpTextCDOffset = std::max(powerUpTextStartOffset_, powerUpWriteCursor);
+
+    if (!pendingFloatingDamageUploads_.empty()) {
+        floatingDamageBufferCursor_ = std::max(floatingDamageBufferCursor_, powerUpTextCDOffset);
+        for (auto &upload: pendingFloatingDamageUploads_) {
+            VkDeviceSize allocationOffset = floatingDamageBufferCursor_;
+            updateFontBuffer(device_, upload.vertices, fontBufferMemory_, allocationOffset);
+
+            auto &instance = floatingDamageInstances_[upload.instanceIndex];
+            instance.vertexOffset = allocationOffset;
+            instance.vertexCount = static_cast<uint32_t>(upload.vertices.size());
+
+            floatingDamageBufferCursor_ += upload.vertices.size() * sizeof(Vertex);
+        }
+        pendingFloatingDamageUploads_.clear();
     }
 
     floatingDamageBufferCursor_ = std::max(floatingDamageBufferCursor_, powerUpTextCDOffset);
@@ -2467,7 +2544,7 @@ void Renderer::drawFrame() {
 }
 
 void Renderer::loadText() {
-    VkDeviceSize fontSize = 512 * 500;
+    VkDeviceSize fontSize = 512 * 500 * 2;
     createBuffer(device_, physicalDevice_,
                  fontSize,
                  VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
@@ -2476,7 +2553,7 @@ void Renderer::loadText() {
 
     // Title text
     std::vector<Vertex> titleVertices = fontManager_->buildTextVertices(
-            "Nairobi Space Force 2030", -0.95f, -0.85f, 0.0f, 0.002f);
+            "Space Endure v0.0.3", -0.95f, -0.85f, 0.0f, 0.002f);
     VkDeviceSize titleOffset = 0;
     updateFontBuffer(device_, titleVertices, fontBufferMemory_, titleOffset);
     allTextVertices[GameText::Title] = {fontVertexBuffer_, titleVertices, titleOffset};
@@ -2488,8 +2565,10 @@ void Renderer::loadText() {
     updateFontBuffer(device_, scoreVertices, fontBufferMemory_, scoreOffset_);
     allTextVertices[GameText::Score] = {fontVertexBuffer_, scoreVertices, scoreOffset_};
     powerUpTextCDOffset = scoreOffset_ + scoreVertices.size() * sizeof(Vertex);
+    powerUpTextStartOffset_ = powerUpTextCDOffset;
     floatingDamageBufferCursor_ = powerUpTextCDOffset;
     floatingDamageInstances_.clear();
+    pendingFloatingDamageUploads_.clear();
     floatingDamageGlobalTime_ = 0.0f;
 
 }
@@ -2694,3 +2773,58 @@ void Renderer::alienFireBullet() {
 
     }
 }
+float dt;
+
+void Renderer::updateHitEvents() {
+     dt = Time::deltaTime;
+    dmgSys.ctx.ailRules = &ailRules_;
+    dmgSys.ctx.shRules  = &shieldRules_;
+
+    // Process all hits
+    for (const auto& hit : hitEvents_) {
+        if (hit.target == 999) {
+            // Player ship
+            dmgSys.apply(
+                    /*target*/ hit.target,
+                               ship_.health,
+                               ship_.resistances,
+                               nullptr,
+                               ship_.ailments,
+                               hit,
+                               dmgApplied_,
+                               dmgPopups_
+            );
+        } else {
+            // Alien
+            dmgSys.apply(
+                    hit.target,
+                    aliens_[hit.target].health,
+                    aliens_[hit.target].resistances,
+                    nullptr,
+                    aliens_[hit.target].ailments,
+                    hit,
+                    dmgApplied_,
+                    dmgPopups_
+            );
+            if(aliens_[hit.target].health.dead) {
+                aliens_[hit.target].active = false;
+                powerUpManager_->spawnPowerUp({hit.hitWorldPos.x, hit.hitWorldPos.y});
+            }
+        }
+    }
+
+
+    for (int i = 0; i < MAX_ALIENS; i++) {
+        ailSys_.tick(dt, i, aliens_[i].health, aliens_[i].ailments, {aliens_[i].x, aliens_[i].y}, dmgPopups_);
+    }
+    ailSys_.tick(dt, 999, ship_.health, ship_.ailments, {ship_.x, ship_.y}, dmgPopups_);
+
+    // Now visualize dmgPopups_
+    for (const auto& p : dmgPopups_) {
+        spawnDamageText(p);
+        dmgPopups_.clear();
+    }
+
+
+}
+
