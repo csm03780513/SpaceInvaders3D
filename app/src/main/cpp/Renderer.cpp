@@ -2316,17 +2316,18 @@ void Renderer::updateGameState() {
 void Renderer::spawnDamageText(const DamagePopupSpawned &damagePopupSpawned) {
     std::vector<Vertex> vertices = fontManager_->buildTextVertices(damagePopupSpawned.text, 0.0f, 0.0f, 1.0f, floatingDamageStartScale_);
 
+
     FloatingDamageInstance instance{};
     instance.text = damagePopupSpawned.text;
     instance.vertexOffset = 0;
     instance.vertexCount = 0;
     instance.basePos = {damagePopupSpawned.worldPos.x, -damagePopupSpawned.worldPos.y};
     instance.startTime = floatingDamageGlobalTime_;
-    instance.lifetime = floatingDamageLifetime_;
-    instance.riseSpeed = -floatingDamageRiseSpeed_;
-    instance.startScale = floatingDamageStartScale_;
+    instance.lifetime = damagePopupSpawned.ttl;
+    instance.riseSpeed = -damagePopupSpawned.riseSpeed;
+    instance.startScale = damagePopupSpawned.startScale;
     instance.endScale = floatingDamageEndScale_;
-    instance.fadeStart = 0.7f;
+    instance.fadeStart = 0.5f;
     instance.color = damagePopupSpawned.rgba;
 
     size_t instanceIndex = floatingDamageInstances_.size();
@@ -2796,9 +2797,7 @@ void Renderer::updateHitEvents() {
             );
         } else {
             // Alien
-            dmgSys.apply(
-                    hit.target,
-                    aliens_[hit.target].health,
+            dmgSys.apply(hit.target,aliens_[hit.target].health,
                     aliens_[hit.target].resistances,
                     nullptr,
                     aliens_[hit.target].ailments,
@@ -2809,6 +2808,7 @@ void Renderer::updateHitEvents() {
             if(aliens_[hit.target].health.dead) {
                 aliens_[hit.target].active = false;
                 powerUpManager_->spawnPowerUp({hit.hitWorldPos.x, hit.hitWorldPos.y});
+                actualScore += 100;
             }
         }
     }

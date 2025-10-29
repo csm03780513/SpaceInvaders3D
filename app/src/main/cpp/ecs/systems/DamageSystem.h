@@ -80,11 +80,21 @@ struct DamageSystem {
 
             // Spawn a small per-slice popup (optional). You may prefer one merged popup below.
             {
+                glm::vec4 fColor = colorFor(t);
+                float ttl = 0.6f;
+                float riseSpeed = 0.05f;
+                float startScale = 0.0025f;
                 std::ostringstream oss;
-                if (crit) oss << "CRIT ";
+                if (crit) {
+                    oss << "CRIT ";
+                    fColor = glm::vec4{1.0f, 0.0f, 0.0f, 1.0f};
+                    riseSpeed = 0.01f;
+                    ttl = 1.5f;
+                    startScale = 0.0050f;
+                }
                 oss << (int) std::round(postRes);
                 outPopups.push_back(DamagePopupSpawned{
-                        e.hitWorldPos, oss.str(), crit ? glm::vec4{1.0f, 0.0f, 0.0f, 1.0f} : colorFor(t), 0.6f, 1.2f
+                        e.hitWorldPos, oss.str(), fColor, ttl, riseSpeed, startScale
                 });
             }
 

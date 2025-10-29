@@ -31,6 +31,7 @@ struct DamagePopupSpawned {
     glm::vec4 rgba;     // 0xAARRGGBB (map by DamageType)
     float ttl;         // seconds
     float riseSpeed;   // units/sec
+    float startScale {0.0025f};
 };
 
 

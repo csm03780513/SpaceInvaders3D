@@ -28,7 +28,7 @@ struct AilmentSystem {
                 oss << static_cast<int>(std::round(totalDotDps));
                 outPopups.push_back(DamagePopupSpawned{
                         /*worldPos*/worldPos, oss.str(),
-                        glm::vec4(0.8667f, 0.3333f, 0.6667f, 1.0f) /*mixed*/, 0.5f, 0.8f
+                        glm::vec4(0.8667f, 0.3333f, 0.6667f, 1.0f) /*mixed*/, 0.5f, 0.05f
                 });
             }
 
