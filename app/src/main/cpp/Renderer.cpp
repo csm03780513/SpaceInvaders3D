@@ -547,6 +547,8 @@ Renderer::Renderer(android_app *app) : app_(app) {
     createParticlesGfxPipeline(GfxPipelineType::HaloEffect);
 
     createGfxPipeline(GfxPipelineType::AxisAlignedBoundingBoxes);
+
+    gameState = GameState::MainMenu;
 }
 
 void Renderer::loadAllTextures() {
@@ -1982,6 +1984,14 @@ void Renderer::restartGame() {
     gameState = GameState::Playing;
 }
 
+void Renderer::setShipPosition(float x, float y, bool fireBullet) {
+    shipX_ = x;
+    shipY_ = y - 0.12f;
+    if (fireBullet) {
+        spawnBullet(BulletType::Ship, {x, y - 0.12f});
+    }
+}
+
 void Renderer::spawnBullet(BulletType bulletType, glm::vec2 spawnPos) {
 
     if (gameState == GameState::Playing) {
@@ -2036,6 +2046,32 @@ void Renderer::updateShip() const {
     ship_.x = shipX_;
     ship_.y = shipY_;
     ship_.color[0] = shipX_;
+}
+
+void Renderer::setGameState(GameState state) {
+    gameState = state;
+}
+
+GameState Renderer::getGameState() const {
+    return gameState;
+}
+
+bool Renderer::hasActiveAliens() const {
+    for (const auto &alien: aliens_) {
+        if (alien.active) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool Renderer::hasAlienBelow(float threshold) const {
+    for (const auto &alien: aliens_) {
+        if (alien.active && alien.y < threshold) {
+            return true;
+        }
+    }
+    return false;
 }
 
 void Renderer::updateBullet() {
@@ -2280,39 +2316,6 @@ void Renderer::updateCollision() {
     }
 }
 
-void Renderer::updateGameState() {
-    if (gameState == GameState::Playing) {
-        // --- Game Over: Any alien reaches the bottom (e.g. y < -0.9f)
-        for (const auto &alien: aliens_) {
-            if (alien.active && alien.y < -0.9f) {
-                gameState = GameState::Lost;
-                // Optionally: Play sound, trigger animation, etc.
-                break;
-            }
-        }
-
-        bool anyAlienAlive = false;
-        for (const auto &alien: aliens_) {
-            if (alien.active) {
-                anyAlienAlive = true;
-                break;
-            }
-        }
-        if (!anyAlienAlive) {
-            gameState = GameState::Won;
-            // Optionally: Play win sound, trigger animation, etc.
-        }
-    }
-
-    if (gameState == GameState::Lost) {
-        // Render "GAME OVER" text overlay (could be a texture, or draw a quad)
-    }
-    if (gameState == GameState::Won) {
-        // Render "YOU WIN!" text overlay
-    }
-
-}
-
 void Renderer::spawnDamageText(const DamagePopupSpawned &damagePopupSpawned) {
     std::vector<Vertex> vertices = fontManager_->buildTextVertices(damagePopupSpawned.text, 0.0f, 0.0f, 1.0f, floatingDamageStartScale_);
 
@@ -2438,25 +2441,53 @@ void Renderer::drawFrame() {
     uint32_t imageIndex;
     vkAcquireNextImageKHR(device_, swapchain_, UINT64_MAX, imageAvailableSemaphore_, VK_NULL_HANDLE,
                           &imageIndex);
-    if (gameState == GameState::Playing) {
-        if (lastFireTime > rateOfFire) {
-            lastFireTime = 0.0f;
-            canFire = true;
-        } else {
-            lastFireTime += Time::deltaTime;
-            canFire = false;
-        }
-        updateUniformBuffer();
-        updateShip();
 
-        updateAliens();
-        updateCollision();
-        updateHitEvents();
-        powerUpManager_->updatePowerUpData();
-        powerUpManager_->checkIfPowerUpCollected(ship_);
+    recordCommandBuffer(imageIndex);
 
-        updateGameState();
+    VkSubmitInfo submitInfo = {};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.waitSemaphoreCount = 1;
+    submitInfo.pWaitSemaphores = &imageAvailableSemaphore_;
+    VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+    submitInfo.pWaitDstStageMask = waitStages;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &commandBuffers_[imageIndex];
+    submitInfo.signalSemaphoreCount = 1;
+    submitInfo.pSignalSemaphores = &renderFinishedSemaphore_;
+
+    vkQueueSubmit(graphicsQueue_, 1, &submitInfo, VK_NULL_HANDLE);
+
+    VkPresentInfoKHR presentInfo = {};
+    presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+    presentInfo.waitSemaphoreCount = 1;
+    presentInfo.pWaitSemaphores = &renderFinishedSemaphore_;
+    presentInfo.swapchainCount = 1;
+    presentInfo.pSwapchains = &swapchain_;
+    presentInfo.pImageIndices = &imageIndex;
+
+    vkQueuePresentKHR(graphicsQueue_, &presentInfo);
+    vkQueueWaitIdle(graphicsQueue_);
+}
+
+void Renderer::updatePlayingLogic(float dt) {
+    if (lastFireTime > rateOfFire) {
+        lastFireTime = 0.0f;
+        canFire = true;
+    } else {
+        lastFireTime += dt;
+        canFire = false;
     }
+    updateUniformBuffer();
+    updateShip();
+
+    updateAliens();
+    updateCollision();
+    updateHitEvents();
+    powerUpManager_->updatePowerUpData();
+    powerUpManager_->checkIfPowerUpCollected(ship_);
+}
+
+void Renderer::prepareFrame(bool isPlaying) {
     animateScore();
 
     updateBullet();
@@ -2465,7 +2496,6 @@ void Renderer::drawFrame() {
     particleSystem_->updateStarField(starInstanceBufferMemory_);
     particleSystem_->updateExplosionParticles(particlesInstanceBufferMemory_);
 
-// Each frame:
     shakeOffset = {0.0f, 0.0f};
     if (shakeTimer > 0.0f) {
         shakeOffset.x = (rand() / (float) RAND_MAX - 0.5f) * 2.0f * shakeMagnitude;
@@ -2487,7 +2517,7 @@ void Renderer::drawFrame() {
                 std::to_string(powerup.second.expiryTime), 0.0, 0.0, 1.0f, 0.002f);
 
         powerup.second.textPos = offsetPos;
-        if (gameState == GameState::Playing) {
+        if (isPlaying) {
             allTextVertices[powerup.first] = {fontVertexBuffer_, powerupVertices, powerUpWriteCursor};
             updateFontBuffer(device_, powerupVertices, fontBufferMemory_, powerUpWriteCursor);
         }
@@ -2515,33 +2545,6 @@ void Renderer::drawFrame() {
     floatingDamageBufferCursor_ = std::max(floatingDamageBufferCursor_, powerUpTextCDOffset);
     floatingDamageGlobalTime_ += Time::deltaTime;
     updateFloatingDamage();
-
-
-    recordCommandBuffer(imageIndex);
-
-    VkSubmitInfo submitInfo = {};
-    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submitInfo.waitSemaphoreCount = 1;
-    submitInfo.pWaitSemaphores = &imageAvailableSemaphore_;
-    VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
-    submitInfo.pWaitDstStageMask = waitStages;
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &commandBuffers_[imageIndex];
-    submitInfo.signalSemaphoreCount = 1;
-    submitInfo.pSignalSemaphores = &renderFinishedSemaphore_;
-
-    vkQueueSubmit(graphicsQueue_, 1, &submitInfo, VK_NULL_HANDLE);
-
-    VkPresentInfoKHR presentInfo = {};
-    presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-    presentInfo.waitSemaphoreCount = 1;
-    presentInfo.pWaitSemaphores = &renderFinishedSemaphore_;
-    presentInfo.swapchainCount = 1;
-    presentInfo.pSwapchains = &swapchain_;
-    presentInfo.pImageIndices = &imageIndex;
-
-    vkQueuePresentKHR(graphicsQueue_, &presentInfo);
-    vkQueueWaitIdle(graphicsQueue_);
 }
 
 void Renderer::loadText() {

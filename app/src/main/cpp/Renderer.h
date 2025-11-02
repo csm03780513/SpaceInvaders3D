@@ -28,9 +28,26 @@ public:
 
     void drawFrame();
 
+    void updatePlayingLogic(float dt);
+    void prepareFrame(bool isPlaying);
+
     void updateShip() const;
 
     void spawnBullet(BulletType bulletType,glm::vec2 spawnPos);
+
+    void setShipPosition(float x, float y, bool fireBullet);
+
+    void restartGame();
+
+    void stopAudioPlayer();
+
+    void resumeAudioPlayer();
+
+    void setGameState(GameState state);
+    [[nodiscard]] GameState getGameState() const;
+
+    [[nodiscard]] bool hasActiveAliens() const;
+    [[nodiscard]] bool hasAlienBelow(float threshold) const;
 
     float shipX_ = 0.0f;
     float shipY_ = 0.0f;
@@ -46,16 +63,9 @@ public:
     float shakeMagnitude = 0.025f; // NDC units (tune as desired)
     glm::vec2 shakeOffset{0.0f};
 
+private:
     GameState gameState;
 
-
-    void restartGame();
-
-    void stopAudioPlayer();
-
-    void resumeAudioPlayer();
-
-private:
     std::unique_ptr<FontManager> fontManager_;
     std::unique_ptr<ParticleSystem> particleSystem_;
     std::shared_ptr<PowerUpManager> powerUpManager_;
@@ -262,8 +272,6 @@ private:
     void updateUniformBuffer();
 
     void updateCollision();
-
-    void updateGameState();
 
     void createPipeline(GfxPipelineData &gfxPipelineData,GfxPipelineType gfxPipelineType);
 
