@@ -84,10 +84,10 @@ void ParticleSystem::updateExplosionParticles(VkDeviceMemory particlesInstanceBu
     for (int i = 0; i < MAX_PARTICLES; ++i) {
         ParticleInstance &p = particles[i];
         if (!p.active) continue;
-        p.velocity += p.acceleration * Time::deltaTime;
-        p.position += p.velocity * Time::deltaTime;
+        p.velocity += p.acceleration * GameTime::deltaTime;
+        p.position += p.velocity * GameTime::deltaTime;
         p.center = p.position;
-        p.life -= Time::deltaTime;
+        p.life -= GameTime::deltaTime;
         liveParticles.push_back(p);
         p.color.a = glm::clamp(p.life / p.maxLife, 0.0f, 1.0f); // Fade out
         if (p.life <= 0) p.active = false;
@@ -105,7 +105,7 @@ void ParticleSystem::updateExplosionParticles(VkDeviceMemory particlesInstanceBu
 
 void ParticleSystem::updateStarField(VkDeviceMemory starInstanceBufferMemory) {
     for (auto &star: starInstances) {
-        star.position.y += star.speed * Time::deltaTime;
+        star.position.y += star.speed * GameTime::deltaTime;
         if (star.position.y > 1.1f) { // Slightly below bottom, wrap to top
             star.position.y = -1.1f;
             // Optionally randomize X/speed/scale/brightness for more variation
@@ -166,7 +166,7 @@ float totalTime = 0.0f;
 
 void ParticleSystem::updateHaloEffect(Ship ship) {
     if (!powerUpManager->shieldActive) return;
-    totalTime += Time::deltaTime;
+    totalTime += GameTime::deltaTime;
     ShieldInstance halo{};
     halo.center = {ship.x, ship.y};
     halo.size = ship.size * 1.5f; // slightly larger than ship

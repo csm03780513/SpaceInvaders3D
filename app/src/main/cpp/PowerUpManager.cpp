@@ -34,7 +34,7 @@ void PowerUpManager::updatePowerUpData() {
     updatePowerUpExpiry();
     for (auto &p: powerUps_) {
         if (!p.active) continue;
-        p.pos.y -= p.fallSpeed * Time::deltaTime; // Move downwards
+        p.pos.y -= p.fallSpeed * GameTime::deltaTime; // Move downwards
         // Deactivate if off-screen
         if (p.pos.y < -1.1f) {
             p.active = false;
@@ -54,7 +54,7 @@ void PowerUpManager::recordCommandBuffer(VkCommandBuffer cmd, VkPipelineLayout p
                                          VkDescriptorSet descriptorSet) {
 
     for (auto powerUp: powerUps_) {
-        elapsedTime_ += Time::deltaTime;
+        elapsedTime_ += GameTime::deltaTime;
         MainPushConstants pushConstants = {};
         pushConstants.pos = {powerUp.pos.x, -powerUp.pos.y};
         pushConstants.shakeOffset = shakeOffset;
@@ -106,12 +106,12 @@ void PowerUpManager::activatePowerUp(PowerUpType type) {
 void PowerUpManager::updatePowerUpExpiry() {
     // In your update:
     if (doubleShotActive) {
-        doubleShotTimer -= Time::deltaTime;
+        doubleShotTimer -= GameTime::deltaTime;
         if (doubleShotTimer <= 0.0f) doubleShotActive = false;
         collectedPowerUps[GameText::DoubleShotCD] = {glm::vec2(0.0),doubleShotActive, (uint32_t) doubleShotTimer,2};
     }
     if (shieldActive) {
-        shieldTimer -= Time::deltaTime;
+        shieldTimer -= GameTime::deltaTime;
         if (shieldTimer <= 0.0f) shieldActive = false;
         collectedPowerUps[GameText::ShieldCD] = {glm::vec2(0.0),shieldActive, (uint32_t) shieldTimer,3};
     }

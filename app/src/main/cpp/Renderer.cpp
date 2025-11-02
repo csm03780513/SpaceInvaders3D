@@ -2078,9 +2078,9 @@ void Renderer::updateBullet() {
     for (int i = 0; i < MAX_BULLETS; ++i) {
         if (bullets_[i].active) {
             if (bullets_[i].bulletType == BulletType::Ship)
-                bullets_[i].y -= bulletMoveSpeed_ * Time::deltaTime; // Move up
+                bullets_[i].y -= bulletMoveSpeed_ * GameTime::deltaTime; // Move up
             if (bullets_[i].bulletType == BulletType::Alien)
-                bullets_[i].y += 0.5f * Time::deltaTime;             // Move down
+                bullets_[i].y += 0.5f * GameTime::deltaTime;             // Move down
 
             if ((bullets_[i].bulletType == BulletType::Ship && bullets_[i].y < -1.0f) ||
                 (bullets_[i].bulletType == BulletType::Alien && bullets_[i].y > 1.0f)) {
@@ -2100,27 +2100,27 @@ void Renderer::updateAliens() {
 //        timePassed += Time::deltaTime;
         if (!aliens_[i].active) continue;
         // update flash amount (fade in/out) smoothly
-        alienPC_[i].flashAmount -= Time::deltaTime * 5.0f; // fade speed (0.2s)
+        alienPC_[i].flashAmount -= GameTime::deltaTime * 5.0f; // fade speed (0.2s)
         if (alienPC_[i].flashAmount < 0.0f) alienPC_[i].flashAmount = 0.0f;
 
         switch (aliens_[i].movementType) {
             case TogetherOne:
-                aliens_[i].y -= aliens_[i].vy * Time::deltaTime;
+                aliens_[i].y -= aliens_[i].vy * GameTime::deltaTime;
                 break;
             case SineWave:
-                aliens_[i].movementTimer += Time::deltaTime;
+                aliens_[i].movementTimer += GameTime::deltaTime;
                 aliens_[i].x = aliens_[i].baseX + aliens_[i].amplitude *
                                                   sin((aliens_[i].movementTimer *
                                                        aliens_[i].frequency));
-                aliens_[i].y -= aliens_[i].vy * Time::deltaTime;
+                aliens_[i].y -= aliens_[i].vy * GameTime::deltaTime;
                 break;
             case MySnakeWave:
-                aliens_[i].movementTimer += Time::deltaTime;
+                aliens_[i].movementTimer += GameTime::deltaTime;
                 aliens_[i].x = sin((aliens_[i].movementTimer + aliens_[i].baseX) * aliens_[i].frequency);
-                aliens_[i].y -= aliens_[i].vy * Time::deltaTime;
+                aliens_[i].y -= aliens_[i].vy * GameTime::deltaTime;
                 break;
             case SnakeWave: {
-                aliens_[i].movementTimer += Time::deltaTime;
+                aliens_[i].movementTimer += GameTime::deltaTime;
 
                 const int row = i / NUM_ALIENS_X;
                 const int col = i % NUM_ALIENS_X;
@@ -2139,8 +2139,8 @@ void Renderer::updateAliens() {
                 // Add a subtle vertical bob to make the formation feel alive.
                 const float verticalBobVelocity =
                         cos(basePhase + rowPhase) * aliens_[i].frequency * 0.12f;
-                aliens_[i].y -= aliens_[i].vy * Time::deltaTime;
-                aliens_[i].y += verticalBobVelocity * Time::deltaTime;
+                aliens_[i].y -= aliens_[i].vy * GameTime::deltaTime;
+                aliens_[i].y += verticalBobVelocity * GameTime::deltaTime;
 
                 // Nudge columns out of phase to emphasize the snake-like trail.
                 aliens_[i].x += 0.05f * sin(basePhase * 1.8f + colPhase + rowPhase);
@@ -2148,7 +2148,7 @@ void Renderer::updateAliens() {
                 break;
             }
             case JustGoDown:
-                aliens_[i].y -= aliens_[i].vy * Time::deltaTime;
+                aliens_[i].y -= aliens_[i].vy * GameTime::deltaTime;
                 break;
             case Circle:
                 break;
@@ -2157,7 +2157,7 @@ void Renderer::updateAliens() {
                 if (aliens_[i].x > 0.85f) aliens_[i].x = 0.85f;
                 if (aliens_[i].x < -0.85f) aliens_[i].x = -0.85f;
 
-                aliens_[i].x += alienMoveSpeed_ * alienDirection_ * Time::deltaTime;
+                aliens_[i].x += alienMoveSpeed_ * alienDirection_ * GameTime::deltaTime;
 
                 // Check if any alien hits the left or right edge
                 if (aliens_[i].x > 0.85f || aliens_[i].x < -0.85f) {
@@ -2393,7 +2393,7 @@ void Renderer::animateScore() {
     // Roll toward actualScore_
     if (displayedScore_ != newScore) {
         float diff = newScore - displayedScore_;
-        float step = scoreAnimSpeed_ * Time::deltaTime;
+        float step = scoreAnimSpeed_ * GameTime::deltaTime;
         if (fabs(diff) < step)
             displayedScore_ = static_cast<float>(newScore);
         else
@@ -2414,7 +2414,7 @@ void Renderer::animateScore() {
     // Animate the scale back to normal (damped spring)
     if (scoreScale_ != scoreScaleTarget_) {
         float delta = scoreScaleTarget_ - scoreScale_;
-        float snap = scoreScaleSpeed_ * Time::deltaTime;
+        float snap = scoreScaleSpeed_ * GameTime::deltaTime;
         if (fabs(delta) < 0.0001f)
             scoreScale_ = scoreScaleTarget_;
         else
@@ -2500,9 +2500,9 @@ void Renderer::prepareFrame(bool isPlaying) {
     if (shakeTimer > 0.0f) {
         shakeOffset.x = (rand() / (float) RAND_MAX - 0.5f) * 2.0f * shakeMagnitude;
         shakeOffset.y = (rand() / (float) RAND_MAX - 0.5f) * 2.0f * shakeMagnitude;
-        shakeTimer -= Time::deltaTime;
+        shakeTimer -= GameTime::deltaTime;
     }
-    shipPC_.flashAmount -= Time::deltaTime * 5.0f; // fade speed (0.2s)
+    shipPC_.flashAmount -= GameTime::deltaTime * 5.0f; // fade speed (0.2s)
     if (shipPC_.flashAmount < 0.0f) shipPC_.flashAmount = 0.0f;
 
     glm::vec2 offsetPos{0.75, -0.8f};
@@ -2543,7 +2543,7 @@ void Renderer::prepareFrame(bool isPlaying) {
     }
 
     floatingDamageBufferCursor_ = std::max(floatingDamageBufferCursor_, powerUpTextCDOffset);
-    floatingDamageGlobalTime_ += Time::deltaTime;
+    floatingDamageGlobalTime_ += GameTime::deltaTime;
     updateFloatingDamage();
 }
 
@@ -2766,7 +2766,7 @@ Renderer::~Renderer() {
 void Renderer::alienFireBullet() {
     if (gameState == GameState::Playing) {
         static float timer = 0.0f;
-        timer += Time::deltaTime;
+        timer += GameTime::deltaTime;
         if (timer > 1.0f) {
             timer = 0.0f;
             Alien alien = aliens_[Util::getRandomUint(0, MAX_ALIENS)];
@@ -2780,7 +2780,7 @@ void Renderer::alienFireBullet() {
 float dt;
 
 void Renderer::updateHitEvents() {
-     dt = Time::deltaTime;
+     dt = GameTime::deltaTime;
     dmgSys.ctx.ailRules = &ailRules_;
     dmgSys.ctx.shRules  = &shieldRules_;
 

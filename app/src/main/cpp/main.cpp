@@ -102,9 +102,9 @@ void android_main(struct android_app *app) {
             }
         }
 
-        Time::updateTime();
+        GameTime::updateTime();
         if (game) {
-            game->update(Time::deltaTime);
+            game->update(GameTime::deltaTime);
             game->render();
         }
     }

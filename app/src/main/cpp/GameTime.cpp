@@ -3,11 +3,11 @@
 //
 #include "GameTime.h"
 
-float Time::deltaTime = 0.0f;
+float GameTime::deltaTime = 0.0f;
 using Clock = std::chrono::high_resolution_clock;
 static auto lastFrameTime = Clock::now();
 
-void Time::updateTime() {
+void GameTime::updateTime() {
         auto now = Clock::now();
         float actualDeltaTime = std::chrono::duration<float>(now - lastFrameTime).count();
         actualDeltaTime = std::min(actualDeltaTime, 0.0167f);
@@ -15,6 +15,6 @@ void Time::updateTime() {
         deltaTime = actualDeltaTime;
 }
 
-Time::Time() = default;
+GameTime::GameTime() = default;
 
-Time::~Time() = default;
+GameTime::~GameTime() = default;

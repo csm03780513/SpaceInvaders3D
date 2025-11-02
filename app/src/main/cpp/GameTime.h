@@ -9,10 +9,10 @@
 #include <memory>
 #include <chrono>
 #include "GameObjectData.h"
-class Time {
+class GameTime {
 public:
-    Time();
-    ~Time();
+    GameTime();
+    ~GameTime();
     static float deltaTime;
     static void updateTime();
 private:
