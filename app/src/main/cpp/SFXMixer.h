@@ -1,8 +1,6 @@
 #pragma once
 
 #include <oboe/Oboe.h>
-#include <android/asset_manager.h>
-
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -10,12 +8,14 @@
 #include <unordered_map>
 #include <vector>
 
+#include "platform/PlatformServices.h"
+
 class SFXMixer : public oboe::AudioStreamCallback {
 public:
     SFXMixer() = default;
     ~SFXMixer() override = default;
 
-    void initialize(AAssetManager *assetManager, int sampleRate, int channelCount = 1);
+    void initialize(IPlatformServices &platformServices, int sampleRate, int channelCount = 1);
 
     void loadClip(const std::string &clipId, const std::string &assetName);
     void playClip(const std::string &clipId, float volume = 1.0f);
@@ -50,7 +50,7 @@ private:
     std::vector<float> decodeWav(const std::vector<uint8_t> &bytes) const;
     std::vector<float> decodeMp3(const std::vector<uint8_t> &bytes) const;
 
-    AAssetManager *assetManager_ = nullptr;
+    IPlatformServices *platformServices_ = nullptr;
     int sampleRate_ = 0;
     int channelCount_ = 0;
 

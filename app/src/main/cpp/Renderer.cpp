@@ -46,7 +46,7 @@ float alienDirection_ = 1.0f; // 1 = right, -1 = left
 DamageSystem dmgSys;
 
 
-std::vector<char> loadShaderAsset(AAssetManager *mgr, const char *filename);
+std::vector<char> loadShaderAsset(IPlatformServices &platform, const char *filename);
 
 VkShaderModule createShaderModule(VkDevice device, const std::vector<char> &code);
 
@@ -74,7 +74,7 @@ void copyBufferToImage(VkDevice device, VkCommandPool commandPool, VkQueue graph
 void createTextureSampler(VkDevice device, VkSampler &sampler, GameTextureType type);
 
 void
-setShaderStages(VkDevice device, AAssetManager *assetManager, const char *spirvVertexFilename,
+setShaderStages(VkDevice device, IPlatformServices &platform, const char *spirvVertexFilename,
                 const char *spirvFragmentFilename,
                 GfxPipelineData &graphicsPipelineData);
 
@@ -153,14 +153,10 @@ inline bool isCollision(const Alien &alien, const Bullet &bullet) {
     return false;
 }
 
-std::vector<char> loadShaderAsset(AAssetManager *mgr, const char *filename) {
+std::vector<char> loadShaderAsset(IPlatformServices &platform, const char *filename) {
     std::string fullPath = "shaders/" + std::string(filename);
-    AAsset *asset = AAssetManager_open(mgr, fullPath.c_str(), AASSET_MODE_STREAMING);
-    size_t size = AAsset_getLength(asset);
-    std::vector<char> buffer(size);
-    AAsset_read(asset, buffer.data(), size);
-    AAsset_close(asset);
-    return buffer;
+    auto bytes = platform.loadAsset(fullPath);
+    return std::vector<char>(bytes.begin(), bytes.end());
 }
 
 
@@ -176,31 +172,26 @@ void Renderer::loadTexture(const char *filename, VkImage &vkImage, VkDeviceMemor
 
     LOGE("file path:%s", fullPath.c_str());
     std::vector<uint8_t> pixelData;
-    int textureWidth, textureHeight;
-//    AAsset *asset = AAssetManager_open(assetManager_, "textures/alien_ship_1.png", AASSET_MODE_STREAMING);
-    AAsset *asset = AAssetManager_open(assetManager_, fullPath.c_str(), AASSET_MODE_STREAMING);
+    int textureWidth = 0;
+    int textureHeight = 0;
     bool imageIsLoaded = true;
-    if (!asset) {
-        LOGE("failed to load assset: %s", fullPath.c_str());
+
+    auto fileData = platformServices_.loadAsset(fullPath);
+    if (fileData.empty()) {
+        LOGE("failed to load asset: %s", fullPath.c_str());
         imageIsLoaded = false;
+    } else {
+        int channels = 0;
+        unsigned char *decoded = stbi_load_from_memory(fileData.data(), static_cast<int>(fileData.size()),
+                                                       &textureWidth, &textureHeight,
+                                                       &channels, STBI_rgb_alpha);
+        if (!decoded) {
+            imageIsLoaded = false;
+        } else {
+            pixelData.assign(decoded, decoded + textureWidth * textureHeight * 4);
+            stbi_image_free(decoded);
+        }
     }
-
-    size_t fileLength = AAsset_getLength(asset);
-    std::vector<uint8_t> fileData(fileLength);
-    AAsset_read(asset, fileData.data(), fileLength);
-    AAsset_close(asset);
-
-
-    int channels;
-    unsigned char *decoded = stbi_load_from_memory(fileData.data(), fileLength, &textureWidth,
-                                                   &textureHeight,
-                                                   &channels, STBI_rgb_alpha);
-
-    if (!decoded) imageIsLoaded = false;
-
-    pixelData.assign(decoded, decoded + textureWidth * textureHeight * 4);
-
-    stbi_image_free(decoded);
 
     if (gameTextureType == GameTextureType::FontAtlas) {
         // 2. Describe your atlas grid
@@ -513,12 +504,11 @@ void Renderer::resumeAudioPlayer() {
     }
 }
 
-Renderer::Renderer(android_app *app) : app_(app) {
+Renderer::Renderer(IPlatformServices &platformServices) : platformServices_(platformServices) {
 
     initVulkan();
-    assetManager_ = app_->activity->assetManager;
     sfxMixer_ = std::make_shared<SFXMixer>();
-    sfxMixer_->initialize(assetManager_, SFX_SAMPLE_RATE, SFX_CHANNELS);
+    sfxMixer_->initialize(platformServices_, SFX_SAMPLE_RATE, SFX_CHANNELS);
     sfxMixer_->loadClip("shoot", "shoot.wav");
     sfxMixer_->loadClip("explode_1", "explode_1.wav");
     sfxMixer_->loadClip("explode_2", "explode_2.wav");
@@ -942,13 +932,17 @@ void Renderer::createInstance() {
 
 void Renderer::createSurface() {
     // Create Android surface from ANativeWindow
+    WindowInfo info = platformServices_.getWindowInfo();
+    auto *nativeWindow = static_cast<ANativeWindow *>(info.nativeWindow);
+    if (!nativeWindow) {
+        throw std::runtime_error("Native window unavailable for Vulkan surface creation");
+    }
+
     VkAndroidSurfaceCreateInfoKHR surfInfo = {};
     surfInfo.sType = VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR;
-    surfInfo.window = app_->window;
+    surfInfo.window = nativeWindow;
 
-    int w = ANativeWindow_getWidth(app_->window);
-    int h = ANativeWindow_getHeight(app_->window);
-    LOGE("ANativeWindow = %p, scale = %dx%d", app_->window, w, h);
+    LOGE("ANativeWindow = %p, scale = %dx%d", nativeWindow, info.width, info.height);
 
     VkResult surfaceResult = vkCreateAndroidSurfaceKHR(instance_, &surfInfo, nullptr, &surface_);
     if (surfaceResult != VK_SUCCESS) {
@@ -1279,7 +1273,7 @@ void Renderer::createMainGfxPipeline() {
             .scissor {.offset{0, 0}, .extent = swapchainExtent_}
     };
 
-    setShaderStages(device_, assetManager_, "main.vert.spv", "main.frag.spv",
+    setShaderStages(device_, platformServices_, "main.vert.spv", "main.frag.spv",
                     graphicsPipelineData);
     setColorBlending(graphicsPipelineData);
     setViewPortState(graphicsPipelineData);
@@ -1300,7 +1294,7 @@ void Renderer::createOverlayGfxPipeline() {
             .scissor {.offset{0, 0}, .extent = swapchainExtent_}
     };
 
-    setShaderStages(device_, assetManager_, "overlay.vert.spv", "overlay.frag.spv",
+    setShaderStages(device_, platformServices_, "overlay.vert.spv", "overlay.frag.spv",
                     graphicsPipelineData);
     setColorBlending(graphicsPipelineData);
     setViewPortState(graphicsPipelineData);
@@ -1355,7 +1349,7 @@ void Renderer::createFontGfxPipeline() {
             .scissor {.offset{0, 0}, .extent = swapchainExtent_}
     };
 
-    setShaderStages(device_, assetManager_, "font.vert.spv", "font.frag.spv",
+    setShaderStages(device_, platformServices_, "font.vert.spv", "font.frag.spv",
                     graphicsPipelineData);
     setColorBlending(graphicsPipelineData);
     setViewPortState(graphicsPipelineData);
@@ -1425,7 +1419,7 @@ void Renderer::createGfxPipeline(GfxPipelineType gfxPipelineType) {
         case GfxPipelineType::AxisAlignedBoundingBoxes:
             graphicsPipelineData.inputAssemblyState.topology = VK_PRIMITIVE_TOPOLOGY_LINE_STRIP;
 
-            setShaderStages(device_, assetManager_, "aabb.vert.spv", "aabb.frag.spv",
+            setShaderStages(device_, platformServices_, "aabb.vert.spv", "aabb.frag.spv",
                             graphicsPipelineData);
             bindings = Vertex::getBindingDescriptions();
             attributes = Vertex::getAttributeDescriptions();
@@ -1475,7 +1469,7 @@ void Renderer::createParticlesGfxPipeline(GfxPipelineType gfxPipelineType) {
     };
 
     if (gfxPipelineType == GfxPipelineType::ExplosionParticles) {
-        setShaderStages(device_, assetManager_, "particles_instanced.vert.spv",
+        setShaderStages(device_, platformServices_, "particles_instanced.vert.spv",
                         "particles_instanced.frag.spv",
                         graphicsPipelineData);
 
@@ -1493,7 +1487,7 @@ void Renderer::createParticlesGfxPipeline(GfxPipelineType gfxPipelineType) {
     }
 
     if (gfxPipelineType == GfxPipelineType::StarParticles) {
-        setShaderStages(device_, assetManager_, "stars_instanced.vert.spv",
+        setShaderStages(device_, platformServices_, "stars_instanced.vert.spv",
                         "stars_instanced.frag.spv",
                         graphicsPipelineData);
 
@@ -1511,7 +1505,7 @@ void Renderer::createParticlesGfxPipeline(GfxPipelineType gfxPipelineType) {
     }
 
     if (gfxPipelineType == GfxPipelineType::HaloEffect) {
-        setShaderStages(device_, assetManager_, "halo.vert.spv",
+        setShaderStages(device_, platformServices_, "halo.vert.spv",
                         "halo.frag.spv",
                         graphicsPipelineData);
         bindings = ShieldInstance::getBindingDescriptions();
@@ -1575,12 +1569,12 @@ void setRasterizer(GfxPipelineData &graphicsPipelineData) {
     overlayRasterizer.depthBiasEnable = VK_FALSE;
 }
 
-void setShaderStages(VkDevice device, AAssetManager *assetManager, const char *spirvVertexFilename,
+void setShaderStages(VkDevice device, IPlatformServices &platform, const char *spirvVertexFilename,
                      const char *spirvFragmentFilename,
                      GfxPipelineData &graphicsPipelineData) {
 
-    auto vertShaderCode = loadShaderAsset(assetManager, spirvVertexFilename);
-    auto fragShaderCode = loadShaderAsset(assetManager, spirvFragmentFilename);
+    auto vertShaderCode = loadShaderAsset(platform, spirvVertexFilename);
+    auto fragShaderCode = loadShaderAsset(platform, spirvFragmentFilename);
     VkShaderModule vertShaderModule = createShaderModule(device, vertShaderCode);
     VkShaderModule fragShaderModule = createShaderModule(device, fragShaderCode);
 

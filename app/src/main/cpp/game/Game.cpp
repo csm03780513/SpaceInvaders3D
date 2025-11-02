@@ -9,42 +9,45 @@
 #include "PlayingState.h"
 #include "GameOverState.h"
 #include "input/InputCommand.h"
+#include "platform/PlatformServices.h"
 
 namespace {
 constexpr const char *kLogTag = "SpaceInvaders3D";
 }
 
-Game::Game(android_app *app) : app_(app) {}
+Game::Game(IPlatformServices &platformServices) : platformServices_(platformServices) {
+    LifecycleCallbacks callbacks{};
+    callbacks.onWindowCreated = [this]() { onWindowCreated(); };
+    callbacks.onWindowDestroyed = [this]() { onWindowDestroyed(); };
+    callbacks.onGainedAudioFocus = [this]() { onFocusGained(); };
+    callbacks.onLostAudioFocus = [this]() { onFocusLost(); };
+    platformServices_.setLifecycleCallbacks(callbacks);
+}
 
 Game::~Game() {
+    platformServices_.setLifecycleCallbacks({});
     shutdownRenderer();
 }
 
-void Game::handleCmd(int32_t cmd) {
-    switch (cmd) {
-        case APP_CMD_INIT_WINDOW:
-            ensureRenderer();
-            break;
-        case APP_CMD_GAINED_FOCUS:
-            if (renderer_) {
-                renderer_->resumeAudioPlayer();
-            }
-            break;
-        case APP_CMD_LOST_FOCUS:
-            if (renderer_) {
-                renderer_->stopAudioPlayer();
-            }
-            break;
-        case APP_CMD_TERM_WINDOW:
-            if (renderer_) {
-                renderer_->stopAudioPlayer();
-            }
-            break;
-        case APP_CMD_DESTROY:
-            shutdownRenderer();
-            break;
-        default:
-            break;
+void Game::onWindowCreated() {
+    ensureRenderer();
+}
+
+void Game::onWindowDestroyed() {
+    if (renderer_) {
+        renderer_->stopAudioPlayer();
+    }
+}
+
+void Game::onFocusGained() {
+    if (renderer_) {
+        renderer_->resumeAudioPlayer();
+    }
+}
+
+void Game::onFocusLost() {
+    if (renderer_) {
+        renderer_->stopAudioPlayer();
     }
 }
 
@@ -94,11 +97,12 @@ void Game::requestState(GameState state) {
 }
 
 void Game::ensureRenderer() {
-    if (renderer_ || !app_->window) {
+    WindowInfo windowInfo = platformServices_.getWindowInfo();
+    if (renderer_ || !windowInfo.nativeWindow) {
         return;
     }
     try {
-        renderer_ = std::make_unique<Renderer>(app_);
+        renderer_ = std::make_unique<Renderer>(platformServices_);
     } catch (const std::exception &e) {
         __android_log_print(ANDROID_LOG_ERROR, kLogTag, "Renderer init failed: %s", e.what());
         renderer_.reset();
