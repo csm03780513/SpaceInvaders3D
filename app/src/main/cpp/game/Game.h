@@ -1,6 +1,8 @@
 #pragma once
 
 #include <memory>
+#include <mutex>
+#include <queue>
 
 #include <android_native_app_glue.h>
 
@@ -13,6 +15,7 @@ class IGameState;
 class MainMenuState;
 class PlayingState;
 class GameOverState;
+class InputCommand;
 
 class Game {
 public:
@@ -21,6 +24,9 @@ public:
 
     void handleCmd(int32_t cmd);
     bool handleInput(const InputEvent &event);
+
+    void enqueueCommand(std::unique_ptr<InputCommand> command);
+    GameState getCurrentStateType() const;
 
     void update(float dt);
     void render();
@@ -33,6 +39,7 @@ private:
     void shutdownRenderer();
     void applyPendingStateChange();
     void changeState(GameState state);
+    void processInputCommands();
 
     android_app *app_;
     std::unique_ptr<Renderer> renderer_;
@@ -47,4 +54,7 @@ private:
 
     bool pendingStateChange_{false};
     GameState pendingStateTarget_{GameState::MainMenu};
+
+    std::queue<std::unique_ptr<InputCommand>> pendingCommands_;
+    std::mutex commandMutex_;
 };
