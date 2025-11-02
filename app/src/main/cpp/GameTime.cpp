@@ -3,16 +3,28 @@
 //
 #include "GameTime.h"
 
-float GameTime::deltaTime = 0.0f;
-using Clock = std::chrono::high_resolution_clock;
-static auto lastFrameTime = Clock::now();
+#include "platform/PlatformServices.h"
 
-void GameTime::updateTime() {
-        auto now = Clock::now();
-        float actualDeltaTime = std::chrono::duration<float>(now - lastFrameTime).count();
-        actualDeltaTime = std::min(actualDeltaTime, 0.0167f);
-        lastFrameTime = now;
-        deltaTime = actualDeltaTime;
+#include <algorithm>
+
+float GameTime::deltaTime = 0.0f;
+
+namespace {
+bool gInitialized = false;
+double gLastTimeSeconds = 0.0;
+}
+
+void GameTime::updateTime(IPlatformServices &platformServices) {
+    double now = platformServices.getMonotonicTimeSeconds();
+    if (!gInitialized) {
+        gLastTimeSeconds = now;
+        gInitialized = true;
+    }
+
+    float actualDeltaTime = static_cast<float>(now - gLastTimeSeconds);
+    actualDeltaTime = std::min(actualDeltaTime, 0.0167f);
+    gLastTimeSeconds = now;
+    deltaTime = actualDeltaTime;
 }
 
 GameTime::GameTime() = default;

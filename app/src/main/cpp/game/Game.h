@@ -4,10 +4,10 @@
 #include <mutex>
 #include <queue>
 
-#include <android_native_app_glue.h>
-
 #include "GameObjectData.h"
 #include "InputEvent.h"
+
+class IPlatformServices;
 
 class Renderer;
 class RenderContext;
@@ -19,10 +19,13 @@ class InputCommand;
 
 class Game {
 public:
-    explicit Game(android_app *app);
+    explicit Game(IPlatformServices &platformServices);
     ~Game();
 
-    void handleCmd(int32_t cmd);
+    void onWindowCreated();
+    void onWindowDestroyed();
+    void onFocusGained();
+    void onFocusLost();
     bool handleInput(const InputEvent &event);
 
     void enqueueCommand(std::unique_ptr<InputCommand> command);
@@ -41,7 +44,7 @@ private:
     void changeState(GameState state);
     void processInputCommands();
 
-    android_app *app_;
+    IPlatformServices &platformServices_;
     std::unique_ptr<Renderer> renderer_;
     std::unique_ptr<RenderContext> renderContext_;
 

@@ -24,8 +24,8 @@ namespace {
     }
 }
 
-void SFXMixer::initialize(AAssetManager *assetManager, int sampleRate, int channelCount) {
-    assetManager_ = assetManager;
+void SFXMixer::initialize(IPlatformServices &platformServices, int sampleRate, int channelCount) {
+    platformServices_ = &platformServices;
     sampleRate_ = sampleRate;
     channelCount_ = channelCount;
     ensureStream();
@@ -33,7 +33,7 @@ void SFXMixer::initialize(AAssetManager *assetManager, int sampleRate, int chann
 
 void SFXMixer::ensureStream() {
     if (stream_) return;
-    if (!assetManager_) {
+    if (!platformServices_) {
         throw std::runtime_error("SFXMixer::ensureStream called before initialize");
     }
 
@@ -53,7 +53,7 @@ void SFXMixer::ensureStream() {
 }
 
 void SFXMixer::loadClip(const std::string &clipId, const std::string &assetName) {
-    if (!assetManager_) {
+    if (!platformServices_) {
         throw std::runtime_error("SFXMixer::loadClip called before initialize");
     }
 
@@ -153,22 +153,20 @@ oboe::DataCallbackResult SFXMixer::onAudioReady(oboe::AudioStream *,
 }
 
 std::vector<uint8_t> SFXMixer::loadAssetToMemory(const std::string &assetName) const {
+    if (!platformServices_) {
+        return {};
+    }
+
     std::string fullPath = assetName;
     if (!assetName.empty() && assetName.find('/') == std::string::npos) {
         fullPath = std::string(kAudioAssetPrefix) + assetName;
     }
 
-    AAsset *asset = AAssetManager_open(assetManager_, fullPath.c_str(), AASSET_MODE_STREAMING);
-    if (!asset) {
+    auto bytes = platformServices_->loadAsset(fullPath);
+    if (bytes.empty()) {
         logError("Asset not found");
-        return {};
     }
-
-    size_t size = AAsset_getLength(asset);
-    std::vector<uint8_t> data(size);
-    AAsset_read(asset, data.data(), size);
-    AAsset_close(asset);
-    return data;
+    return bytes;
 }
 
 std::vector<float> SFXMixer::decodeAudio(const std::vector<uint8_t> &bytes,

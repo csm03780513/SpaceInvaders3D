@@ -10,6 +10,7 @@
 #include "Util.h"
 #include "ECS/events/CombatEvents.h"
 #include "ECS/systems/AilmentSystem.h"
+#include "platform/PlatformServices.h"
 
 static constexpr int NUM_ALIENS_X = 8;
 static constexpr int NUM_ALIENS_Y = 3;
@@ -22,7 +23,7 @@ static constexpr int MAX_BULLETS = 50;
 
 class Renderer {
 public:
-    explicit Renderer(android_app *app);
+    explicit Renderer(IPlatformServices &platformServices);
 
     ~Renderer();
 
@@ -73,8 +74,7 @@ private:
     std::vector<std::string> explosionClipIds_;
     std::shared_ptr<Util> util_;
     UniformBufferObject ubo_;
-    android_app *app_;
-    AAssetManager *assetManager_; // assetmgr
+    IPlatformServices &platformServices_;
     VkInstance instance_{VK_NULL_HANDLE};
     VkSurfaceKHR surface_{VK_NULL_HANDLE};
     VkPhysicalDevice physicalDevice_{VK_NULL_HANDLE};

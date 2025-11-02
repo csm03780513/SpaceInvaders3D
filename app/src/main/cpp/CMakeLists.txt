@@ -24,6 +24,7 @@ add_library(SpaceInvaders3D SHARED
         input/FireCommand.cpp
         input/MoveShipCommand.cpp
         input/RestartGameCommand.cpp
+        platform/AndroidPlatformServices.cpp
         ${NATIVE_APP_GLUE_DIR}/android_native_app_glue.c
         FontManager.cpp
         ParticleSystem.cpp

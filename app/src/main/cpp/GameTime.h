@@ -5,16 +5,17 @@
 #ifndef SPACEINVADERS3D_GAMETIME_H
 #define SPACEINVADERS3D_GAMETIME_H
 
-#include "android_native_app_glue.h"
 #include <memory>
 #include <chrono>
 #include "GameObjectData.h"
+
+class IPlatformServices;
 class GameTime {
 public:
     GameTime();
     ~GameTime();
     static float deltaTime;
-    static void updateTime();
+    static void updateTime(IPlatformServices &platformServices);
 private:
 
 };
