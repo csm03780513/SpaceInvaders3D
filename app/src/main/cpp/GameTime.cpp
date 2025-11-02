@@ -1,7 +1,7 @@
 //
 // Created by carlo on 01/07/2025.
 //
-#include "Time.h"
+#include "GameTime.h"
 
 float Time::deltaTime = 0.0f;
 using Clock = std::chrono::high_resolution_clock;

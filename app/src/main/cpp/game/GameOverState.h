@@ -1,6 +1,7 @@
 #pragma once
 
 #include "IGameState.h"
+#include "../GameObjectData.h"
 
 class Game;
 class RenderContext;

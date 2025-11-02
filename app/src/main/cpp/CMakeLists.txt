@@ -27,7 +27,7 @@ add_library(SpaceInvaders3D SHARED
         SimpleSFXPlayer.h
         SimpleSFXPlayer.cpp
         PowerUpManager.cpp
-        Time.cpp
+        GameTime.cpp
         Util.cpp
         Collision.cpp
         SFXMixer.cpp

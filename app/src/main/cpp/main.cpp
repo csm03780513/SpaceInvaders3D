@@ -4,7 +4,7 @@
 
 #include <memory>
 
-#include "Time.h"
+#include "GameTime.h"
 #include "game/Game.h"
 #include "game/InputEvent.h"
 

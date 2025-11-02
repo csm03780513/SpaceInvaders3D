@@ -5,7 +5,7 @@
 #include <memory>
 #include <vector>
 #include <string>
-#include "Time.h"
+#include "GameTime.h"
 #include "PowerUpManager.h"
 #include "Util.h"
 #include "ECS/events/CombatEvents.h"

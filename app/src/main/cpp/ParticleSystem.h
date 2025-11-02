@@ -5,7 +5,7 @@
 #ifndef SPACEINVADERS3D_PARTICLESYSTEM_H
 #define SPACEINVADERS3D_PARTICLESYSTEM_H
 
-#include "Time.h"
+#include "GameTime.h"
 #include "GameObjectData.h"
 #include "PowerUpManager.h"
 

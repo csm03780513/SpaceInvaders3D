@@ -6,7 +6,7 @@
 #define SPACEINVADERS3D_POWERUPMANAGER_H
 
 #include "GameObjectData.h"
-#include "Time.h"
+#include "GameTime.h"
 #include "Util.h"
 #include "Collision.h"
 #include "SFXMixer.h"

@@ -2,8 +2,8 @@
 // Created by carlo on 01/07/2025.
 //
 
-#ifndef SPACEINVADERS3D_TIME_H
-#define SPACEINVADERS3D_TIME_H
+#ifndef SPACEINVADERS3D_GAMETIME_H
+#define SPACEINVADERS3D_GAMETIME_H
 
 #include "android_native_app_glue.h"
 #include <memory>
@@ -18,7 +18,7 @@ public:
 private:
 
 };
-#endif //SPACEINVADERS3D_TIME_H
+#endif //SPACEINVADERS3D_GAMETIME_H
 
 
 
