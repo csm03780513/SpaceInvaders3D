@@ -16,6 +16,11 @@ add_library(SpaceInvaders3D SHARED
         # List C/C++ source files with relative paths to this CMakeLists.txt.
         main.cpp
         Renderer.cpp
+        game/Game.cpp
+        game/RenderContext.cpp
+        game/MainMenuState.cpp
+        game/PlayingState.cpp
+        game/GameOverState.cpp
         ${NATIVE_APP_GLUE_DIR}/android_native_app_glue.c
         FontManager.cpp
         ParticleSystem.cpp
@@ -29,6 +34,7 @@ add_library(SpaceInvaders3D SHARED
         #        volk/volk.c
 )
 target_include_directories(SpaceInvaders3D PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_SOURCE_DIR}/native_app_glue
         ${CMAKE_SOURCE_DIR}/glm
         ${CMAKE_SOURCE_DIR}/stb
