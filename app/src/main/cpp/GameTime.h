@@ -7,7 +7,6 @@
 
 #include <memory>
 #include <chrono>
-#include "GameObjectData.h"
 
 class IPlatformServices;
 class GameTime {

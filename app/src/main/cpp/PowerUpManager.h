@@ -10,6 +10,7 @@
 #include "Util.h"
 #include "Collision.h"
 #include "SFXMixer.h"
+#include "ecs/components/CombatComponents.h"
 
 struct PowerUpData {
     PowerUpType type;

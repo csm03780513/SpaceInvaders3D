@@ -8,22 +8,7 @@
 // DamageViz.hpp
 #pragma once
 #include <cstdint>
-#include "Damage.h"
 
-//inline uint32_t colorFor(DamageType t) {
-//    switch (t) {
-//        case DamageType::Kinetic:    return 0xFFB0B0B0; // grey
-//        case DamageType::Fire:       return 0xFFFF5A2A; // orange/red
-//        case DamageType::Lightning:  return 0xFF4EB7FF; // blue
-//        case DamageType::Cold:       return 0xFF6FD0FF; // icy blue
-//        case DamageType::Poison:     return 0xFF69D17D; // green
-//        case DamageType::Radiation:  return 0xFFE8D83C; // yellow
-//        case DamageType::Plasma:     return 0xFFFFFFFF; // white
-//        case DamageType::DarkMatter: return 0xFFB178FF; // purple
-//        case DamageType::Cosmic:     return 0xFF00FFE5; // teal
-//    }
-//    return 0xFFFFFFFF;
-//}
 
 inline glm::vec4 colorFor(DamageType t) {
     switch (t) {

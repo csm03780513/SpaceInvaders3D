@@ -5,7 +5,8 @@
 #ifndef SPACEINVADERS3D_COMBATCOMPONENTS_H
 #define SPACEINVADERS3D_COMBATCOMPONENTS_H
 
-#include "../../mechanics/Damage.h"
+
+#include "mechanics/Damage.h"
 
 struct Health {
     float shield   = 0.0f;     // first layer
@@ -80,6 +81,49 @@ struct AilmentRules {
 struct ShieldRules {
     bool kineticHalfOnShield = false; // e.g., kinetic less effective vs shields
     bool darkMatterIgnoresArmor = true;
+};
+
+enum class BulletType {
+    Ship,
+    Alien
+};
+
+struct Bullet {
+    float x{}, y{};
+    bool active{};
+    std::array<float, 2> widthHeight{};
+    BulletType bulletType{};
+    const float size = 0.05f * 0.5f; //half alien
+    DamagePayload payload{};
+};
+
+struct Ship {
+    float x{}, y{};
+    float color[3]{};
+    std::array<float, 2> widthHeight{};
+    float size{0.1f};
+
+    Health health;
+    Armor armor;
+    Resistances resistances;
+    Ailments ailments;
+};
+
+struct Alien {
+    float x{}, y{}, vx{0.1f}, vy{0.02f};
+    float movementTimer = 0.0f;   // Used for sine phase
+    float amplitude = 0.5f;      // Sine wave width (tune for look)
+    float frequency = 0.1f;       // Sine wave speed
+    float baseFrequency = 0.1f;
+    float baseX = 0.0f;
+    AlienMovementType movementType{AlienMovementType::LeftRight};
+    bool active{};
+    std::array<float, 2> widthHeight{};
+
+    Health health;
+    Armor armor;
+    Resistances resistances;
+    Ailments ailments;
 };
 
 class CombatComponents {

@@ -33,8 +33,7 @@
 #include <random>
 #include <cmath>
 #include <utility>
-#include "ECS/components/CombatComponents.h"
-#include "mechanics/Damage.h"
+
 
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "Vulkan", __VA_ARGS__)
 constexpr int MAX_POWERUPS = 10;
@@ -75,20 +74,7 @@ struct OverlayVertex {
     float uv[2];
 };
 
-enum class BulletType {
-    Ship,
-    Alien
-};
 
-
-struct Bullet {
-    float x{}, y{};
-    bool active{};
-    std::array<float, 2> widthHeight{};
-    BulletType bulletType{};
-    const float size = 0.05f * 0.5f; //half alien
-    DamagePayload payload{};
-};
 
 enum AlienMovementType {
     SnakeWave,
@@ -100,42 +86,11 @@ enum AlienMovementType {
     MySnakeWave
 };
 
-struct Alien {
-    float x{}, y{}, vx{0.1f}, vy{0.02f};
-    float movementTimer = 0.0f;   // Used for sine phase
-    float amplitude = 0.5f;      // Sine wave width (tune for look)
-    float frequency = 0.1f;       // Sine wave speed
-    float baseFrequency = 0.1f;
-    float baseX = 0.0f;
-    AlienMovementType movementType{AlienMovementType::LeftRight};
-    bool active{};
-    std::array<float, 2> widthHeight{};
-
-    Health health;
-    Armor armor;
-    Resistances resistances;
-    Ailments ailments;
-};
-
 enum class PowerUpType {
     DoubleShot,
     Shield,
     Life
 };
-
-
-struct Ship {
-    float x{}, y{};
-    float color[3]{};
-    std::array<float, 2> widthHeight{};
-    float size{0.1f};
-
-    Health health;
-    Armor armor;
-    Resistances resistances;
-    Ailments ailments;
-};
-
 
 struct MainPushConstants {
     glm::vec2 pos{0.0f, 0.0f};
