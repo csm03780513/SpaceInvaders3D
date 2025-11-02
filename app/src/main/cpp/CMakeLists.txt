@@ -34,6 +34,8 @@ add_library(SpaceInvaders3D SHARED
         GameTime.cpp
         Util.cpp
         Collision.cpp
+        events/EventBus.cpp
+        mechanics/CombatEventSubscribers.cpp
         SFXMixer.cpp
         #        volk/volk.c
 )

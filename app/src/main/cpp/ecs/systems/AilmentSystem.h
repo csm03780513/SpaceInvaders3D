@@ -8,7 +8,9 @@
 #include <sstream>
 
 struct AilmentSystem {
-    void tick(float dt, uint32_t entity, Health &hp, Ailments &al, const glm::vec2& worldPos, std::vector<DamagePopupSpawned> &outPopups) const {
+    void tick(float dt, uint32_t entity, Health &hp, Ailments &al, const glm::vec2& worldPos,
+              std::vector<DamagePopupSpawned> &outPopups,
+              std::vector<DamageAppliedEvent> &outApplied) const {
         if (hp.dead) return;
         const float totalDotDps = al.burnDps + al.poisonDps + al.radiationDps;
         float dotDmg = totalDotDps * dt;
@@ -16,8 +18,10 @@ struct AilmentSystem {
             const float toShield = std::min(hp.shield, dotDmg);
             hp.shield -= toShield;
             dotDmg -= toShield;
+            float hullDamage = 0.0f;
             if (dotDmg > 0.0f) {
-                hp.hull = std::max(0.0f, hp.hull - dotDmg);
+                hullDamage = std::min(hp.hull, dotDmg);
+                hp.hull = std::max(0.0f, hp.hull - hullDamage);
             }
             // Space out DOT popups so we show at most one every 0.2 seconds.
             constexpr float popupPeriod = 0.3f;
@@ -33,6 +37,15 @@ struct AilmentSystem {
             }
 
             if (hp.hull <= 0.0f) hp.dead = true;
+
+            if (hullDamage > 0.0f || hp.dead) {
+                outApplied.push_back(DamageAppliedEvent{
+                        .target = entity,
+                        .totalDamage = hullDamage,
+                        .killed = hp.dead,
+                        .worldPos = worldPos
+                });
+            }
         } else {
             al.dotPopupTimer = 0.0f;
         }
