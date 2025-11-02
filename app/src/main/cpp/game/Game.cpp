@@ -8,6 +8,7 @@
 #include "MainMenuState.h"
 #include "PlayingState.h"
 #include "GameOverState.h"
+#include "input/InputCommand.h"
 
 namespace {
 constexpr const char *kLogTag = "SpaceInvaders3D";
@@ -55,11 +56,24 @@ bool Game::handleInput(const InputEvent &event) {
     return true;
 }
 
+void Game::enqueueCommand(std::unique_ptr<InputCommand> command) {
+    if (!command) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(commandMutex_);
+    pendingCommands_.push(std::move(command));
+}
+
+GameState Game::getCurrentStateType() const {
+    return currentStateType_;
+}
+
 void Game::update(float dt) {
     ensureRenderer();
     if (!renderer_ || !currentState_) {
         return;
     }
+    processInputCommands();
     currentState_->update(dt);
     applyPendingStateChange();
 }
@@ -164,5 +178,21 @@ void Game::changeState(GameState state) {
     currentStateType_ = state;
     if (currentState_) {
         currentState_->onEnter();
+    }
+}
+
+void Game::processInputCommands() {
+    std::queue<std::unique_ptr<InputCommand>> commands;
+    {
+        std::lock_guard<std::mutex> lock(commandMutex_);
+        std::swap(commands, pendingCommands_);
+    }
+
+    while (!commands.empty()) {
+        auto &command = commands.front();
+        if (command) {
+            command->execute(*this);
+        }
+        commands.pop();
     }
 }

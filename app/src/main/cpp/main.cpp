@@ -7,6 +7,10 @@
 #include "Time.h"
 #include "game/Game.h"
 #include "game/InputEvent.h"
+#include "input/InputCommand.h"
+#include "input/FireCommand.h"
+#include "input/MoveShipCommand.h"
+#include "input/RestartGameCommand.h"
 
 static int32_t handle_input(struct android_app *app, AInputEvent *event) {
     if (AInputEvent_getType(event) != AINPUT_EVENT_TYPE_MOTION) {
@@ -18,7 +22,6 @@ static int32_t handle_input(struct android_app *app, AInputEvent *event) {
         return 0;
     }
 
-    InputEvent inputEvent{};
     int32_t action = AMotionEvent_getAction(event) & AMOTION_EVENT_ACTION_MASK;
     float x = AMotionEvent_getX(event, 0);
     float y = AMotionEvent_getY(event, 0);
@@ -28,29 +31,47 @@ static int32_t handle_input(struct android_app *app, AInputEvent *event) {
         return 0;
     }
 
-    inputEvent.normalizedX = (x / static_cast<float>(width)) * 2.0f - 1.0f;
-    inputEvent.normalizedY = (y / static_cast<float>(height)) * 2.0f - 1.0f;
+    float normalizedX = (x / static_cast<float>(width)) * 2.0f - 1.0f;
+    float normalizedY = (y / static_cast<float>(height)) * 2.0f - 1.0f;
+
+    std::unique_ptr<InputCommand> command;
+    GameState state = game->getCurrentStateType();
 
     switch (action) {
         case AMOTION_EVENT_ACTION_DOWN:
         case AMOTION_EVENT_ACTION_POINTER_DOWN:
-            inputEvent.type = InputEventType::TouchDown;
+            if (state == GameState::Playing) {
+                command = std::make_unique<MoveShipCommand>(InputEventType::TouchDown, normalizedX, normalizedY);
+            } else {
+                command = std::make_unique<RestartGameCommand>();
+            }
             break;
         case AMOTION_EVENT_ACTION_MOVE:
-            inputEvent.type = InputEventType::TouchMove;
+            if (state == GameState::Playing) {
+                command = std::make_unique<MoveShipCommand>(InputEventType::TouchMove, normalizedX, normalizedY);
+            }
             break;
         case AMOTION_EVENT_ACTION_UP:
         case AMOTION_EVENT_ACTION_POINTER_UP:
-            inputEvent.type = InputEventType::TouchUp;
+            if (state == GameState::Playing) {
+                command = std::make_unique<FireCommand>(InputEventType::TouchUp, normalizedX, normalizedY);
+            }
             break;
         case AMOTION_EVENT_ACTION_CANCEL:
-            inputEvent.type = InputEventType::TouchCancel;
+            if (state == GameState::Playing) {
+                command = std::make_unique<FireCommand>(InputEventType::TouchCancel, normalizedX, normalizedY);
+            }
             break;
         default:
-            return 0;
+            break;
     }
 
-    return game->handleInput(inputEvent) ? 1 : 0;
+    if (!command) {
+        return 0;
+    }
+
+    game->enqueueCommand(std::move(command));
+    return 1;
 }
 
 static void handle_cmd(android_app *app, int32_t cmd) {
