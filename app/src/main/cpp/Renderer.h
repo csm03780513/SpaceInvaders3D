@@ -10,6 +10,8 @@
 #include "Util.h"
 #include "ECS/events/CombatEvents.h"
 #include "ECS/systems/AilmentSystem.h"
+#include "events/EventBus.h"
+#include "mechanics/CombatEventSubscribers.h"
 #include "platform/PlatformServices.h"
 
 static constexpr int NUM_ALIENS_X = 8;
@@ -192,9 +194,6 @@ private:
     float floatingDamageStartScale_ = 0.0025f;
     float floatingDamageEndScale_ = 0.0003f;
 
-    std::vector<HitEvent> hitEvents_;
-    std::vector<DamageAppliedEvent> dmgApplied_;
-    std::vector<DamagePopupSpawned> dmgPopups_;
     // Apply DOTs
     AilmentSystem ailSys_;
     AilmentRules ailRules_;
@@ -326,6 +325,9 @@ private:
     void spawnDamageText(const DamagePopupSpawned &damagePopupSpawned);
     void updateFloatingDamage();
     void drawFloatingDamageTexts(VkCommandBuffer cmd);
-    void updateHitEvents();
     void initShip();
+
+    EventBus eventBus_;
+    std::unique_ptr<GameMechanicsCoordinator> mechanics_;
+    uint32_t damagePopupSubscriptionId_ = 0;
 };

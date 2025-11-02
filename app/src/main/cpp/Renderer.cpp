@@ -1,6 +1,5 @@
 #include "Renderer.h"
 #include "SFXMixer.h"
-#include "ECS/systems/DamageSystem.h"
 #include "ECS/systems/AilmentSystem.h"
 
 #define STB_IMAGE_IMPLEMENTATION
@@ -11,6 +10,7 @@
 #include <unordered_map>
 #include <algorithm>
 #include <utility>
+#include <span>
 
 struct TextData {
     VkBuffer buffer;
@@ -42,8 +42,6 @@ Alien aliens_[MAX_ALIENS] = {};
 float alienMoveSpeed_ = 0.3f;
 float bulletMoveSpeed_ = 2.0f;
 float alienDirection_ = 1.0f; // 1 = right, -1 = left
-
-DamageSystem dmgSys;
 
 
 std::vector<char> loadShaderAsset(IPlatformServices &platform, const char *filename);
@@ -527,6 +525,20 @@ Renderer::Renderer(IPlatformServices &platformServices) : platformServices_(plat
     createUniformBuffer();
     initAliens();
     initShip();
+
+    mechanics_ = std::make_unique<GameMechanicsCoordinator>(
+            eventBus_,
+            ship_,
+            std::span<Alien>(aliens_, MAX_ALIENS),
+            *powerUpManager_,
+            ailSys_,
+            ailRules_,
+            shieldRules_,
+            actualScore);
+
+    damagePopupSubscriptionId_ = eventBus_.subscribeDamagePopup([this](const DamagePopupSpawned &popup) {
+        spawnDamageText(popup);
+    });
 
     createMainGfxPipeline();
     createOverlayGfxPipeline();
@@ -2262,8 +2274,6 @@ uint x = 0;
 
 // process only spawned projectile collisions
 void Renderer::updateCollision() {
-    hitEvents_.clear(); // clear from last frame
-
     for (auto& bullet : bullets_) {
         if (!bullet.active) continue;
 
@@ -2275,7 +2285,7 @@ void Renderer::updateCollision() {
                 bullet.active = false;
 
                 // Queue a HitEvent for later DamageSystem processing
-                hitEvents_.push_back(HitEvent{
+                eventBus_.publish(HitEvent{
                         .attacker   = /* optional: player entity id */ 0,
                         .target     = i, // or aliens_[i].entityId
                         .payload    = bullet.payload,
@@ -2295,9 +2305,9 @@ void Renderer::updateCollision() {
 
                 bullet.active = false;
 
-                hitEvents_.push_back(HitEvent{
+                eventBus_.publish(HitEvent{
                         .attacker   = i,  // alien index
-                        .target     = /* ship entity id */ 999,
+                        .target     = ShipEntityId,
                         .payload    = bullet.payload,
                         .hitWorldPos= glm::vec2(ship_.x, ship_.y)
                 });
@@ -2476,7 +2486,9 @@ void Renderer::updatePlayingLogic(float dt) {
 
     updateAliens();
     updateCollision();
-    updateHitEvents();
+    if (mechanics_) {
+        mechanics_->update(dt);
+    }
     powerUpManager_->updatePowerUpData();
     powerUpManager_->checkIfPowerUpCollected(ship_);
 }
@@ -2642,6 +2654,11 @@ void Renderer::loadGameObjects() {
 
 Renderer::~Renderer() {
 
+    if (damagePopupSubscriptionId_ != 0) {
+        eventBus_.unsubscribeDamagePopup(damagePopupSubscriptionId_);
+        damagePopupSubscriptionId_ = 0;
+    }
+
     if (sfxMixer_) {
         sfxMixer_->shutdown();
     }
@@ -2770,58 +2787,5 @@ void Renderer::alienFireBullet() {
         }
 
     }
-}
-float dt;
-
-void Renderer::updateHitEvents() {
-     dt = GameTime::deltaTime;
-    dmgSys.ctx.ailRules = &ailRules_;
-    dmgSys.ctx.shRules  = &shieldRules_;
-
-    // Process all hits
-    for (const auto& hit : hitEvents_) {
-        if (hit.target == 999) {
-            // Player ship
-            dmgSys.apply(
-                    /*target*/ hit.target,
-                               ship_.health,
-                               ship_.resistances,
-                               nullptr,
-                               ship_.ailments,
-                               hit,
-                               dmgApplied_,
-                               dmgPopups_
-            );
-        } else {
-            // Alien
-            dmgSys.apply(hit.target,aliens_[hit.target].health,
-                    aliens_[hit.target].resistances,
-                    nullptr,
-                    aliens_[hit.target].ailments,
-                    hit,
-                    dmgApplied_,
-                    dmgPopups_
-            );
-            if(aliens_[hit.target].health.dead) {
-                aliens_[hit.target].active = false;
-                powerUpManager_->spawnPowerUp({hit.hitWorldPos.x, hit.hitWorldPos.y});
-                actualScore += 100;
-            }
-        }
-    }
-
-
-    for (int i = 0; i < MAX_ALIENS; i++) {
-        ailSys_.tick(dt, i, aliens_[i].health, aliens_[i].ailments, {aliens_[i].x, aliens_[i].y}, dmgPopups_);
-    }
-    ailSys_.tick(dt, 999, ship_.health, ship_.ailments, {ship_.x, ship_.y}, dmgPopups_);
-
-    // Now visualize dmgPopups_
-    for (const auto& p : dmgPopups_) {
-        spawnDamageText(p);
-        dmgPopups_.clear();
-    }
-
-
 }
 

@@ -7,9 +7,12 @@
 
 // CombatEvents.hpp
 #pragma once
+#include <cstdint>
 #include <string>
 #include <glm/vec2.hpp>
 #include "../../mechanics/Damage.h"
+
+inline constexpr uint32_t ShipEntityId = 999u;
 
 struct HitEvent {
     uint32_t attacker;
