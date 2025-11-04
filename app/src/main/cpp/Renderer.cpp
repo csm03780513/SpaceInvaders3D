@@ -1,5 +1,6 @@
 #include "Renderer.h"
 #include "PipelineBuilder.h"
+#include "DescriptorHelper.h"
 #include "SFXMixer.h"
 #include "ECS/systems/AilmentSystem.h"
 
@@ -12,6 +13,7 @@
 #include <algorithm>
 #include <utility>
 #include <span>
+#include <array>
 
 struct TextData {
     VkBuffer buffer;
@@ -575,292 +577,173 @@ void Renderer::loadAllTextures() {
 }
 
 void Renderer::createImageOverlayDescriptor(GfxPipelineData &gfxPipelineData) {
-
-    VkDescriptorSetLayoutBinding overlaySamplerLayoutBinding = {};
+    VkDescriptorSetLayoutBinding overlaySamplerLayoutBinding{};
     overlaySamplerLayoutBinding.binding = 0;
     overlaySamplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     overlaySamplerLayoutBinding.descriptorCount = 1;
     overlaySamplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
-    VkDescriptorSetLayoutCreateInfo overlayLayoutInfo = {};
-    overlayLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    overlayLayoutInfo.bindingCount = 1;
-    overlayLayoutInfo.pBindings = &overlaySamplerLayoutBinding;
+    std::vector<VkDescriptorSetLayoutBinding> bindings{overlaySamplerLayoutBinding};
 
-    createDescriptorSetLayout(overlayLayoutInfo, overlayDescriptorSetLayout_);
+    VkDescriptorPoolSize overlayPoolSize{};
+    overlayPoolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    overlayPoolSize.descriptorCount = 1;
 
-    VkDescriptorPoolSize vkDescriptorPoolSize = {};
-    vkDescriptorPoolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    vkDescriptorPoolSize.descriptorCount = 1;
+    std::vector<VkDescriptorPoolSize> poolSizes{overlayPoolSize};
 
-    VkDescriptorPoolCreateInfo overlayDescriptorPoolInfo = {};
-    overlayDescriptorPoolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    overlayDescriptorPoolInfo.maxSets = 1;
-    overlayDescriptorPoolInfo.poolSizeCount = 1;
-    overlayDescriptorPoolInfo.pPoolSizes = &vkDescriptorPoolSize;
-
-    VkResult res1 = vkCreateDescriptorPool(device_, &overlayDescriptorPoolInfo, nullptr,
-                                           &overlayDescriptorPool_);
-    if (res1 != VK_SUCCESS) {
-        LOGE("Failed to create overlay descriptor pool at: %d", res1);
-        throw std::runtime_error("Failed to create overlay descriptor pool");
-    }
-
-    VkPipelineLayoutCreateInfo overlayPipelineLayoutInfo = {};
-    overlayPipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    overlayPipelineLayoutInfo.setLayoutCount = 1;
-    overlayPipelineLayoutInfo.pSetLayouts = &overlayDescriptorSetLayout_;
-    VkPushConstantRange overlayPushConstantRange = {};
-    if (!gfxPipelineData.pushConstantRanges.empty()) {
-        overlayPipelineLayoutInfo.pushConstantRangeCount = gfxPipelineData.pushConstantRanges.size();
-        overlayPipelineLayoutInfo.pPushConstantRanges = gfxPipelineData.pushConstantRanges.data();
-    } else {
-        overlayPushConstantRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-        overlayPushConstantRange.offset = 0;
-        overlayPushConstantRange.size = sizeof(float) * 4; // For vec4 offset
-        overlayPipelineLayoutInfo.pushConstantRangeCount = 1;
-        overlayPipelineLayoutInfo.pPushConstantRanges = &overlayPushConstantRange;
-    }
-
-    createPipelineLayout(overlayPipelineLayoutInfo, gfxPipelineData);
-
-    VkDescriptorSetAllocateInfo allocInfo = {};
-    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    allocInfo.descriptorPool = overlayDescriptorPool_;
-    allocInfo.descriptorSetCount = 1;
-    allocInfo.pSetLayouts = &overlayDescriptorSetLayout_;
-
-
-    vkAllocateDescriptorSets(device_, &allocInfo, &overlayDescriptorSet_);
-
-    VkDescriptorImageInfo imageInfo = {};
+    VkDescriptorImageInfo imageInfo{};
     imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     imageInfo.imageView = overlayImageView_;
     imageInfo.sampler = overlaySampler_;
 
-    VkWriteDescriptorSet descriptorWrite = {};
+    VkWriteDescriptorSet descriptorWrite{};
     descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptorWrite.dstSet = overlayDescriptorSet_;
     descriptorWrite.dstBinding = 0;
     descriptorWrite.dstArrayElement = 0;
     descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     descriptorWrite.descriptorCount = 1;
     descriptorWrite.pImageInfo = &imageInfo;
 
-    vkUpdateDescriptorSets(device_, 1, &descriptorWrite, 0, nullptr);
+    std::vector<VkPushConstantRange> pushConstants;
+    if (!gfxPipelineData.pushConstantRanges.empty()) {
+        pushConstants = gfxPipelineData.pushConstantRanges;
+    } else {
+        VkPushConstantRange overlayPushConstantRange{};
+        overlayPushConstantRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        overlayPushConstantRange.offset = 0;
+        overlayPushConstantRange.size = sizeof(float) * 4; // For vec4 offset
+        pushConstants.push_back(overlayPushConstantRange);
+    }
+
+    DescriptorSetupResult descriptorResult = createDescriptorResources(
+            device_, bindings, poolSizes, 1, pushConstants, gfxPipelineData, {descriptorWrite});
+
+    overlayDescriptorSetLayout_ = descriptorResult.layout;
+    overlayDescriptorPool_ = descriptorResult.pool;
+    overlayDescriptorSet_ = descriptorResult.descriptorSet;
 }
 
 void Renderer::createFontDescriptor(GfxPipelineData &gfxPipelineData) {
-
-
-    VkDescriptorSetLayoutBinding layoutBinding = {};
+    VkDescriptorSetLayoutBinding layoutBinding{};
     layoutBinding.binding = 0;
     layoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     layoutBinding.descriptorCount = 1;
     layoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
-    VkDescriptorSetLayoutCreateInfo layoutInfo = {};
-    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = 1;
-    layoutInfo.pBindings = &layoutBinding;
+    std::vector<VkDescriptorSetLayoutBinding> bindings{layoutBinding};
 
-    createDescriptorSetLayout(layoutInfo, fontDescriptorSetLayout_);
+    VkDescriptorPoolSize descriptorPoolSize{};
+    descriptorPoolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    descriptorPoolSize.descriptorCount = 1;
 
-    VkDescriptorPoolSize vkDescriptorPoolSize = {};
-    vkDescriptorPoolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    vkDescriptorPoolSize.descriptorCount = 1;
+    std::vector<VkDescriptorPoolSize> poolSizes{descriptorPoolSize};
 
-    VkDescriptorPoolCreateInfo descriptorPoolCreateInfo = {};
-    descriptorPoolCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    descriptorPoolCreateInfo.maxSets = 1;
-    descriptorPoolCreateInfo.poolSizeCount = 1;
-    descriptorPoolCreateInfo.pPoolSizes = &vkDescriptorPoolSize;
-
-    VkResult res1 = vkCreateDescriptorPool(device_, &descriptorPoolCreateInfo, nullptr,
-                                           &fontDescriptorPool_);
-    if (res1 != VK_SUCCESS) {
-        LOGE("Failed to create font descriptor pool at: %d", res1);
-        throw std::runtime_error("Failed to create font descriptor pool");
-    }
-
-    VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = {};
-    pipelineLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutCreateInfo.setLayoutCount = 1;
-    pipelineLayoutCreateInfo.pSetLayouts = &fontDescriptorSetLayout_;
-    VkPushConstantRange pushConstantRange = {};
-    if (!gfxPipelineData.pushConstantRanges.empty()) {
-        pipelineLayoutCreateInfo.pushConstantRangeCount = gfxPipelineData.pushConstantRanges.size();
-        pipelineLayoutCreateInfo.pPushConstantRanges = gfxPipelineData.pushConstantRanges.data();
-    } else {
-        pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-        pushConstantRange.offset = 0;
-        pushConstantRange.size = sizeof(FontPushConstants);
-        pipelineLayoutCreateInfo.pushConstantRangeCount = 1;
-        pipelineLayoutCreateInfo.pPushConstantRanges = &pushConstantRange;
-    }
-
-    createPipelineLayout(pipelineLayoutCreateInfo, gfxPipelineData);
-    LOGE("font pipelineLayout:%llu", gfxPipelineData.pipelineLayout);
-
-    VkDescriptorSetAllocateInfo allocInfo = {};
-    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    allocInfo.descriptorPool = fontDescriptorPool_;
-    allocInfo.descriptorSetCount = 1;
-    allocInfo.pSetLayouts = &fontDescriptorSetLayout_;
-
-
-    vkAllocateDescriptorSets(device_, &allocInfo, &fontDescriptorSet_);
-
-    VkDescriptorImageInfo imageInfo = {};
+    VkDescriptorImageInfo imageInfo{};
     imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     imageInfo.imageView = fontAtlasImageView_;
     imageInfo.sampler = fontAtlasSampler_;
 
-    VkWriteDescriptorSet descriptorWrite = {};
+    VkWriteDescriptorSet descriptorWrite{};
     descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptorWrite.dstSet = fontDescriptorSet_;
     descriptorWrite.dstBinding = 0;
     descriptorWrite.dstArrayElement = 0;
     descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     descriptorWrite.descriptorCount = 1;
     descriptorWrite.pImageInfo = &imageInfo;
 
-    vkUpdateDescriptorSets(device_, 1, &descriptorWrite, 0, nullptr);
+    std::vector<VkPushConstantRange> pushConstants;
+    if (!gfxPipelineData.pushConstantRanges.empty()) {
+        pushConstants = gfxPipelineData.pushConstantRanges;
+    } else {
+        VkPushConstantRange pushConstantRange{};
+        pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+        pushConstantRange.offset = 0;
+        pushConstantRange.size = sizeof(FontPushConstants);
+        pushConstants.push_back(pushConstantRange);
+    }
 
+    DescriptorSetupResult descriptorResult = createDescriptorResources(
+            device_, bindings, poolSizes, 1, pushConstants, gfxPipelineData, {descriptorWrite});
+
+    fontDescriptorSetLayout_ = descriptorResult.layout;
+    fontDescriptorPool_ = descriptorResult.pool;
+    fontDescriptorSet_ = descriptorResult.descriptorSet;
 }
 
 void Renderer::createMainDescriptor(GfxPipelineData &gfxPipelineData) {
-    uint descriptorCount = 5;
-    VkDescriptorSetLayoutBinding uboLayoutBinding = {};
+    constexpr uint32_t textureCount = 5;
+
+    VkDescriptorSetLayoutBinding uboLayoutBinding{};
     uboLayoutBinding.binding = 0;
     uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     uboLayoutBinding.descriptorCount = 1;
     uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
-    VkDescriptorSetLayoutBinding samplerLayoutBinding = {};
+    VkDescriptorSetLayoutBinding samplerLayoutBinding{};
     samplerLayoutBinding.binding = 1;
     samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    samplerLayoutBinding.descriptorCount = descriptorCount;
+    samplerLayoutBinding.descriptorCount = textureCount;
     samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
-    std::vector<VkDescriptorSetLayoutBinding> bindings = {uboLayoutBinding, samplerLayoutBinding};
+    std::vector<VkDescriptorSetLayoutBinding> bindings{uboLayoutBinding, samplerLayoutBinding};
 
-    VkDescriptorSetLayoutCreateInfo layoutInfo = {};
-    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = bindings.size();
-    layoutInfo.pBindings = bindings.data();
-
-
-    //setLayouts for ship,alien,shipBullet,powerUp
-    createDescriptorSetLayout(layoutInfo, shipDescriptorSetLayout_);
-    //createDescriptorSetLayout(layoutInfo, alienDescriptorSetLayout_);
-    // createDescriptorSetLayout(layoutInfo, shipBulletDescriptorSetLayout_);
-    //createDescriptorSetLayout(layoutInfo, powerUpManager_->doubleShotDescriptorSetLayout);
-
-    std::vector<VkDescriptorSetLayout> descriptorSetLayouts = {shipDescriptorSetLayout_};
-    // alienDescriptorSetLayout_,
-    // shipBulletDescriptorSetLayout_,
-    //powerUpManager_->doubleShotDescriptorSetLayout};
-
-    VkPipelineLayoutCreateInfo mainPipelineLayoutInfo = {};
-    mainPipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    mainPipelineLayoutInfo.setLayoutCount = descriptorSetLayouts.size();
-    mainPipelineLayoutInfo.pSetLayouts = descriptorSetLayouts.data();
-    VkPushConstantRange mainPC = {};
-    if (!gfxPipelineData.pushConstantRanges.empty()) {
-        mainPipelineLayoutInfo.pushConstantRangeCount = gfxPipelineData.pushConstantRanges.size();
-        mainPipelineLayoutInfo.pPushConstantRanges = gfxPipelineData.pushConstantRanges.data();
-    } else {
-        mainPC.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-        mainPC.offset = 0;
-        mainPC.size = sizeof(MainPushConstants);
-        mainPipelineLayoutInfo.pushConstantRangeCount = 1;
-        mainPipelineLayoutInfo.pPushConstantRanges = &mainPC;
-    }
-
-    createPipelineLayout(mainPipelineLayoutInfo, gfxPipelineData);
-    LOGE("main pipelineLayout gd: %llu", gfxPipelineData.pipelineLayout);
-
-    std::vector<VkDescriptorSet> descriptorSets{shipDescriptorSet_};
-
-    VkDescriptorPoolSize uboPoolSize = {};
+    VkDescriptorPoolSize uboPoolSize{};
     uboPoolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    uboPoolSize.descriptorCount = descriptorCount;
+    uboPoolSize.descriptorCount = 1;
 
-    VkDescriptorPoolSize samplerPoolSize = {};
+    VkDescriptorPoolSize samplerPoolSize{};
     samplerPoolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    samplerPoolSize.descriptorCount = descriptorCount;
+    samplerPoolSize.descriptorCount = textureCount;
 
-    std::vector<VkDescriptorPoolSize> poolSizes = {uboPoolSize, samplerPoolSize};
+    std::vector<VkDescriptorPoolSize> poolSizes{uboPoolSize, samplerPoolSize};
 
-    VkDescriptorPoolCreateInfo descPoolInfo = {};
-    descPoolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    descPoolInfo.poolSizeCount = poolSizes.size();
-    descPoolInfo.pPoolSizes = poolSizes.data();
-    descPoolInfo.maxSets = descriptorSets.size();
-
-    LOGE("About to create descriptor pool");
-    VkResult res = vkCreateDescriptorPool(device_, &descPoolInfo, nullptr, &mainDescriptorPool_);
-    LOGE("vkCreateDescriptorPool returned %d", res);
-    if (res != VK_SUCCESS) {
-        LOGE("Failed to create descriptor pool: %d", res);
-        throw std::runtime_error("Failed to create descriptor pool");
-    }
-    LOGE("Descriptor pool created");
-
-    // Allocate sets
-    VkDescriptorSetAllocateInfo descAllocInfo = {};
-    descAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    descAllocInfo.descriptorPool = mainDescriptorPool_;
-    descAllocInfo.descriptorSetCount = descriptorSets.size();
-    descAllocInfo.pSetLayouts = descriptorSetLayouts.data();
-
-    LOGE("About to create descriptor sets");
-    VkResult res1 = vkAllocateDescriptorSets(device_, &descAllocInfo, descriptorSets.data());
-    if (res1 != VK_SUCCESS) {
-        LOGE("Failed to create descriptor set: %d", res1);
-        throw std::runtime_error("Failed to create descriptor set");
-    }
-
-    shipDescriptorSet_ = descriptorSets[0];
-
-    LOGE("Descriptor set created");
-    VkDescriptorBufferInfo bufferInfo = {};
+    VkDescriptorBufferInfo bufferInfo{};
     bufferInfo.buffer = uniformBuffer_;
     bufferInfo.offset = 0;
     bufferInfo.range = sizeof(UniformBufferObject);
 
-    VkWriteDescriptorSet bufferDescriptorWrite = {};
+    VkWriteDescriptorSet bufferDescriptorWrite{};
     bufferDescriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    bufferDescriptorWrite.dstSet = shipDescriptorSet_;
     bufferDescriptorWrite.dstBinding = 0;
     bufferDescriptorWrite.dstArrayElement = 0;
     bufferDescriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    bufferDescriptorWrite.descriptorCount = descriptorCount;
+    bufferDescriptorWrite.descriptorCount = 1;
     bufferDescriptorWrite.pBufferInfo = &bufferInfo;
 
-    VkDescriptorImageInfo shipImageInfo[5] = {
+    std::array<VkDescriptorImageInfo, textureCount> shipImageInfo{{
             {shipSampler_,       shipImageView_,       VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
             {alienSampler_,      alienImageView_,      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
             {shipBulletSampler_, shipBulletImageView_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
             {doubleShotSampler_, doubleShotView_,      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
-            {shieldSampler_,     shieldView_,          VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}
-    };
+            {shieldSampler_,     shieldView_,          VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+    }};
 
-
-    VkWriteDescriptorSet samplerDescriptorWrite = {};
+    VkWriteDescriptorSet samplerDescriptorWrite{};
     samplerDescriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    samplerDescriptorWrite.dstSet = shipDescriptorSet_;
     samplerDescriptorWrite.dstBinding = 1;
     samplerDescriptorWrite.dstArrayElement = 0;
     samplerDescriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    samplerDescriptorWrite.descriptorCount = descriptorCount;
-    samplerDescriptorWrite.pImageInfo = shipImageInfo;
+    samplerDescriptorWrite.descriptorCount = textureCount;
+    samplerDescriptorWrite.pImageInfo = shipImageInfo.data();
 
-    std::vector<VkWriteDescriptorSet> writeDescriptorSets = {samplerDescriptorWrite};
+    std::vector<VkPushConstantRange> pushConstants;
+    if (!gfxPipelineData.pushConstantRanges.empty()) {
+        pushConstants = gfxPipelineData.pushConstantRanges;
+    } else {
+        VkPushConstantRange mainPC{};
+        mainPC.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+        mainPC.offset = 0;
+        mainPC.size = sizeof(MainPushConstants);
+        pushConstants.push_back(mainPC);
+    }
 
-    vkUpdateDescriptorSets(device_, writeDescriptorSets.size(), writeDescriptorSets.data(), 0,
-                           nullptr);
+    DescriptorSetupResult descriptorResult = createDescriptorResources(
+            device_, bindings, poolSizes, 1, pushConstants, gfxPipelineData,
+            {bufferDescriptorWrite, samplerDescriptorWrite});
+
+    shipDescriptorSetLayout_ = descriptorResult.layout;
+    mainDescriptorPool_ = descriptorResult.pool;
+    shipDescriptorSet_ = descriptorResult.descriptorSet;
 }
 
 VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
