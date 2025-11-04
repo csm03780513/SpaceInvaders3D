@@ -134,6 +134,12 @@ struct GfxPipelineData {
     VkViewport viewport;
     VkRect2D scissor;
     VkPipelineColorBlendAttachmentState colorBlendAttachment;
+    std::vector<VkPushConstantRange> pushConstantRanges;
+};
+
+struct PipelineHandles {
+    VkPipeline pipeline{VK_NULL_HANDLE};
+    VkPipelineLayout layout{VK_NULL_HANDLE};
 };
 
 enum class GameState {

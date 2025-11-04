@@ -1,4 +1,5 @@
 #include "Renderer.h"
+#include "PipelineBuilder.h"
 #include "SFXMixer.h"
 #include "ECS/systems/AilmentSystem.h"
 
@@ -605,17 +606,21 @@ void Renderer::createImageOverlayDescriptor(GfxPipelineData &gfxPipelineData) {
         throw std::runtime_error("Failed to create overlay descriptor pool");
     }
 
-    VkPushConstantRange overlayPushConstantRange = {};
-    overlayPushConstantRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-    overlayPushConstantRange.offset = 0;
-    overlayPushConstantRange.size = sizeof(float) * 4; // For vec4 offset
-
     VkPipelineLayoutCreateInfo overlayPipelineLayoutInfo = {};
     overlayPipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     overlayPipelineLayoutInfo.setLayoutCount = 1;
     overlayPipelineLayoutInfo.pSetLayouts = &overlayDescriptorSetLayout_;
-    overlayPipelineLayoutInfo.pushConstantRangeCount = 1;
-    overlayPipelineLayoutInfo.pPushConstantRanges = &overlayPushConstantRange;
+    VkPushConstantRange overlayPushConstantRange = {};
+    if (!gfxPipelineData.pushConstantRanges.empty()) {
+        overlayPipelineLayoutInfo.pushConstantRangeCount = gfxPipelineData.pushConstantRanges.size();
+        overlayPipelineLayoutInfo.pPushConstantRanges = gfxPipelineData.pushConstantRanges.data();
+    } else {
+        overlayPushConstantRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        overlayPushConstantRange.offset = 0;
+        overlayPushConstantRange.size = sizeof(float) * 4; // For vec4 offset
+        overlayPipelineLayoutInfo.pushConstantRangeCount = 1;
+        overlayPipelineLayoutInfo.pPushConstantRanges = &overlayPushConstantRange;
+    }
 
     createPipelineLayout(overlayPipelineLayoutInfo, gfxPipelineData);
 
@@ -678,17 +683,21 @@ void Renderer::createFontDescriptor(GfxPipelineData &gfxPipelineData) {
         throw std::runtime_error("Failed to create font descriptor pool");
     }
 
-    VkPushConstantRange pushConstantRange = {};
-    pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-    pushConstantRange.offset = 0;
-    pushConstantRange.size = sizeof(FontPushConstants);
-
     VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = {};
     pipelineLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     pipelineLayoutCreateInfo.setLayoutCount = 1;
     pipelineLayoutCreateInfo.pSetLayouts = &fontDescriptorSetLayout_;
-    pipelineLayoutCreateInfo.pushConstantRangeCount = 1;
-    pipelineLayoutCreateInfo.pPushConstantRanges = &pushConstantRange;
+    VkPushConstantRange pushConstantRange = {};
+    if (!gfxPipelineData.pushConstantRanges.empty()) {
+        pipelineLayoutCreateInfo.pushConstantRangeCount = gfxPipelineData.pushConstantRanges.size();
+        pipelineLayoutCreateInfo.pPushConstantRanges = gfxPipelineData.pushConstantRanges.data();
+    } else {
+        pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+        pushConstantRange.offset = 0;
+        pushConstantRange.size = sizeof(FontPushConstants);
+        pipelineLayoutCreateInfo.pushConstantRangeCount = 1;
+        pipelineLayoutCreateInfo.pPushConstantRanges = &pushConstantRange;
+    }
 
     createPipelineLayout(pipelineLayoutCreateInfo, gfxPipelineData);
     LOGE("font pipelineLayout:%llu", gfxPipelineData.pipelineLayout);
@@ -753,20 +762,21 @@ void Renderer::createMainDescriptor(GfxPipelineData &gfxPipelineData) {
     // shipBulletDescriptorSetLayout_,
     //powerUpManager_->doubleShotDescriptorSetLayout};
 
-    VkPushConstantRange mainPC = {};
-    mainPC.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-    mainPC.offset = 0;
-    mainPC.size = sizeof(MainPushConstants);
-
-
-    std::vector<VkPushConstantRange> pushConstantRanges = {mainPC};
-
     VkPipelineLayoutCreateInfo mainPipelineLayoutInfo = {};
     mainPipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     mainPipelineLayoutInfo.setLayoutCount = descriptorSetLayouts.size();
     mainPipelineLayoutInfo.pSetLayouts = descriptorSetLayouts.data();
-    mainPipelineLayoutInfo.pushConstantRangeCount = pushConstantRanges.size();
-    mainPipelineLayoutInfo.pPushConstantRanges = pushConstantRanges.data();
+    VkPushConstantRange mainPC = {};
+    if (!gfxPipelineData.pushConstantRanges.empty()) {
+        mainPipelineLayoutInfo.pushConstantRangeCount = gfxPipelineData.pushConstantRanges.size();
+        mainPipelineLayoutInfo.pPushConstantRanges = gfxPipelineData.pushConstantRanges.data();
+    } else {
+        mainPC.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+        mainPC.offset = 0;
+        mainPC.size = sizeof(MainPushConstants);
+        mainPipelineLayoutInfo.pushConstantRangeCount = 1;
+        mainPipelineLayoutInfo.pPushConstantRanges = &mainPC;
+    }
 
     createPipelineLayout(mainPipelineLayoutInfo, gfxPipelineData);
     LOGE("main pipelineLayout gd: %llu", gfxPipelineData.pipelineLayout);
@@ -1239,336 +1249,232 @@ void Renderer::updateUniformBuffer() {
 
 
 void Renderer::createMainGfxPipeline() {
+    PipelineBuilder builder(device_, renderPass_, swapchainExtent_, platformServices_);
+    builder.setShaderFilenames("main.vert.spv", "main.frag.spv");
 
-    // One binding (per-vertex data)
-    VkVertexInputBindingDescription mainBindingDesc = {};
+    VkVertexInputBindingDescription mainBindingDesc{};
     mainBindingDesc.binding = 0;
     mainBindingDesc.stride = sizeof(Vertex);
     mainBindingDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-// Position (location=0)
-    VkVertexInputAttributeDescription mainPosDesc = {};
+    VkVertexInputAttributeDescription mainPosDesc{};
     mainPosDesc.binding = 0;
     mainPosDesc.location = 0;
     mainPosDesc.format = VK_FORMAT_R32G32B32_SFLOAT;
     mainPosDesc.offset = offsetof(Vertex, pos);
 
-// Color (location=1)
-    VkVertexInputAttributeDescription mainColorDesc = {};
+    VkVertexInputAttributeDescription mainColorDesc{};
     mainColorDesc.binding = 0;
     mainColorDesc.location = 1;
     mainColorDesc.format = VK_FORMAT_R32G32B32_SFLOAT;
     mainColorDesc.offset = offsetof(Vertex, color);
 
-    // Color (location=1)
-    VkVertexInputAttributeDescription mainUVDesc = {};
+    VkVertexInputAttributeDescription mainUVDesc{};
     mainUVDesc.binding = 0;
     mainUVDesc.location = 2;
     mainUVDesc.format = VK_FORMAT_R32G32_SFLOAT;
     mainUVDesc.offset = offsetof(Vertex, uv);
 
-    std::vector<VkVertexInputAttributeDescription> vertexAttributeDesc = {mainPosDesc,
-                                                                          mainColorDesc,
-                                                                          mainUVDesc};
-    VkPipelineVertexInputStateCreateInfo mainVertexInputInfo = {};
-    mainVertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    mainVertexInputInfo.vertexBindingDescriptionCount = 1;
-    mainVertexInputInfo.pVertexBindingDescriptions = &mainBindingDesc;
-    mainVertexInputInfo.vertexAttributeDescriptionCount = vertexAttributeDesc.size();
-    mainVertexInputInfo.pVertexAttributeDescriptions = vertexAttributeDesc.data();
+    builder.setVertexInput({mainBindingDesc}, {mainPosDesc, mainColorDesc, mainUVDesc});
 
-    GfxPipelineData graphicsPipelineData{
-            .pipeline = mainPipeline_,
-            .vertexInputState = mainVertexInputInfo,
-            .pipelineLayout = mainPipelineLayout_,
-            .viewport {.x=0.0, .y=0.0f, .width=(float) swapchainExtent_.width, .height=(float) swapchainExtent_.height, .minDepth=0.0f, .maxDepth=1.0f},
-            .scissor {.offset{0, 0}, .extent = swapchainExtent_}
-    };
+    VkPushConstantRange mainPC{};
+    mainPC.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    mainPC.offset = 0;
+    mainPC.size = sizeof(MainPushConstants);
+    builder.setPushConstantRanges({mainPC});
 
-    setShaderStages(device_, platformServices_, "main.vert.spv", "main.frag.spv",
-                    graphicsPipelineData);
-    setColorBlending(graphicsPipelineData);
-    setViewPortState(graphicsPipelineData);
-    setInputAssembly(graphicsPipelineData);
-    setRasterizer(graphicsPipelineData);
-    setSampling(graphicsPipelineData);
-    createMainDescriptor(graphicsPipelineData);
-    createPipeline(graphicsPipelineData, GfxPipelineType::Main);
+    builder.setDescriptorLayoutCallback([this](GfxPipelineData &data) {
+        createMainDescriptor(data);
+    });
 
-
+    PipelineHandles handles = builder.build(*this);
+    mainPipeline_ = handles.pipeline;
+    mainPipelineLayout_ = handles.layout;
 }
 
 void Renderer::createOverlayGfxPipeline() {
+    PipelineBuilder builder(device_, renderPass_, swapchainExtent_, platformServices_);
+    builder.setShaderFilenames("overlay.vert.spv", "overlay.frag.spv");
 
-    GfxPipelineData graphicsPipelineData{
-            .pipeline = overlayPipeline_,
-            .viewport {.x=0.0, .y=0.0f, .width=(float) swapchainExtent_.width, .height=(float) swapchainExtent_.height, .minDepth=0.0f, .maxDepth=1.0f},
-            .scissor {.offset{0, 0}, .extent = swapchainExtent_}
-    };
-
-    setShaderStages(device_, platformServices_, "overlay.vert.spv", "overlay.frag.spv",
-                    graphicsPipelineData);
-    setColorBlending(graphicsPipelineData);
-    setViewPortState(graphicsPipelineData);
-    setInputAssembly(graphicsPipelineData);
-    setRasterizer(graphicsPipelineData);
-    setSampling(graphicsPipelineData);
-    createImageOverlayDescriptor(graphicsPipelineData);
-
-    // Vertex input: just position
-    VkVertexInputBindingDescription overlayBindingDesc = {};
+    VkVertexInputBindingDescription overlayBindingDesc{};
     overlayBindingDesc.binding = 0;
     overlayBindingDesc.stride = sizeof(OverlayVertex);
     overlayBindingDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-    // Position (location=0)
-    VkVertexInputAttributeDescription overlayPosDesc = {};
+    VkVertexInputAttributeDescription overlayPosDesc{};
     overlayPosDesc.binding = 0;
     overlayPosDesc.location = 0;
     overlayPosDesc.format = VK_FORMAT_R32G32B32_SFLOAT;
     overlayPosDesc.offset = offsetof(OverlayVertex, pos);
 
-    VkVertexInputAttributeDescription overlayUvDesc = {};
+    VkVertexInputAttributeDescription overlayUvDesc{};
     overlayUvDesc.binding = 0;
     overlayUvDesc.location = 1;
     overlayUvDesc.format = VK_FORMAT_R32G32_SFLOAT;
     overlayUvDesc.offset = offsetof(OverlayVertex, uv);
 
-    std::vector<VkVertexInputAttributeDescription> overlayVertexAttributeDesc = {overlayPosDesc,
-                                                                                 overlayUvDesc};
+    builder.setVertexInput({overlayBindingDesc}, {overlayPosDesc, overlayUvDesc});
 
-    VkPipelineVertexInputStateCreateInfo overlayVertexInputInfo = {};
-    overlayVertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    overlayVertexInputInfo.vertexBindingDescriptionCount = 1;
-    overlayVertexInputInfo.pVertexBindingDescriptions = &overlayBindingDesc;
-    overlayVertexInputInfo.vertexAttributeDescriptionCount = overlayVertexAttributeDesc.size();
-    overlayVertexInputInfo.pVertexAttributeDescriptions = overlayVertexAttributeDesc.data();
+    VkPushConstantRange overlayPushConstantRange{};
+    overlayPushConstantRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    overlayPushConstantRange.offset = 0;
+    overlayPushConstantRange.size = sizeof(float) * 4;
+    builder.setPushConstantRanges({overlayPushConstantRange});
 
+    builder.setDescriptorLayoutCallback([this](GfxPipelineData &data) {
+        createImageOverlayDescriptor(data);
+    });
 
-    LOGE("overlay pipelineLayout: %llu", graphicsPipelineData.pipelineLayout);
-
-    graphicsPipelineData.vertexInputState = overlayVertexInputInfo;
-
-    createPipeline(graphicsPipelineData, GfxPipelineType::Overlay);
-
-
+    PipelineHandles handles = builder.build(*this);
+    overlayPipeline_ = handles.pipeline;
+    overlayPipelineLayout_ = handles.layout;
 }
 
 void Renderer::createFontGfxPipeline() {
-    GfxPipelineData graphicsPipelineData{
-            .pipeline = fontPipeline_,
-            .viewport {.x=0.0, .y=0.0f, .width=(float) swapchainExtent_.width, .height=(float) swapchainExtent_.height, .minDepth=0.0f, .maxDepth=1.0f},
-            .scissor {.offset{0, 0}, .extent = swapchainExtent_}
-    };
+    PipelineBuilder builder(device_, renderPass_, swapchainExtent_, platformServices_);
+    builder.setShaderFilenames("font.vert.spv", "font.frag.spv");
 
-    setShaderStages(device_, platformServices_, "font.vert.spv", "font.frag.spv",
-                    graphicsPipelineData);
-    setColorBlending(graphicsPipelineData);
-    setViewPortState(graphicsPipelineData);
-    setInputAssembly(graphicsPipelineData);
-    setRasterizer(graphicsPipelineData);
-    setSampling(graphicsPipelineData);
-    createFontDescriptor(graphicsPipelineData);
-
-    // Vertex input: just position
-    VkVertexInputBindingDescription inputBindingDescription = {};
+    VkVertexInputBindingDescription inputBindingDescription{};
     inputBindingDescription.binding = 0;
     inputBindingDescription.stride = sizeof(Vertex);
     inputBindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-
-// Position (location=0)
-    VkVertexInputAttributeDescription posDesc = {};
+    VkVertexInputAttributeDescription posDesc{};
     posDesc.binding = 0;
     posDesc.location = 0;
     posDesc.format = VK_FORMAT_R32G32B32_SFLOAT;
     posDesc.offset = offsetof(Vertex, pos);
 
-// Color (location=1)
-    VkVertexInputAttributeDescription colorDesc = {};
+    VkVertexInputAttributeDescription colorDesc{};
     colorDesc.binding = 0;
     colorDesc.location = 1;
     colorDesc.format = VK_FORMAT_R32G32B32_SFLOAT;
     colorDesc.offset = offsetof(Vertex, color);
 
-    // Color (location=1)
-    VkVertexInputAttributeDescription uvDesc = {};
+    VkVertexInputAttributeDescription uvDesc{};
     uvDesc.binding = 0;
     uvDesc.location = 2;
     uvDesc.format = VK_FORMAT_R32G32_SFLOAT;
     uvDesc.offset = offsetof(Vertex, uv);
 
-    std::vector<VkVertexInputAttributeDescription> vertexAttributeDesc = {posDesc,
-                                                                          colorDesc,
-                                                                          uvDesc};
+    builder.setVertexInput({inputBindingDescription}, {posDesc, colorDesc, uvDesc});
 
-    VkPipelineVertexInputStateCreateInfo vertexInputInfo = {};
-    vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    vertexInputInfo.vertexBindingDescriptionCount = 1;
-    vertexInputInfo.pVertexBindingDescriptions = &inputBindingDescription;
-    vertexInputInfo.vertexAttributeDescriptionCount = vertexAttributeDesc.size();
-    vertexInputInfo.pVertexAttributeDescriptions = vertexAttributeDesc.data();
+    VkPushConstantRange fontPushConstantRange{};
+    fontPushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    fontPushConstantRange.offset = 0;
+    fontPushConstantRange.size = sizeof(FontPushConstants);
+    builder.setPushConstantRanges({fontPushConstantRange});
 
-    graphicsPipelineData.vertexInputState = vertexInputInfo;
+    builder.setDescriptorLayoutCallback([this](GfxPipelineData &data) {
+        createFontDescriptor(data);
+    });
 
-    createPipeline(graphicsPipelineData, GfxPipelineType::Font);
-
-
+    PipelineHandles handles = builder.build(*this);
+    fontPipeline_ = handles.pipeline;
+    fontPipelineLayout_ = handles.layout;
 }
 
 void Renderer::createGfxPipeline(GfxPipelineType gfxPipelineType) {
-    std::vector<VkVertexInputBindingDescription> bindings;
-    std::vector<VkVertexInputAttributeDescription> attributes;
-    VkPipelineVertexInputStateCreateInfo vertexInputInfo = {};
-    VkPipelineLayoutCreateInfo aabbPipelineLayoutInfo = {};
-
-    GfxPipelineData graphicsPipelineData{
-            .viewport {.x=0.0, .y=0.0f, .width=(float) swapchainExtent_.width, .height=(float) swapchainExtent_.height, .minDepth=0.0f, .maxDepth=1.0f},
-            .scissor {.offset{0, 0}, .extent = swapchainExtent_}
-    };
-
-    switch (gfxPipelineType) {
-        case GfxPipelineType::AxisAlignedBoundingBoxes:
-            graphicsPipelineData.inputAssemblyState.topology = VK_PRIMITIVE_TOPOLOGY_LINE_STRIP;
-
-            setShaderStages(device_, platformServices_, "aabb.vert.spv", "aabb.frag.spv",
-                            graphicsPipelineData);
-            bindings = Vertex::getBindingDescriptions();
-            attributes = Vertex::getAttributeDescriptions();
-
-            vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-            vertexInputInfo.vertexBindingDescriptionCount = bindings.size();
-            vertexInputInfo.pVertexBindingDescriptions = bindings.data();
-            vertexInputInfo.vertexAttributeDescriptionCount = attributes.size();
-            vertexInputInfo.pVertexAttributeDescriptions = attributes.data();
-
-            graphicsPipelineData.vertexInputState = vertexInputInfo;
-
-            setColorBlending(graphicsPipelineData);
-            setViewPortState(graphicsPipelineData);
-            setInputAssembly(graphicsPipelineData);
-            setRasterizer(graphicsPipelineData);
-            setSampling(graphicsPipelineData);
-
-
-            aabbPipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-            aabbPipelineLayoutInfo.setLayoutCount = 0;
-            aabbPipelineLayoutInfo.pSetLayouts = nullptr;
-            aabbPipelineLayoutInfo.pushConstantRangeCount = 0;
-            aabbPipelineLayoutInfo.pPushConstantRanges = nullptr;
-
-            createPipelineLayout(aabbPipelineLayoutInfo, graphicsPipelineData);
-
-
-            createPipeline(graphicsPipelineData, gfxPipelineType);
-
-            break;
-
-        default:
-            LOGE("Unknown graphics pipeline type");
+    if (gfxPipelineType != GfxPipelineType::AxisAlignedBoundingBoxes) {
+        LOGE("Unknown graphics pipeline type");
+        return;
     }
 
+    PipelineBuilder builder(device_, renderPass_, swapchainExtent_, platformServices_);
+    builder.setShaderFilenames("aabb.vert.spv", "aabb.frag.spv");
 
+    auto bindings = Vertex::getBindingDescriptions();
+    auto attributes = Vertex::getAttributeDescriptions();
+    builder.setVertexInput(bindings, attributes);
+    builder.setTopology(VK_PRIMITIVE_TOPOLOGY_LINE_STRIP);
+
+    builder.setDescriptorLayoutCallback([this](GfxPipelineData &data) {
+        VkPipelineLayoutCreateInfo aabbPipelineLayoutInfo{};
+        aabbPipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        aabbPipelineLayoutInfo.setLayoutCount = 0;
+        aabbPipelineLayoutInfo.pSetLayouts = nullptr;
+        aabbPipelineLayoutInfo.pushConstantRangeCount = 0;
+        aabbPipelineLayoutInfo.pPushConstantRanges = nullptr;
+
+        createPipelineLayout(aabbPipelineLayoutInfo, data);
+    });
+
+    PipelineHandles handles = builder.build(*this);
+    util_->aabbPipeline = handles.pipeline;
+    util_->aabbPipelineLayout = handles.layout;
 }
 
 void Renderer::createParticlesGfxPipeline(GfxPipelineType gfxPipelineType) {
+    PipelineBuilder builder(device_, renderPass_, swapchainExtent_, platformServices_);
+
     std::vector<VkVertexInputBindingDescription> bindings;
     std::vector<VkVertexInputAttributeDescription> attributes;
 
-    GfxPipelineData graphicsPipelineData{
-            .viewport {.x=0.0, .y=0.0f, .width=(float) swapchainExtent_.width, .height=(float) swapchainExtent_.height, .minDepth=0.0f, .maxDepth=1.0f},
-            .scissor {.offset{0, 0}, .extent = swapchainExtent_}
-    };
-
-    if (gfxPipelineType == GfxPipelineType::ExplosionParticles) {
-        setShaderStages(device_, platformServices_, "particles_instanced.vert.spv",
-                        "particles_instanced.frag.spv",
-                        graphicsPipelineData);
-
-        bindings = ParticleInstance::getBindingDescriptions();
-        attributes = ParticleInstance::getAttributeDescriptions();
-
-        VkPipelineVertexInputStateCreateInfo particlesVertexInputInfo = {};
-        particlesVertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-        particlesVertexInputInfo.vertexBindingDescriptionCount = bindings.size();
-        particlesVertexInputInfo.pVertexBindingDescriptions = bindings.data();
-        particlesVertexInputInfo.vertexAttributeDescriptionCount = attributes.size();
-        particlesVertexInputInfo.pVertexAttributeDescriptions = attributes.data();
-
-        graphicsPipelineData.vertexInputState = particlesVertexInputInfo;
+    switch (gfxPipelineType) {
+        case GfxPipelineType::ExplosionParticles:
+            builder.setShaderFilenames("particles_instanced.vert.spv", "particles_instanced.frag.spv");
+            bindings = ParticleInstance::getBindingDescriptions();
+            attributes = ParticleInstance::getAttributeDescriptions();
+            break;
+        case GfxPipelineType::StarParticles:
+            builder.setShaderFilenames("stars_instanced.vert.spv", "stars_instanced.frag.spv");
+            bindings = StarInstance::getBindingDescriptions();
+            attributes = StarInstance::getAttributeDescriptions();
+            break;
+        case GfxPipelineType::HaloEffect:
+            builder.setShaderFilenames("halo.vert.spv", "halo.frag.spv");
+            bindings = ShieldInstance::getBindingDescriptions();
+            attributes = ShieldInstance::getAttributeDescriptions();
+            break;
+        default:
+            LOGE("Unknown particles pipeline type");
+            return;
     }
 
-    if (gfxPipelineType == GfxPipelineType::StarParticles) {
-        setShaderStages(device_, platformServices_, "stars_instanced.vert.spv",
-                        "stars_instanced.frag.spv",
-                        graphicsPipelineData);
+    builder.setVertexInput(bindings, attributes);
 
-        bindings = StarInstance::getBindingDescriptions();
-        attributes = StarInstance::getAttributeDescriptions();
+    builder.setDescriptorLayoutCallback([this](GfxPipelineData &data) {
+        VkDescriptorSetLayoutBinding particleInstanceBinding{};
+        particleInstanceBinding.binding = 0;
+        particleInstanceBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        particleInstanceBinding.descriptorCount = 0;
+        particleInstanceBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
-        VkPipelineVertexInputStateCreateInfo particlesVertexInputInfo = {};
-        particlesVertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-        particlesVertexInputInfo.vertexBindingDescriptionCount = bindings.size();
-        particlesVertexInputInfo.pVertexBindingDescriptions = bindings.data();
-        particlesVertexInputInfo.vertexAttributeDescriptionCount = attributes.size();
-        particlesVertexInputInfo.pVertexAttributeDescriptions = attributes.data();
+        VkDescriptorSetLayoutCreateInfo particlesLayoutInfo{};
+        particlesLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        particlesLayoutInfo.bindingCount = 1;
+        particlesLayoutInfo.pBindings = &particleInstanceBinding;
 
-        graphicsPipelineData.vertexInputState = particlesVertexInputInfo;
+        createDescriptorSetLayout(particlesLayoutInfo, particlesDescriptorSetLayout_);
+
+        VkPipelineLayoutCreateInfo particlesPipelineLayoutInfo{};
+        particlesPipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        particlesPipelineLayoutInfo.setLayoutCount = 0;
+        particlesPipelineLayoutInfo.pSetLayouts = nullptr;
+        particlesPipelineLayoutInfo.pushConstantRangeCount = 0;
+        particlesPipelineLayoutInfo.pPushConstantRanges = nullptr;
+
+        createPipelineLayout(particlesPipelineLayoutInfo, data);
+    });
+
+    PipelineHandles handles = builder.build(*this);
+
+    switch (gfxPipelineType) {
+        case GfxPipelineType::ExplosionParticles:
+            explosionParticlesPipeline_ = handles.pipeline;
+            particlesPipelineLayout_ = handles.layout;
+            break;
+        case GfxPipelineType::StarParticles:
+            starParticlesPipeline_ = handles.pipeline;
+            particlesPipelineLayout_ = handles.layout;
+            break;
+        case GfxPipelineType::HaloEffect:
+            particleSystem_->haloPipeline = handles.pipeline;
+            break;
+        default:
+            break;
     }
-
-    if (gfxPipelineType == GfxPipelineType::HaloEffect) {
-        setShaderStages(device_, platformServices_, "halo.vert.spv",
-                        "halo.frag.spv",
-                        graphicsPipelineData);
-        bindings = ShieldInstance::getBindingDescriptions();
-        attributes = ShieldInstance::getAttributeDescriptions();
-
-        VkPipelineVertexInputStateCreateInfo particlesVertexInputInfo = {};
-        particlesVertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-        particlesVertexInputInfo.vertexBindingDescriptionCount = bindings.size();
-        particlesVertexInputInfo.pVertexBindingDescriptions = bindings.data();
-        particlesVertexInputInfo.vertexAttributeDescriptionCount = attributes.size();
-        particlesVertexInputInfo.pVertexAttributeDescriptions = attributes.data();
-
-        graphicsPipelineData.vertexInputState = particlesVertexInputInfo;
-
-    }
-
-    setColorBlending(graphicsPipelineData);
-    setViewPortState(graphicsPipelineData);
-    setInputAssembly(graphicsPipelineData);
-    setRasterizer(graphicsPipelineData);
-    setSampling(graphicsPipelineData);
-
-    VkDescriptorSetLayoutBinding particleInstanceBinding = {};
-    particleInstanceBinding.binding = 0;
-    particleInstanceBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    particleInstanceBinding.descriptorCount = 0;
-    particleInstanceBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
-    VkDescriptorSetLayoutCreateInfo particlesLayoutInfo = {};
-    particlesLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    particlesLayoutInfo.bindingCount = 1;
-    particlesLayoutInfo.pBindings = &particleInstanceBinding;
-
-    createDescriptorSetLayout(particlesLayoutInfo, particlesDescriptorSetLayout_);
-
-
-    VkPipelineLayoutCreateInfo particlesPipelineLayoutInfo = {};
-    particlesPipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    particlesPipelineLayoutInfo.setLayoutCount = 0;
-    particlesPipelineLayoutInfo.pSetLayouts = nullptr;
-    particlesPipelineLayoutInfo.pushConstantRangeCount = 0;
-    particlesPipelineLayoutInfo.pPushConstantRanges = nullptr;
-
-    createPipelineLayout(particlesPipelineLayoutInfo, graphicsPipelineData);
-
-
-    createPipeline(graphicsPipelineData, gfxPipelineType);
-
-
 }
-
 
 void setRasterizer(GfxPipelineData &graphicsPipelineData) {
     auto &overlayRasterizer = graphicsPipelineData.rasterizationState;
@@ -1667,8 +1573,8 @@ void Renderer::createPipelineLayout(VkPipelineLayoutCreateInfo &pipelineLayoutIn
 
 }
 
-void
-Renderer::createPipeline(GfxPipelineData &gfxPipelineData, GfxPipelineType gfxPipelineType) {
+PipelineHandles
+Renderer::createPipeline(GfxPipelineData &gfxPipelineData) {
 
     VkGraphicsPipelineCreateInfo pipelineCreateInfo = gfxPipelineData.pipelineCreateInfo;
     pipelineCreateInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -1683,56 +1589,17 @@ Renderer::createPipeline(GfxPipelineData &gfxPipelineData, GfxPipelineType gfxPi
     pipelineCreateInfo.layout = gfxPipelineData.pipelineLayout;
     pipelineCreateInfo.renderPass = renderPass_;
     pipelineCreateInfo.subpass = 0;
+    VkPipeline pipeline = VK_NULL_HANDLE;
     VkResult res = vkCreateGraphicsPipelines(device_, VK_NULL_HANDLE, 1,
                                              &pipelineCreateInfo, nullptr,
-                                             &gfxPipelineData.pipeline);
+                                             &pipeline);
     if (res != VK_SUCCESS) {
         LOGE("Failed to create graphics pipeline! error code:%d", res);
         throw std::runtime_error("Failed to create graphics pipeline");
     }
 
-    switch (gfxPipelineType) {
-        case GfxPipelineType::Main:
-            mainPipeline_ = gfxPipelineData.pipeline;
-            mainPipelineLayout_ = gfxPipelineData.pipelineLayout;
-            LOGE("mainPipeline_: %llu", mainPipeline_);
-            break;
-        case GfxPipelineType::Overlay:
-            overlayPipeline_ = gfxPipelineData.pipeline;
-            overlayPipelineLayout_ = gfxPipelineData.pipelineLayout;
-            LOGE("overlayPipeline_:  %p", &overlayPipeline_);
-            break;
-        case GfxPipelineType::Font:
-            fontPipeline_ = gfxPipelineData.pipeline;
-            fontPipelineLayout_ = gfxPipelineData.pipelineLayout;
-            LOGE("fontPipeline_: %p", &gfxPipelineData.pipeline);
-            break;
-        case GfxPipelineType::ExplosionParticles:
-            explosionParticlesPipeline_ = gfxPipelineData.pipeline;
-            particlesPipelineLayout_ = gfxPipelineData.pipelineLayout;
-            LOGE("explosionParticlesPipeline_: %p", &explosionParticlesPipeline_);
-            break;
-        case GfxPipelineType::StarParticles:
-            starParticlesPipeline_ = gfxPipelineData.pipeline;
-            particlesPipelineLayout_ = gfxPipelineData.pipelineLayout;
-            LOGE("starParticlesPipeline_: %p", &starParticlesPipeline_);
-            break;
-        case GfxPipelineType::AxisAlignedBoundingBoxes:
-            util_->aabbPipeline = gfxPipelineData.pipeline;
-            util_->aabbPipelineLayout = gfxPipelineData.pipelineLayout;
-            LOGE("aabbPipeline: %p", &util_->aabbPipeline);
-            LOGE("aabbPipeline llu: %llu", util_->aabbPipeline);
-            break;
-        case GfxPipelineType::HaloEffect:
-            particleSystem_->haloPipeline = gfxPipelineData.pipeline;
-            break;
-        default:
-            LOGE("Unknown pipeline name: %s", gfxPipelineType);
-            break;
-    }
-
-    vkDestroyShaderModule(device_, gfxPipelineData.shaderStages[0].module, nullptr);
-    vkDestroyShaderModule(device_, gfxPipelineData.shaderStages[1].module, nullptr);
+    gfxPipelineData.pipeline = pipeline;
+    return {pipeline, gfxPipelineData.pipelineLayout};
 }
 
 void

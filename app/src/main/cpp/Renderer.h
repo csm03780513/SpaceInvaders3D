@@ -23,6 +23,9 @@ constexpr int SFX_CHANNELS = 1;
 static constexpr int MAX_BULLETS = 50;
 
 
+struct PipelineHandles;
+class PipelineBuilder;
+
 class Renderer {
 public:
     explicit Renderer(IPlatformServices &platformServices);
@@ -67,6 +70,7 @@ public:
     glm::vec2 shakeOffset{0.0f};
 
 private:
+    friend class PipelineBuilder;
     GameState gameState;
 
     std::unique_ptr<FontManager> fontManager_;
@@ -272,7 +276,7 @@ private:
 
     void updateCollision();
 
-    void createPipeline(GfxPipelineData &gfxPipelineData,GfxPipelineType gfxPipelineType);
+    PipelineHandles createPipeline(GfxPipelineData &gfxPipelineData);
 
     void createPipelineLayout(VkPipelineLayoutCreateInfo &pipelineLayoutInfo,GfxPipelineData &gfxPipelineData);
 

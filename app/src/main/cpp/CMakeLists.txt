@@ -16,6 +16,7 @@ add_library(SpaceInvaders3D SHARED
         # List C/C++ source files with relative paths to this CMakeLists.txt.
         main.cpp
         Renderer.cpp
+        PipelineBuilder.cpp
         game/Game.cpp
         game/RenderContext.cpp
         game/MainMenuState.cpp
