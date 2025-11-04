@@ -30,17 +30,22 @@ Game::~Game() {
 }
 
 void Game::onWindowCreated() {
+    if (renderer_) {
+        renderer_->onWindowResumed();
+    }
     ensureRenderer();
 }
 
 void Game::onWindowDestroyed() {
     if (renderer_) {
         renderer_->stopAudioPlayer();
+        renderer_->onWindowLost();
     }
 }
 
 void Game::onFocusGained() {
     if (renderer_) {
+        renderer_->onWindowResumed();
         renderer_->resumeAudioPlayer();
     }
 }
@@ -48,6 +53,7 @@ void Game::onFocusGained() {
 void Game::onFocusLost() {
     if (renderer_) {
         renderer_->stopAudioPlayer();
+        renderer_->onWindowLost();
     }
 }
 

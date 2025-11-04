@@ -93,6 +93,11 @@ void AndroidPlatformServices::handleAppCommand(int32_t cmd) {
                 callbacksCopy.onLostAudioFocus();
             }
             break;
+        case APP_CMD_CONFIG_CHANGED:
+            if (callbacksCopy.onWindowDestroyed) {
+                callbacksCopy.onWindowDestroyed();
+            }
+            break;
         default:
             break;
     }
