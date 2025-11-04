@@ -52,6 +52,9 @@ public:
     void setGameState(GameState state);
     [[nodiscard]] GameState getGameState() const;
 
+    void onWindowLost();
+    void onWindowResumed();
+
     [[nodiscard]] bool hasActiveAliens() const;
     [[nodiscard]] bool hasAlienBelow(float threshold) const;
 
@@ -331,7 +334,18 @@ private:
     void drawFloatingDamageTexts(VkCommandBuffer cmd);
     void initShip();
 
+    void createCommandPool();
+    bool createSwapchainResources();
+    void destroySwapchainResources(bool destroySurface);
+    void recreateSwapchain();
+    void createGraphicsPipelines();
+    void destroyGraphicsPipelines();
+
     EventBus eventBus_;
     std::unique_ptr<GameMechanicsCoordinator> mechanics_;
     uint32_t damagePopupSubscriptionId_ = 0;
+
+    bool swapchainValid_ = false;
+    bool pendingSwapchainRecreation_ = false;
+    bool pipelinesInitialized_ = false;
 };
