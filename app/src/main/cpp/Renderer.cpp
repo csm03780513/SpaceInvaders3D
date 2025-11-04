@@ -982,6 +982,12 @@ bool Renderer::createSwapchainResources() {
     VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR;
 
     swapchainExtent_ = surfCaps.currentExtent;
+    if (swapchainExtent_.width == 0 || swapchainExtent_.height == 0) {
+        LOGE("Swapchain extent is zero-sized (%u x %u); deferring recreation", swapchainExtent_.width,
+             swapchainExtent_.height);
+        swapchainValid_ = false;
+        return false;
+    }
 
     uint32_t imageCount = surfCaps.minImageCount + 1;
     if (surfCaps.maxImageCount > 0 && imageCount > surfCaps.maxImageCount) {
@@ -2427,9 +2433,16 @@ void Renderer::animateScore() {
 void Renderer::drawFrame() {
 
     if (!swapchainValid_) {
+        WindowInfo windowInfo = platformServices_.getWindowInfo();
+        if (!windowInfo.nativeWindow || windowInfo.width == 0 || windowInfo.height == 0) {
+            pendingSwapchainRecreation_ = true;
+            return;
+        }
+
         if (!pendingSwapchainRecreation_) {
             return;
         }
+
         if (!createSwapchainResources()) {
             pendingSwapchainRecreation_ = true;
             return;
@@ -2441,12 +2454,13 @@ void Renderer::drawFrame() {
                                                    imageAvailableSemaphore_, VK_NULL_HANDLE,
                                                    &imageIndex);
 
-    if (acquireResult == VK_ERROR_OUT_OF_DATE_KHR) {
+    if (acquireResult == VK_ERROR_OUT_OF_DATE_KHR || acquireResult == VK_SUBOPTIMAL_KHR) {
+        LOGE("Swapchain image acquisition returned %d, requesting recreation", acquireResult);
         recreateSwapchain();
         return;
     }
 
-    if (acquireResult != VK_SUCCESS && acquireResult != VK_SUBOPTIMAL_KHR) {
+    if (acquireResult != VK_SUCCESS) {
         LOGE("Failed to acquire swapchain image: %d", acquireResult);
         return;
     }
@@ -2480,9 +2494,14 @@ void Renderer::drawFrame() {
 
     VkResult presentResult = vkQueuePresentKHR(graphicsQueue_, &presentInfo);
     if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR) {
+        LOGE("Swapchain presentation returned %d, requesting recreation", presentResult);
         recreateSwapchain();
-    } else if (presentResult != VK_SUCCESS) {
+        return;
+    }
+
+    if (presentResult != VK_SUCCESS) {
         LOGE("Failed to present swapchain image: %d", presentResult);
+        return;
     }
 
     vkQueueWaitIdle(graphicsQueue_);
