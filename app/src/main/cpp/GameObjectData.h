@@ -164,7 +164,9 @@ enum class GameTextureType {
     ShipBullet,
     FontAtlas,
     Overlay,
-    PowerUp
+    PowerUp,
+    Logo,
+    StartButton
 };
 // Graphics pipeline types
 enum class GfxPipelineType {
