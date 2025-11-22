@@ -565,10 +565,19 @@ void Renderer::loadAllTextures() {
                 doubleShotSampler_, GameTextureType::PowerUp);
     loadTexture("shield.png", shieldImage_, shieldMemory_, shieldView_, shieldSampler_,
                 GameTextureType::PowerUp);
+    loadTexture("start.png", startImage_, startMemory_, startView_, startSampler_,
+                GameTextureType::StartButton);
+    loadTexture("game-title.png", titleImage_, titleMemory_, titleView_, titleSampler_,
+                GameTextureType::Logo);
+    loadTexture("exit.png", exitBtnImage_, exitBtnMemory_, exitBtnView_, exitBtnSampler_,
+                GameTextureType::Exit);
+
 
 }
 
 void Renderer::createImageOverlayDescriptor(GfxPipelineData &gfxPipelineData) {
+
+    constexpr uint32_t uiTextureCount = 4;
     VkDescriptorSetLayoutBinding overlaySamplerLayoutBinding{};
     overlaySamplerLayoutBinding.binding = 0;
     overlaySamplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -577,16 +586,20 @@ void Renderer::createImageOverlayDescriptor(GfxPipelineData &gfxPipelineData) {
 
     std::vector<VkDescriptorSetLayoutBinding> bindings{overlaySamplerLayoutBinding};
 
-    VkDescriptorPoolSize overlayPoolSize{};
-    overlayPoolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    overlayPoolSize.descriptorCount = 1;
+    VkDescriptorPoolSize samplerPoolSize{};
+    samplerPoolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    samplerPoolSize.descriptorCount = uiTextureCount;
 
-    std::vector<VkDescriptorPoolSize> poolSizes{overlayPoolSize};
+    std::vector<VkDescriptorPoolSize> poolSizes{samplerPoolSize};
 
-    VkDescriptorImageInfo imageInfo{};
-    imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    imageInfo.imageView = overlayImageView_;
-    imageInfo.sampler = overlaySampler_;
+
+    std::array<VkDescriptorImageInfo, uiTextureCount> imageInfos{{
+        {startSampler_,startView_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+        {titleSampler_,titleView_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+        {overlaySampler_,overlayImageView_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}
+    }};
+
+
 
     VkWriteDescriptorSet descriptorWrite{};
     descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -594,7 +607,7 @@ void Renderer::createImageOverlayDescriptor(GfxPipelineData &gfxPipelineData) {
     descriptorWrite.dstArrayElement = 0;
     descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     descriptorWrite.descriptorCount = 1;
-    descriptorWrite.pImageInfo = &imageInfo;
+    descriptorWrite.pImageInfo = imageInfos.data();
 
     std::vector<VkPushConstantRange> pushConstants;
     if (!gfxPipelineData.pushConstantRanges.empty()) {
@@ -1438,11 +1451,11 @@ void Renderer::createOverlayGfxPipeline() {
 
     builder.setVertexInput({overlayBindingDesc}, {overlayPosDesc, overlayUvDesc});
 
-    VkPushConstantRange overlayPushConstantRange{};
-    overlayPushConstantRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-    overlayPushConstantRange.offset = 0;
-    overlayPushConstantRange.size = sizeof(float) * 4;
-    builder.setPushConstantRanges({overlayPushConstantRange});
+    VkPushConstantRange UiPushConstantRange{};
+    UiPushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    UiPushConstantRange.offset = 0;
+    UiPushConstantRange.size = sizeof(UiPushConstants);
+    builder.setPushConstantRanges({UiPushConstantRange});
 
     builder.setDescriptorLayoutCallback([this](GfxPipelineData &data) {
         createImageOverlayDescriptor(data);
@@ -1844,26 +1857,31 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
 
     if (gameState != GameState::Playing) {
         // Set special color in push constant or UBO (e.g. red for GAME OVER)
-        float overlayColor[4];
-        if (gameState == GameState::Lost) {
-            overlayColor[0] = 1.0f; // Red
-            overlayColor[1] = 0.0f;
-            overlayColor[2] = 0.0f;
-            overlayColor[3] = 0.8f; // Alpha, for see-through
-        } else {
-            overlayColor[0] = 0.0f; // Green or Blue
-            overlayColor[1] = 1.0f;
-            overlayColor[2] = 0.5f;
-            overlayColor[3] = 0.5f;
+
+        if (gameState == GameState::MainMenu) {
+            for (const auto &uiTex: ui) {
+            UiPushConstants uiPushConstant{};
+            uiPushConstant.texturePos = uiTex.textureIndex;
+            uiPushConstant.offset = uiTex.offset;
+
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, overlayPipeline_);
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, overlayPipelineLayout_, 0, 1,
+                                    &overlayDescriptorSet_, 0, nullptr);
+            vkCmdBindVertexBuffers(cmd, 0, 1, &overlayVertexBuffer_, offsets);
+            vkCmdPushConstants(cmd, overlayPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
+                               sizeof(UiPushConstants), &uiPushConstant);
+            vkCmdDraw(cmd, 6, 1, 0, 0);
+            }
+        } else if (gameState == GameState::Lost) {
+            //show you have died and respawn button
+
         }
 
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, overlayPipeline_);
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, overlayPipelineLayout_, 0, 1,
-                                &overlayDescriptorSet_, 0, nullptr);
-        vkCmdBindVertexBuffers(cmd, 0, 1, &overlayVertexBuffer_, offsets);
-        vkCmdPushConstants(cmd, overlayPipelineLayout_, VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-                           sizeof(overlayColor), overlayColor);
-        vkCmdDraw(cmd, 6, 1, 0, 0);
+        } else {
+
+        }
+
+
     }
 
 

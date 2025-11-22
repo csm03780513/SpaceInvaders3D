@@ -102,6 +102,14 @@ struct MainPushConstants {
     glm::vec2 scale{1.0f, 1.0f};
 };
 
+struct UiPushConstants {
+    uint texturePos{0};
+    glm::vec2 offset{0.0f,0.0f};
+    glm::vec2 scale{0.0f,0.0f};
+};
+
+
+
 struct FontPushConstants {
     glm::vec4 color{1.0f, 1.0f, 1.0f, 1.0f};
     glm::vec2 pos{0.0f, 0.0f};
@@ -166,7 +174,8 @@ enum class GameTextureType {
     Overlay,
     PowerUp,
     Logo,
-    StartButton
+    StartButton,
+    Exit
 };
 // Graphics pipeline types
 enum class GfxPipelineType {
@@ -177,6 +186,12 @@ enum class GfxPipelineType {
     StarParticles,
     AxisAlignedBoundingBoxes,
     HaloEffect
+};
+
+struct UiEntry {
+    GameTextureType textureType;
+    uint32_t textureIndex;
+    glm::vec2 offset;
 };
 
 

@@ -5,6 +5,8 @@
 #include <memory>
 #include <vector>
 #include <string>
+#include <unordered_map>
+#include <cstdint>
 #include "GameTime.h"
 #include "PowerUpManager.h"
 #include "Util.h"
@@ -67,6 +69,13 @@ public:
     MainPushConstants shipPC_ = {.texturePos=0};
     MainPushConstants bulletPC_[MAX_BULLETS] = {};
     MainPushConstants alienPC_[MAX_ALIENS] = {};
+
+    std::array<UiEntry,4> ui = {
+            {GameTextureType::Logo,        0, {0.0f, -0.6f}}},
+            {GameTextureType::StartButton, 1, {0.0f,  0.15f}}},
+            {GameTextureType::Overlay,     2, {0.0f,  0.0f}}},
+            {GameTextureType::Exit,        3, {0.0f,  0.25f}}}
+    };
     // In your renderer, have a shake timer and amplitude:
     float shakeTimer = 0.0f;   // seconds remaining
     float shakeMagnitude = 0.025f; // NDC units (tune as desired)
@@ -251,6 +260,21 @@ private:
     VkDeviceMemory shieldMemory_;
     VkImageView shieldView_;
     VkSampler shieldSampler_;
+
+    VkImage startImage_;
+    VkDeviceMemory startMemory_;
+    VkImageView startView_;
+    VkSampler startSampler_;
+
+    VkImage titleImage_;
+    VkDeviceMemory titleMemory_;
+    VkImageView titleView_;
+    VkSampler titleSampler_;
+
+    VkImage exitBtnImage_;
+    VkDeviceMemory exitBtnMemory_;
+    VkImageView exitBtnView_;
+    VkSampler exitBtnSampler_;
 
     VkPipeline fontPipeline_{VK_NULL_HANDLE};
     VkPipelineLayout fontPipelineLayout_{VK_NULL_HANDLE};
