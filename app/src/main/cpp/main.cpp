@@ -49,7 +49,10 @@ static int32_t handle_input(struct android_app *app, AInputEvent *event) {
             if (state == GameState::Playing) {
                 command = std::make_unique<MoveShipCommand>(InputEventType::TouchDown, normalizedX, normalizedY);
             } else {
-                command = std::make_unique<RestartGameCommand>();
+                InputEvent evt{InputEventType::TouchDown, normalizedX, normalizedY};
+                context->game->handleInput(evt); //forwards to mainmenu state since its active first
+                return 1; // skip enqueuing RestartGameCommand
+//                command = std::make_unique<RestartGameCommand>();
             }
             break;
         case AMOTION_EVENT_ACTION_MOVE:
