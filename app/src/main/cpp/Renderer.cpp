@@ -556,8 +556,7 @@ void Renderer::loadAllTextures() {
                 alienSampler_, GameTextureType::Alien);
     loadTexture("laser_2.png", shipBulletImage_, shipBulletImageDeviceMemory_, shipBulletImageView_,
                 shipBulletSampler_, GameTextureType::ShipBullet);
-    loadTexture("tap_to_restart_2.png", overlayImage_, overlayImageDeviceMemory_, overlayImageView_,
-                overlaySampler_, GameTextureType::Overlay);
+
     loadTexture("8bitOperatorBold.png", fontAtlasImage_, fontAtlasImageDeviceMemory_,
                 fontAtlasImageView_, fontAtlasSampler_,
                 GameTextureType::FontAtlas);
@@ -565,12 +564,15 @@ void Renderer::loadAllTextures() {
                 doubleShotSampler_, GameTextureType::PowerUp);
     loadTexture("shield.png", shieldImage_, shieldMemory_, shieldView_, shieldSampler_,
                 GameTextureType::PowerUp);
+
     loadTexture("start.png", startImage_, startMemory_, startView_, startSampler_,
                 GameTextureType::StartButton);
     loadTexture("game-title.png", titleImage_, titleMemory_, titleView_, titleSampler_,
                 GameTextureType::Logo);
     loadTexture("exit.png", exitBtnImage_, exitBtnMemory_, exitBtnView_, exitBtnSampler_,
                 GameTextureType::Exit);
+    loadTexture("tap_to_restart_2.png", overlayImage_, overlayImageDeviceMemory_, overlayImageView_,
+                overlaySampler_, GameTextureType::Overlay);
 
 
 }
@@ -581,7 +583,7 @@ void Renderer::createImageOverlayDescriptor(GfxPipelineData &gfxPipelineData) {
     VkDescriptorSetLayoutBinding overlaySamplerLayoutBinding{};
     overlaySamplerLayoutBinding.binding = 0;
     overlaySamplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    overlaySamplerLayoutBinding.descriptorCount = 1;
+    overlaySamplerLayoutBinding.descriptorCount = uiTextureCount;
     overlaySamplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
     std::vector<VkDescriptorSetLayoutBinding> bindings{overlaySamplerLayoutBinding};
@@ -594,8 +596,9 @@ void Renderer::createImageOverlayDescriptor(GfxPipelineData &gfxPipelineData) {
 
 
     std::array<VkDescriptorImageInfo, uiTextureCount> imageInfos{{
-        {startSampler_,startView_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
         {titleSampler_,titleView_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+        {startSampler_,startView_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+        {exitBtnSampler_,exitBtnView_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
         {overlaySampler_,overlayImageView_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}
     }};
 
@@ -606,7 +609,7 @@ void Renderer::createImageOverlayDescriptor(GfxPipelineData &gfxPipelineData) {
     descriptorWrite.dstBinding = 0;
     descriptorWrite.dstArrayElement = 0;
     descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    descriptorWrite.descriptorCount = 1;
+    descriptorWrite.descriptorCount = uiTextureCount;
     descriptorWrite.pImageInfo = imageInfos.data();
 
     std::vector<VkPushConstantRange> pushConstants;
@@ -614,9 +617,9 @@ void Renderer::createImageOverlayDescriptor(GfxPipelineData &gfxPipelineData) {
         pushConstants = gfxPipelineData.pushConstantRanges;
     } else {
         VkPushConstantRange overlayPushConstantRange{};
-        overlayPushConstantRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        overlayPushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
         overlayPushConstantRange.offset = 0;
-        overlayPushConstantRange.size = sizeof(float) * 4; // For vec4 offset
+        overlayPushConstantRange.size = sizeof(UiPushConstants);
         pushConstants.push_back(overlayPushConstantRange);
     }
 
@@ -1858,32 +1861,15 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
     if (gameState != GameState::Playing) {
         // Set special color in push constant or UBO (e.g. red for GAME OVER)
 
-        if (gameState == GameState::MainMenu) {
-            for (const auto &uiTex: ui) {
-            UiPushConstants uiPushConstant{};
-            uiPushConstant.texturePos = uiTex.textureIndex;
-            uiPushConstant.offset = uiTex.offset;
-
-            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, overlayPipeline_);
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, overlayPipelineLayout_, 0, 1,
-                                    &overlayDescriptorSet_, 0, nullptr);
-            vkCmdBindVertexBuffers(cmd, 0, 1, &overlayVertexBuffer_, offsets);
-            vkCmdPushConstants(cmd, overlayPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
-                               sizeof(UiPushConstants), &uiPushConstant);
-            vkCmdDraw(cmd, 6, 1, 0, 0);
-            }
-        } else if (gameState == GameState::Lost) {
-            //show you have died and respawn button
-
-        }
-
-        } else {
-
-        }
-
+    } else {
 
     }
 
+    if (gameState == GameState::MainMenu) {
+        recordUiSection(cmd, TextureSections::MainMenu);
+    } else if (gameState == GameState::Lost) {
+        recordUiSection(cmd, TextureSections::Lost);
+    }
 
     for (const auto &[textName, textData]: allTextVertices) {
         FontPushConstants fontPushConstants{};
@@ -2398,6 +2384,30 @@ void Renderer::drawFloatingDamageTexts(VkCommandBuffer cmd) {
         vkCmdDraw(cmd, instance.vertexCount, 1, 0, 0);
     }
 }
+
+void Renderer::recordUiSection(VkCommandBuffer cmd, TextureSections section) {
+    auto sectionIt = uiMainMenu.find(section);
+    if (sectionIt == uiMainMenu.end() || sectionIt->second.empty()) {
+        return;
+    }
+
+    VkDeviceSize offsets[] = {0};
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, overlayPipeline_);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, overlayPipelineLayout_, 0, 1,
+                            &overlayDescriptorSet_, 0, nullptr);
+    vkCmdBindVertexBuffers(cmd, 0, 1, &overlayVertexBuffer_, offsets);
+
+    for (const auto &uiTex: sectionIt->second) {
+        UiPushConstants uiPushConstant{};
+        uiPushConstant.texturePos = uiTex.textureIndex;
+        uiPushConstant.offset = uiTex.offset;
+        uiPushConstant.scale = uiTex.scale;
+
+        vkCmdPushConstants(cmd, overlayPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
+                           sizeof(UiPushConstants), &uiPushConstant);
+        vkCmdDraw(cmd, 6, 1, 0, 0);
+    }
+}
 void Renderer::animateScore() {
     int newScore = actualScore;
     int prevDisplay = static_cast<int>(displayedScore_);
@@ -2689,8 +2699,8 @@ void Renderer::loadGameObjects() {
     createAndUploadBuffer(alienVerts, alienVertexBuffer_, alienVertexBufferMemory_,
                           sizeof(alienVerts), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
 
-    createAndUploadBuffer(overlayQuadVerts, overlayVertexBuffer_, overlayVertexBufferMemory_,
-                          sizeof(overlayQuadVerts), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+    createAndUploadBuffer(uiQuadVerts, overlayVertexBuffer_, overlayVertexBufferMemory_,
+                          sizeof(uiQuadVerts), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
 
     createAndUploadBuffer(particleVerts, particleSystem_->haloVertexBuffer,
                           particleSystem_->haloVertexBufferMemory, sizeof(particleVerts),

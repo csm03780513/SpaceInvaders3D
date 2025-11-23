@@ -70,11 +70,15 @@ public:
     MainPushConstants bulletPC_[MAX_BULLETS] = {};
     MainPushConstants alienPC_[MAX_ALIENS] = {};
 
-    std::array<UiEntry,4> ui = {
-            {GameTextureType::Logo,        0, {0.0f, -0.6f}}},
-            {GameTextureType::StartButton, 1, {0.0f,  0.15f}}},
-            {GameTextureType::Overlay,     2, {0.0f,  0.0f}}},
-            {GameTextureType::Exit,        3, {0.0f,  0.25f}}}
+    std::unordered_map<TextureSections, std::vector<UiEntry>> uiMainMenu = {
+            {TextureSections::MainMenu, {
+                UiEntry{{0.0f, -0.6f},{15.0f,6.0f},0,"title"},
+                UiEntry{{0.0f, 0.0f},{9.0f,1.5f},1,"start"},
+                UiEntry{{0.0f, 0.2f},{9.0f,1.5f},2,"exit"}
+            }},
+            {TextureSections::Lost,{
+                UiEntry{{0.0f, 0.0f},{12.0f,6.0f},3}
+            }}
     };
     // In your renderer, have a shake timer and amplitude:
     float shakeTimer = 0.0f;   // seconds remaining
@@ -356,6 +360,7 @@ private:
     void spawnDamageText(const DamagePopupSpawned &damagePopupSpawned);
     void updateFloatingDamage();
     void drawFloatingDamageTexts(VkCommandBuffer cmd);
+    void recordUiSection(VkCommandBuffer cmd, TextureSections section);
     void initShip();
 
     void createCommandPool();

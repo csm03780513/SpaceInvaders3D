@@ -103,9 +103,9 @@ struct MainPushConstants {
 };
 
 struct UiPushConstants {
-    uint texturePos{0};
     glm::vec2 offset{0.0f,0.0f};
     glm::vec2 scale{0.0f,0.0f};
+    uint texturePos{0};
 };
 
 
@@ -177,6 +177,13 @@ enum class GameTextureType {
     StartButton,
     Exit
 };
+
+enum class TextureSections {
+    MainMenu,
+    Lost,
+    Pause
+};
+
 // Graphics pipeline types
 enum class GfxPipelineType {
     Main,
@@ -189,9 +196,10 @@ enum class GfxPipelineType {
 };
 
 struct UiEntry {
-    GameTextureType textureType;
-    uint32_t textureIndex;
     glm::vec2 offset;
+    glm::vec2 scale;
+    uint32_t textureIndex;
+    std::string name;
 };
 
 
@@ -243,7 +251,7 @@ static Vertex triangleVerts[3] = {
 };
 
 static OverlayVertex overlayQuadVerts[6] = {
-        {{-0.6f, -0.3f,  0.0f}, {0.0f, 0.0f}}, // bottom-left
+        {{-0.06f, -0.3f,  0.0f}, {0.0f, 0.0f}}, // bottom-left
         {{0.6f,  -0.3f,  0.0f}, {1.0f, 0.0f}}, // bottom-right
         {{-0.6f, -0.05f, 0.0f}, {0.0f, 1.0f}}, // top-left
 
@@ -252,6 +260,18 @@ static OverlayVertex overlayQuadVerts[6] = {
         {{-0.6f, -0.05f, 0.0f}, {0.0f, 1.0f}} // top-left
 
 };
+
+static OverlayVertex uiQuadVerts[6] = {
+        {{-0.08f, -0.045f, 0.0f}, {0.0f, 0.0f}}, // bottom-left
+        {{0.08f,  -0.045f, 0.0f}, {1.0f, 0.0f}}, // bottom-right
+        {{-0.08f, 0.045f,  0.0f}, {0.0f, 1.0f}}, // top-left
+
+        {{0.08f,  0.045f,  0.0f}, {1.0f, 1.0f}}, // bottom-right
+        {{-0.08f, 0.045f,  0.0f}, {0.0f, 1.0f}}, // top-right
+        {{0.08f,  -0.045f, 0.0f}, {1.0f, 0.0f}} // top-left
+
+};
+
 
 static Vertex quadVerts[6] = {
         // Rectangle centered at (0, 0), width 0.12, height 0.07
