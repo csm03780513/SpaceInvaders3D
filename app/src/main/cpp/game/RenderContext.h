@@ -17,6 +17,7 @@ public:
 
     void setGameState(GameState state);
     GameState getGameState() const;
+    const std::vector<UiEntry> &getUiEntries(TextureSections section) const;
 
     bool hasActiveAliens() const;
     bool hasAlienBelow(float threshold) const;

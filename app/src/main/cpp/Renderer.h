@@ -53,6 +53,7 @@ public:
 
     void setGameState(GameState state);
     [[nodiscard]] GameState getGameState() const;
+    [[nodiscard]] const std::vector<UiEntry> &getUiEntries(TextureSections section) const;
 
     void onWindowLost();
     void onWindowResumed();
@@ -72,9 +73,9 @@ public:
 
     std::unordered_map<TextureSections, std::vector<UiEntry>> uiMainMenu = {
             {TextureSections::MainMenu, {
-                UiEntry{{0.0f, -0.6f},{15.0f,6.0f},0,"title"},
-                UiEntry{{0.0f, 0.0f},{9.0f,1.5f},1,"start"},
-                UiEntry{{0.0f, 0.2f},{9.0f,1.5f},2,"exit"}
+                UiEntry{{0.0f, -0.6f},{15.0f, 6.0f},0,"title"},
+                UiEntry{{0.0f, 0.0f},{9.0f, 1.5f},1,"start"},
+                UiEntry{{0.0f, 0.2f},{9.0f, 1.5f},2,"exit"}
             }},
             {TextureSections::Lost,{
                 UiEntry{{0.0f, 0.0f},{12.0f,6.0f},3}

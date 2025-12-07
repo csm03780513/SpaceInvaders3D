@@ -32,6 +32,10 @@ GameState RenderContext::getGameState() const {
     return renderer_.getGameState();
 }
 
+const std::vector<UiEntry> &RenderContext::getUiEntries(TextureSections section) const {
+    return renderer_.getUiEntries(section);
+}
+
 bool RenderContext::hasActiveAliens() const {
     return renderer_.hasActiveAliens();
 }

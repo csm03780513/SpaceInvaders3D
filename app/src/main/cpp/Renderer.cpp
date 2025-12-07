@@ -2056,6 +2056,15 @@ GameState Renderer::getGameState() const {
     return gameState;
 }
 
+const std::vector<UiEntry> &Renderer::getUiEntries(TextureSections section) const {
+    static const std::vector<UiEntry> kEmptyUiEntries{};
+    auto it = uiMainMenu.find(section);
+    if (it != uiMainMenu.end()) {
+        return it->second;
+    }
+    return kEmptyUiEntries;
+}
+
 bool Renderer::hasActiveAliens() const {
     for (const auto &alien: aliens_) {
         if (alien.active) {
