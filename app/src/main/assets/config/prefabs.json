@@ -1,0 +1,57 @@
+{
+  "ships": {
+    "player": {
+      "health": { "hull": 150, "shield": 30 },
+      "resistances": {
+        "Kinetic": 0.1,
+        "Fire": 0.1,
+        "Cold": 0.05,
+        "Radiation": 0.05
+      },
+      "armor": { "flatReduction": 2.5 }
+    }
+  },
+  "aliens": {
+    "grunt": {
+      "movement": { "type": "LeftRight", "vy": 0.02 },
+      "resistances": { "Radiation": 0.1, "DarkMatter": -0.1 },
+      "modifiers": ["fire_weak"]
+    },
+    "strafer": {
+      "movement": { "type": "SnakeWave", "frequency": 7.0, "vy": 0.03 },
+      "resistances": { "Cold": 0.2, "Lightning": 0.05 },
+      "modifiers": ["slow_vulnerable"]
+    }
+  },
+  "bullets": {
+    "ship_primary": {
+      "type": "Ship",
+      "speed": 2.2,
+      "width": 0.04,
+      "height": 0.05,
+      "payload": [ { "type": "Plasma", "amount": 22 } ]
+    },
+    "ship_dual": {
+      "type": "Ship",
+      "speed": 2.4,
+      "width": 0.04,
+      "height": 0.05,
+      "payload": [ { "type": "Kinetic", "amount": 18 } ]
+    },
+    "alien_primary": {
+      "type": "Alien",
+      "speed": 0.6,
+      "width": 0.04,
+      "height": 0.05,
+      "payload": [ { "type": "Kinetic", "amount": 14 } ]
+    }
+  },
+  "modifiers": {
+    "fire_weak": {
+      "resistances": { "Fire": -0.1 }
+    },
+    "slow_vulnerable": {
+      "resistances": { "Cold": -0.15 }
+    }
+  }
+}

@@ -6,7 +6,6 @@
 #include "game/GameWorldManager.h"
 #include "mechanics/CombatEventSubscribers.h"
 #include "mechanics/Damage.h"
-#include "Util.h"
 
 SimulationScheduler::SimulationScheduler(Dependencies deps) : deps_(deps) {}
 
@@ -49,16 +48,10 @@ void SimulationScheduler::trySpawnShipBullet() {
     const bool doubleShot = deps_.powerUps.doubleShotActive;
     const glm::vec2 spawnPos{pendingShipPos_.x, pendingShipPos_.y};
     if (doubleShot) {
-        (void) deps_.world.spawnBullet(BulletType::Ship,
-                                       {spawnPos.x - 0.05f, spawnPos.y - 0.04f},
-                                       makeKinetic(Util::getRandomFloat(10.0f, 40.0f), 0.2f));
-        (void) deps_.world.spawnBullet(BulletType::Ship,
-                                       {spawnPos.x + 0.05f, spawnPos.y - 0.04f},
-                                       makeKinetic(Util::getRandomFloat(10.0f, 40.0f)));
+        (void) deps_.world.spawnBullet(dualBulletPrefab_, {spawnPos.x - 0.05f, spawnPos.y - 0.04f});
+        (void) deps_.world.spawnBullet(dualBulletPrefab_, {spawnPos.x + 0.05f, spawnPos.y - 0.04f});
     } else {
-        (void) deps_.world.spawnBullet(BulletType::Ship,
-                                       {spawnPos.x, spawnPos.y - 0.04f},
-                                       makePlasma(Util::getRandomFloat(10.0f, 40.0f)));
+        (void) deps_.world.spawnBullet(shipBulletPrefab_, {spawnPos.x, spawnPos.y - 0.04f});
     }
 
     fireAccumulator_ = 0.0f;
@@ -76,7 +69,6 @@ void SimulationScheduler::tick(float dt, bool isPlaying) {
         return;
     }
 
-    deps_.world.setBulletSpeeds(shipBulletSpeed_, alienBulletSpeed_);
     applyShipInput();
     trySpawnShipBullet();
 

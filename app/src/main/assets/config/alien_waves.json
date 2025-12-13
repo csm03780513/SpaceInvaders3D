@@ -1,21 +1,47 @@
 {
   "waves": [
-    { "name": "left_right", "type": "fixed", "movement": "LeftRight" },
-    { "name": "snake_wave", "type": "fixed", "movement": "SnakeWave", "frequencyMul": 7.0, "frequencyAddPerLevel": 0.05, "vyAdd": 0.01 },
-    { "name": "sine_wave", "type": "fixed", "movement": "SineWave", "frequencyMul": 5.0, "frequencyAddPerLevel": 0.05, "vyAdd": 0.01 },
-    { "name": "together_one", "type": "fixed", "movement": "TogetherOne", "setX": 0.0, "vyAdd": 0.01 },
     {
-      "name": "random",
-      "type": "randomWeighted",
-      "weights": {
-        "LeftRight": 1,
-        "SnakeWave": 1,
-        "SineWave": 1,
-        "TogetherOne": 1,
-        "MySnakeWave": 1,
-        "JustGoDown": 1
-      }
+      "name": "opening_line",
+      "prefab": "grunt",
+      "bulletPrefab": "alien_primary",
+      "rows": 5,
+      "cols": 10,
+      "start": { "x": -0.7, "y": 0.8 },
+      "spacing": { "x": 0.2, "y": 0.15 },
+      "movement": { "type": "LeftRight" },
+      "modifiers": ["fire_weak"]
+    },
+    {
+      "name": "strafe_rain",
+      "prefab": "strafer",
+      "bulletPrefab": "alien_primary",
+      "rows": 4,
+      "cols": 8,
+      "start": { "x": -0.65, "y": 0.75 },
+      "spacing": { "x": 0.22, "y": 0.16 },
+      "movement": { "type": "SnakeWave", "frequencyMul": 7.0, "vyAdd": 0.01 },
+      "modifiers": ["slow_vulnerable"]
+    },
+    {
+      "name": "mixed_barrage",
+      "prefab": "grunt",
+      "bulletPrefab": "alien_primary",
+      "rows": 5,
+      "cols": 10,
+      "start": { "x": -0.7, "y": 0.8 },
+      "spacing": { "x": 0.2, "y": 0.15 },
+      "movement": {
+        "type": "randomWeighted",
+        "weights": {
+          "LeftRight": 1,
+          "SnakeWave": 1,
+          "SineWave": 1,
+          "TogetherOne": 1,
+          "MySnakeWave": 1,
+          "JustGoDown": 1
+        }
+      },
+      "modifiers": ["fire_weak", "slow_vulnerable"]
     }
   ]
 }
-
