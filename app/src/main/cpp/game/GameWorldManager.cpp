@@ -161,6 +161,11 @@ void GameWorldManager::syncWaveSettings() {
     if (!cooldown.has(*settingsEntity_)) {
         cooldown.add(*settingsEntity_, FireCooldown{});
     }
+
+    auto &spawns = world_.pool<SpawnRequests>();
+    if (!spawns.has(*settingsEntity_)) {
+        spawns.add(*settingsEntity_, SpawnRequests{});
+    }
 }
 
 void GameWorldManager::initShip() {

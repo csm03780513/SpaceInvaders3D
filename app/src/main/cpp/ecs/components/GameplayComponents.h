@@ -51,3 +51,12 @@ struct DirectionalMovement {
     float direction = 1.0f;
 };
 
+struct SpawnBulletRequest {
+    std::string prefab;
+    glm::vec2 position{};
+};
+
+struct SpawnRequests {
+    std::vector<SpawnBulletRequest> bullets{};
+};
+

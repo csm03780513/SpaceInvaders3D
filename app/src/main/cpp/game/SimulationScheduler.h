@@ -10,9 +10,11 @@
 #include "ecs/components/GameplayComponents.h"
 #include "ecs/systems/AlienMovementSystem.h"
 #include "ecs/systems/AlienSpawnSystem.h"
+#include "ecs/systems/BulletSpawnSystem.h"
 #include "ecs/systems/BulletMovementSystem.h"
 #include "ecs/systems/CollisionSystem.h"
 #include "ecs/systems/FiringSystem.h"
+#include "ecs/systems/ShipInputSystem.h"
 
 class EventBus;
 class GameMechanicsCoordinator;
@@ -37,21 +39,12 @@ public:
     void resetWorld();
 
 private:
-    void applyShipInput();
-    void trySpawnShipBullet();
-
     Dependencies deps_;
-    glm::vec2 pendingShipPos_{0.0f};
-    bool hasPendingInput_{false};
-    bool wantsToFire_{false};
 
-    float rateOfFire_ = 0.2f;
-    float fireAccumulator_ = 0.0f;
-    std::string shipBulletPrefab_{"ship_primary"};
-    std::string dualBulletPrefab_{"ship_dual"};
-
+    ecs::ShipInputSystem shipInputSystem_{};
     ecs::AlienSpawnSystem alienSpawnSystem_{};
     ecs::AlienMovementSystem alienMovementSystem_{};
+    ecs::BulletSpawnSystem bulletSpawnSystem_{};
     ecs::FiringSystem firingSystem_{};
     ecs::BulletMovementSystem bulletMovementSystem_{};
     ecs::CollisionSystem collisionSystem_{};

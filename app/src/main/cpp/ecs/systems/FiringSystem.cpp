@@ -40,7 +40,13 @@ void FiringSystem::update(GameWorldManager &manager, float deltaTime, bool isPla
     const uint32_t idx = Util::getRandomUint(0, static_cast<uint32_t>(aliveAliens.size() - 1));
     const Alien &alien = aliens.get(aliveAliens[idx]);
     const std::string bulletPrefab = settings ? settings->activeAlienBulletPrefab : std::string{"alien_primary"};
-    (void) manager.spawnBullet(bulletPrefab, {alien.x, -alien.y});
+
+    auto &spawns = world.pool<SpawnRequests>();
+    if (!spawns.has(*settingsId)) {
+        spawns.add(*settingsId, SpawnRequests{});
+    }
+
+    spawns.get(*settingsId).bullets.push_back(SpawnBulletRequest{bulletPrefab, {alien.x, -alien.y}});
 }
 
 } // namespace ecs
