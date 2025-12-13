@@ -1,0 +1,21 @@
+{
+  "waves": [
+    { "name": "left_right", "type": "fixed", "movement": "LeftRight" },
+    { "name": "snake_wave", "type": "fixed", "movement": "SnakeWave", "frequencyMul": 7.0, "frequencyAddPerLevel": 0.05, "vyAdd": 0.01 },
+    { "name": "sine_wave", "type": "fixed", "movement": "SineWave", "frequencyMul": 5.0, "frequencyAddPerLevel": 0.05, "vyAdd": 0.01 },
+    { "name": "together_one", "type": "fixed", "movement": "TogetherOne", "setX": 0.0, "vyAdd": 0.01 },
+    {
+      "name": "random",
+      "type": "randomWeighted",
+      "weights": {
+        "LeftRight": 1,
+        "SnakeWave": 1,
+        "SineWave": 1,
+        "TogetherOne": 1,
+        "MySnakeWave": 1,
+        "JustGoDown": 1
+      }
+    }
+  ]
+}
+
