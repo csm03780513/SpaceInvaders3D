@@ -4,16 +4,12 @@
 
 #include <glm/vec3.hpp>
 
-#include "Collision.h"
 #include "Util.h"
 #include "ecs/components/GameplayComponents.h"
 #include "ecs/systems/AlienSpawnSystem.h"
-#include "events/EventBus.h"
 #include "json/TinyJson.h"
 #include "mechanics/Damage.h"
 #include "platform/PlatformServices.h"
-
-#include "ParticleSystem.h"
 
 GameWorldManager::GameWorldManager() {
     prefabs_.loadDefaults();
@@ -252,94 +248,6 @@ std::optional<ecs::EntityId> GameWorldManager::spawnBullet(const std::string &pr
     bullets.add(*e, bullet);
     render.add(*e, MainPushConstants{});
     return *e;
-}
-
-bool GameWorldManager::isShipBulletHittingAlien(const Alien &alien, const Bullet &bullet) {
-    auto alienAABB = Collision::getAABB(alien.x, alien.y, alien.widthHeight[0], alien.widthHeight[1]);
-    auto bulletAABB = Collision::getAABB(bullet.x, -bullet.y, bullet.widthHeight[0], bullet.widthHeight[1]);
-    return Collision::isColliding(alienAABB, bulletAABB);
-}
-
-bool GameWorldManager::isAlienBulletHittingShip(const Ship &ship, const Bullet &bullet) {
-    auto shipAABB = Collision::getAABB(ship.x, ship.y, ship.widthHeight[0], ship.widthHeight[1]);
-    auto bulletAABB = Collision::getAABB(bullet.x, bullet.y, bullet.widthHeight[0], bullet.widthHeight[1]);
-    return Collision::isColliding(shipAABB, bulletAABB);
-}
-
-void GameWorldManager::processCollisions(bool shieldActive,
-                                        ParticleSystem &particleSystem,
-                                        EventBus &eventBus) {
-    auto shipId = shipEntity();
-    if (!shipId.has_value() || !world_.registry.alive(*shipId)) return;
-
-    auto &ships = world_.pool<Ship>();
-    auto &aliens = world_.pool<Alien>();
-    auto &bullets = world_.pool<Bullet>();
-    auto &render = world_.pool<MainPushConstants>();
-
-    Ship *ship = ships.tryGet(*shipId);
-    if (!ship) return;
-
-    std::vector<ecs::EntityId> bulletsToDestroy;
-    bulletsToDestroy.reserve(8);
-
-    std::vector<std::pair<ecs::EntityId, Alien *>> activeAliens;
-    world_.registry.forEachAlive([&](ecs::EntityId e) {
-        Alien *alien = aliens.tryGet(e);
-        if (alien && alien->active) {
-            activeAliens.emplace_back(e, alien);
-        }
-    });
-
-    world_.registry.forEachAlive([&](ecs::EntityId be) {
-        Bullet *bullet = bullets.tryGet(be);
-        if (!bullet || !bullet->active) return;
-
-        if (bullet->bulletType == BulletType::Ship) {
-            for (auto &[ae, alien] : activeAliens) {
-                if (!isShipBulletHittingAlien(*alien, *bullet)) continue;
-
-                bullet->active = false;
-                bulletsToDestroy.push_back(be);
-
-                eventBus.publish(HitEvent{
-                        .attacker = *shipId,
-                        .target = ae,
-                        .payload = bullet->payload,
-                        .hitWorldPos = glm::vec2(alien->x, alien->y),
-                });
-
-                if (render.has(ae)) {
-                    render.get(ae).flashAmount = 1.0f;
-                }
-                particleSystem.spawn(glm::vec3(alien->x, -alien->y, 1.0f), 5);
-                break;
-            }
-            return;
-        }
-
-        if (bullet->bulletType == BulletType::Alien && !shieldActive) {
-            if (isAlienBulletHittingShip(*ship, *bullet)) {
-                bullet->active = false;
-                bulletsToDestroy.push_back(be);
-                eventBus.publish(HitEvent{
-                        .attacker = 0,
-                        .target = *shipId,
-                        .payload = bullet->payload,
-                        .hitWorldPos = glm::vec2(ship->x, ship->y),
-                });
-
-                if (render.has(*shipId)) {
-                    render.get(*shipId).flashAmount = 1.0f;
-                }
-                particleSystem.spawn(glm::vec3(bullet->x, bullet->y, 0.0f), 10);
-            }
-        }
-    });
-
-    for (auto be : bulletsToDestroy) {
-        destroyEntity(be);
-    }
 }
 
 bool GameWorldManager::hasActiveAliens() const {

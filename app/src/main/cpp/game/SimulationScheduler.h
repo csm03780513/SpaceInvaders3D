@@ -11,6 +11,7 @@
 #include "ecs/systems/AlienMovementSystem.h"
 #include "ecs/systems/AlienSpawnSystem.h"
 #include "ecs/systems/BulletMovementSystem.h"
+#include "ecs/systems/CollisionSystem.h"
 #include "ecs/systems/FiringSystem.h"
 
 class EventBus;
@@ -53,6 +54,7 @@ private:
     ecs::AlienMovementSystem alienMovementSystem_{};
     ecs::FiringSystem firingSystem_{};
     ecs::BulletMovementSystem bulletMovementSystem_{};
+    ecs::CollisionSystem collisionSystem_{};
     std::vector<std::function<void(float, bool)>> systems_{};
 };
 

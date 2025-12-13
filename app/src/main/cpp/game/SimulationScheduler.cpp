@@ -37,6 +37,11 @@ SimulationScheduler::SimulationScheduler(Dependencies deps) : deps_(deps) {
             deps_.world.destroyEntity(e);
         }
     });
+
+    systems_.emplace_back([this](float, bool isPlaying) {
+        if (!isPlaying) return;
+        collisionSystem_.update(deps_.world, deps_.particles, deps_.events, deps_.powerUps.shieldActive);
+    });
 }
 
 void SimulationScheduler::setShipInput(float x, float y, bool fireBullet) {
@@ -115,8 +120,6 @@ void SimulationScheduler::tick(float dt, bool isPlaying) {
     for (auto &system : systems_) {
         system(dt, isPlaying);
     }
-
-    deps_.world.processCollisions(deps_.powerUps.shieldActive, deps_.particles, deps_.events);
     if (deps_.mechanics) {
         deps_.mechanics->update(dt);
     }

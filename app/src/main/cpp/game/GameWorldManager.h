@@ -14,8 +14,6 @@
 #include "ecs/worlds/GameWorld.h"
 #include "ecs/worlds/PrefabLibrary.h"
 
-class EventBus;
-class ParticleSystem;
 class PowerUpManager;
 class IPlatformServices;
 
@@ -38,10 +36,6 @@ public:
 
     void decayFlash(float deltaTime);
 
-    void processCollisions(bool shieldActive,
-                           ParticleSystem &particleSystem,
-                           EventBus &eventBus);
-
     // Spawning bullets is part of the world (returns entity id).
     std::optional<ecs::EntityId> spawnBullet(const std::string &prefabName, const glm::vec2 &pos);
 
@@ -55,9 +49,6 @@ public:
     [[nodiscard]] const ecs::PrefabLibrary &prefabs() const;
 
 private:
-    static bool isShipBulletHittingAlien(const Alien &alien, const Bullet &bullet);
-    static bool isAlienBulletHittingShip(const Ship &ship, const Bullet &bullet);
-
     void resetWorldForNewWave();
     void syncWaveSettings();
 
