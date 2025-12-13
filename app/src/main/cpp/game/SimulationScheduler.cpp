@@ -7,7 +7,37 @@
 #include "mechanics/CombatEventSubscribers.h"
 #include "mechanics/Damage.h"
 
-SimulationScheduler::SimulationScheduler(Dependencies deps) : deps_(deps) {}
+SimulationScheduler::SimulationScheduler(Dependencies deps) : deps_(deps) {
+    systems_.emplace_back([this](float dt, bool isPlaying) {
+        alienSpawnSystem_.update(deps_.world, dt, isPlaying);
+    });
+
+    systems_.emplace_back([this](float dt, bool isPlaying) {
+        if (!isPlaying) return;
+        const auto settingsId = deps_.world.settingsEntity();
+        if (!settingsId.has_value()) return;
+
+        auto &world = deps_.world.world();
+        auto &movementPool = world.pool<DirectionalMovement>();
+        if (auto *movement = movementPool.tryGet(*settingsId)) {
+            alienMovementSystem_.update(world, *movement, dt);
+        }
+    });
+
+    systems_.emplace_back([this](float dt, bool isPlaying) {
+        firingSystem_.update(deps_.world, dt, isPlaying);
+    });
+
+    systems_.emplace_back([this](float dt, bool isPlaying) {
+        if (!isPlaying) return;
+        std::vector<ecs::EntityId> toDestroy;
+        toDestroy.reserve(8);
+        bulletMovementSystem_.update(deps_.world.world(), dt, toDestroy);
+        for (auto e : toDestroy) {
+            deps_.world.destroyEntity(e);
+        }
+    });
+}
 
 void SimulationScheduler::setShipInput(float x, float y, bool fireBullet) {
     pendingShipPos_ = {x, y - 0.12f};
@@ -82,9 +112,9 @@ void SimulationScheduler::tick(float dt, bool isPlaying) {
     applyShipInput();
     trySpawnShipBullet();
 
-    deps_.world.updateAliens(dt);
-    deps_.world.updateBullets(dt);
-    deps_.world.updateAndMaybeFire(isPlaying, dt);
+    for (auto &system : systems_) {
+        system(dt, isPlaying);
+    }
 
     deps_.world.processCollisions(deps_.powerUps.shieldActive, deps_.particles, deps_.events);
     if (deps_.mechanics) {

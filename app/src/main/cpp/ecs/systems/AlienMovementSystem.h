@@ -3,7 +3,9 @@
 #include <cmath>
 
 #include "GameConstants.h"
+#include "ecs/components/GameplayComponents.h"
 #include "ecs/worlds/AlienWorld.h"
+#include "ecs/worlds/GameWorld.h"
 
 namespace ecs {
 
@@ -12,6 +14,85 @@ public:
     void reset() {
         moveSpeed_ = 0.3f;
         direction_ = 1.0f;
+    }
+
+    void update(GameWorld &world, DirectionalMovement &movement, float deltaTime) const {
+        bool hitEdge = false;
+
+        auto &aliens = world.pool<Alien>();
+        auto &render = world.pool<MainPushConstants>();
+
+        world.registry.forEachAlive([&](EntityId id) {
+            Alien *alien = aliens.tryGet(id);
+            if (!alien || !alien->active) return;
+
+            if (render.has(id)) {
+                auto &pc = render.get(id);
+                pc.flashAmount -= deltaTime * 5.0f;
+                if (pc.flashAmount < 0.0f) pc.flashAmount = 0.0f;
+            }
+
+            switch (alien->movementType) {
+                case TogetherOne:
+                    alien->y -= alien->vy * deltaTime;
+                    break;
+                case SineWave:
+                    alien->movementTimer += deltaTime;
+                    alien->x = alien->baseX + alien->amplitude * std::sin(alien->movementTimer * alien->frequency);
+                    alien->y -= alien->vy * deltaTime;
+                    break;
+                case MySnakeWave:
+                    alien->movementTimer += deltaTime;
+                    alien->x = std::sin((alien->movementTimer + alien->baseX) * alien->frequency);
+                    alien->y -= alien->vy * deltaTime;
+                    break;
+                case SnakeWave: {
+                    alien->movementTimer += deltaTime;
+
+                    const int row = static_cast<int>(alien->spawnRow);
+                    const int col = static_cast<int>(alien->spawnCol);
+
+                    const float basePhase = alien->movementTimer * alien->frequency;
+                    const float rowPhase = row * 0.45f;
+                    const float colPhase = col * 0.25f;
+
+                    const float primaryWave = std::sin(basePhase + rowPhase);
+                    const float secondaryWave = std::sin(basePhase * 0.65f + colPhase);
+
+                    alien->x = alien->baseX + alien->amplitude * (0.75f * primaryWave + 0.35f * secondaryWave);
+
+                    const float verticalBobVelocity = std::cos(basePhase + rowPhase) * alien->frequency * 0.12f;
+                    alien->y -= alien->vy * deltaTime;
+                    alien->y += verticalBobVelocity * deltaTime;
+
+                    alien->x += 0.05f * std::sin(basePhase * 1.8f + colPhase + rowPhase);
+                    break;
+                }
+                case JustGoDown:
+                    alien->y -= alien->vy * deltaTime;
+                    break;
+                case Circle:
+                    break;
+                case LeftRight:
+                    alien->x += movement.speed * movement.direction * deltaTime;
+                    if (alien->x > 0.85f) alien->x = 0.85f;
+                    if (alien->x < -0.85f) alien->x = -0.85f;
+                    if (alien->x > 0.84f || alien->x < -0.84f) {
+                        hitEdge = true;
+                    }
+                    break;
+            }
+        });
+
+        if (hitEdge) {
+            movement.direction *= -1.0f;
+            world.registry.forEachAlive([&](EntityId e) {
+                Alien *alien = aliens.tryGet(e);
+                if (alien && alien->active) {
+                    alien->y -= 0.04f;
+                }
+            });
+        }
     }
 
     void update(AlienWorld &world, float deltaTime) {
