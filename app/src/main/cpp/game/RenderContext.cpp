@@ -1,11 +1,15 @@
 #include "RenderContext.h"
 
 #include "Renderer.h"
+#include "SimulationScheduler.h"
 
-RenderContext::RenderContext(Renderer &renderer) : renderer_(renderer) {}
+RenderContext::RenderContext(Renderer &renderer, std::unique_ptr<SimulationScheduler> scheduler)
+        : renderer_(renderer), scheduler_(std::move(scheduler)) {}
 
-void RenderContext::updatePlaying(float dt) {
-    renderer_.updatePlayingLogic(dt);
+void RenderContext::tickSimulation(float dt, bool isPlaying) {
+    if (scheduler_) {
+        scheduler_->tick(dt, isPlaying);
+    }
 }
 
 void RenderContext::prepareFrame(bool isPlaying) {
@@ -17,11 +21,16 @@ void RenderContext::drawFrame() {
 }
 
 void RenderContext::setShipPosition(float x, float y, bool fireBullet) {
-    renderer_.setShipPosition(x, y, fireBullet);
+    if (scheduler_) {
+        scheduler_->setShipInput(x, y, fireBullet);
+    }
 }
 
 void RenderContext::restartGame() {
-    renderer_.restartGame();
+    if (scheduler_) {
+        scheduler_->resetWorld();
+    }
+    renderer_.resetVisuals();
 }
 
 void RenderContext::setGameState(GameState state) {

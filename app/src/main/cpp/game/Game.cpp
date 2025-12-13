@@ -5,6 +5,7 @@
 
 #include "Renderer.h"
 #include "RenderContext.h"
+#include "SimulationScheduler.h"
 #include "MainMenuState.h"
 #include "PlayingState.h"
 #include "GameOverState.h"
@@ -84,6 +85,17 @@ void Game::update(float dt) {
     }
     processInputCommands();
     currentState_->update(dt);
+    if (renderContext_) {
+        const bool isPlaying = currentStateType_ == GameState::Playing;
+        renderContext_->tickSimulation(dt, isPlaying);
+        if (isPlaying) {
+            if (renderContext_->hasAlienBelow(-0.9f)) {
+                requestState(GameState::Lost);
+            } else if (!renderContext_->hasActiveAliens()) {
+                requestState(GameState::Won);
+            }
+        }
+    }
     applyPendingStateChange();
 }
 
@@ -114,7 +126,14 @@ void Game::ensureRenderer() {
         renderer_.reset();
         return;
     }
-    renderContext_ = std::make_unique<RenderContext>(*renderer_);
+    auto scheduler = std::make_unique<SimulationScheduler>(SimulationScheduler::Dependencies{
+            renderer_->worldManager(),
+            renderer_->powerUps(),
+            renderer_->eventBus(),
+            renderer_->particleSystem(),
+            renderer_->mechanics()
+    });
+    renderContext_ = std::make_unique<RenderContext>(*renderer_, std::move(scheduler));
     initializeStates();
     changeState(GameState::MainMenu);
 }

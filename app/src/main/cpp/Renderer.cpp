@@ -37,8 +37,6 @@ const bool enableValidationLayers = false;
 const bool enableValidationLayers = true;
 #endif
 
-float bulletMoveSpeed_ = 2.0f;
-
 
 std::vector<char> loadShaderAsset(IPlatformServices &platform, const char *filename);
 
@@ -1778,7 +1776,7 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
     Ship &ship = w.ships.get(shipEntity);
     MainPushConstants &shipPC = w.render.get(shipEntity);
     shipPC.texturePos = 0;
-    shipPC.pos = {shipX_, ship.y};
+    shipPC.pos = {ship.x, ship.y};
     shipPC.shakeOffset = shakeOffset;
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipeline_);
@@ -1939,74 +1937,6 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
     vkEndCommandBuffer(cmd);
 }
 
-void Renderer::restartGame() {
-    // Reset player
-
-    // Reset aliens
-    worldManager_.initAliens();
-    initShip();
-    worldManager_.world().ships.get(worldManager_.shipEntity()).health.hull = 100.0f;
-
-    floatingDamageInstances_.clear();
-    pendingFloatingDamageUploads_.clear();
-    powerUpTextCDOffset = powerUpTextStartOffset_;
-    floatingDamageBufferCursor_ = powerUpTextCDOffset;
-    floatingDamageGlobalTime_ = 0.0f;
-
-    // Reset score, level, etc.
-    gameState = GameState::Playing;
-}
-
-void Renderer::setShipPosition(float x, float y, bool fireBullet) {
-    shipX_ = x;
-    shipY_ = y - 0.12f;
-    if (fireBullet) {
-        spawnBullet(BulletType::Ship, {x, y - 0.12f});
-    }
-}
-
-void Renderer::spawnBullet(BulletType bulletType, glm::vec2 spawnPos) {
-
-    if (gameState == GameState::Playing) {
-        if (bulletType == BulletType::Ship) {
-            if (!canFire) {
-                return;
-            }
-
-            const bool doubleShot = powerUpManager_->doubleShotActive;
-            if (doubleShot) {
-                (void) worldManager_.spawnBullet(bulletType,
-                                                 {spawnPos.x - 0.05f, spawnPos.y - 0.04f},
-                                                 makeKinetic(Util::getRandomFloat(10.0f, 40.0f), 0.2f));
-                (void) worldManager_.spawnBullet(bulletType,
-                                                 {spawnPos.x + 0.05f, spawnPos.y - 0.04f},
-                                                 makeKinetic(Util::getRandomFloat(10.0f, 40.0f)));
-                return;
-            }
-
-            (void) worldManager_.spawnBullet(bulletType,
-                                             {spawnPos.x, spawnPos.y - 0.04f},
-                                             makePlasma(Util::getRandomFloat(10.0f, 40.0f)));
-            return;
-        }
-
-        if (bulletType == BulletType::Alien) {
-            (void) worldManager_.spawnBullet(bulletType,
-                                             {spawnPos.x, spawnPos.y + 0.04f},
-                                             makeKinetic(Util::getRandomFloat(10.0f, 30.0f)));
-            return;
-        }
-    }
-}
-
-void Renderer::updateShip() {
-    auto &w = worldManager_.world();
-    Ship &ship = w.ships.get(worldManager_.shipEntity());
-    ship.x = shipX_;
-    ship.y = shipY_;
-    ship.color[0] = shipX_;
-}
-
 void Renderer::setGameState(GameState state) {
     gameState = state;
 }
@@ -2022,6 +1952,26 @@ const std::vector<UiEntry> &Renderer::getUiEntries(TextureSections section) cons
         return it->second;
     }
     return kEmptyUiEntries;
+}
+
+GameWorldManager &Renderer::worldManager() {
+    return worldManager_;
+}
+
+PowerUpManager &Renderer::powerUps() {
+    return *powerUpManager_;
+}
+
+ParticleSystem &Renderer::particleSystem() {
+    return *particleSystem_;
+}
+
+EventBus &Renderer::eventBus() {
+    return eventBus_;
+}
+
+GameMechanicsCoordinator *Renderer::mechanics() {
+    return mechanics_.get();
 }
 
 bool Renderer::hasActiveAliens() const {
@@ -2270,33 +2220,10 @@ void Renderer::drawFrame() {
     vkQueueWaitIdle(graphicsQueue_);
 }
 
-void Renderer::updatePlayingLogic(float dt) {
-    if (lastFireTime > rateOfFire) {
-        lastFireTime = 0.0f;
-        canFire = true;
-    } else {
-        lastFireTime += dt;
-        canFire = false;
-    }
-    updateUniformBuffer();
-    updateShip();
-
-    worldManager_.updateAliens(dt);
-    worldManager_.processCollisions(powerUpManager_->shieldActive, *particleSystem_, eventBus_);
-    if (mechanics_) {
-        mechanics_->update(dt);
-    }
-    powerUpManager_->updatePowerUpData();
-    powerUpManager_->checkIfPowerUpCollected(worldManager_.world().ships.get(worldManager_.shipEntity()));
-}
-
 void Renderer::prepareFrame(bool isPlaying) {
     animateScore();
 
-    worldManager_.setBulletSpeeds(bulletMoveSpeed_, 0.5f);
-    worldManager_.updateBullets(GameTime::deltaTime);
-    worldManager_.updateAndMaybeFire(isPlaying, GameTime::deltaTime);
-    worldManager_.decayFlash(GameTime::deltaTime);
+    updateUniformBuffer();
 
     particleSystem_->updateHaloEffect(worldManager_.world().ships.get(worldManager_.shipEntity()));
     particleSystem_->updateStarField(starInstanceBufferMemory_);
@@ -2348,6 +2275,16 @@ void Renderer::prepareFrame(bool isPlaying) {
     floatingDamageBufferCursor_ = std::max(floatingDamageBufferCursor_, powerUpTextCDOffset);
     floatingDamageGlobalTime_ += GameTime::deltaTime;
     updateFloatingDamage();
+}
+
+void Renderer::resetVisuals() {
+    floatingDamageInstances_.clear();
+    pendingFloatingDamageUploads_.clear();
+    powerUpTextCDOffset = powerUpTextStartOffset_;
+    floatingDamageBufferCursor_ = powerUpTextCDOffset;
+    floatingDamageGlobalTime_ = 0.0f;
+    gameState = GameState::Playing;
+    shakeTimer = 0.0f;
 }
 
 void Renderer::loadText() {

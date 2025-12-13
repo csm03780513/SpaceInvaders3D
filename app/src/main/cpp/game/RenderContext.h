@@ -1,14 +1,17 @@
 #pragma once
 
+#include <memory>
+
 #include "GameObjectData.h"
 
 class Renderer;
+class SimulationScheduler;
 
 class RenderContext {
 public:
-    explicit RenderContext(Renderer &renderer);
+    RenderContext(Renderer &renderer, std::unique_ptr<SimulationScheduler> scheduler);
 
-    void updatePlaying(float dt);
+    void tickSimulation(float dt, bool isPlaying);
     void prepareFrame(bool isPlaying);
     void drawFrame();
 
@@ -24,4 +27,5 @@ public:
 
 private:
     Renderer &renderer_;
+    std::unique_ptr<SimulationScheduler> scheduler_;
 };
