@@ -1,10 +1,17 @@
 #pragma once
 
+#include <functional>
 #include <glm/vec2.hpp>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "GameConstants.h"
+#include "ecs/components/GameplayComponents.h"
+#include "ecs/systems/AlienMovementSystem.h"
+#include "ecs/systems/AlienSpawnSystem.h"
+#include "ecs/systems/BulletMovementSystem.h"
+#include "ecs/systems/FiringSystem.h"
 
 class EventBus;
 class GameMechanicsCoordinator;
@@ -41,5 +48,11 @@ private:
     float fireAccumulator_ = 0.0f;
     std::string shipBulletPrefab_{"ship_primary"};
     std::string dualBulletPrefab_{"ship_dual"};
+
+    ecs::AlienSpawnSystem alienSpawnSystem_{};
+    ecs::AlienMovementSystem alienMovementSystem_{};
+    ecs::FiringSystem firingSystem_{};
+    ecs::BulletMovementSystem bulletMovementSystem_{};
+    std::vector<std::function<void(float, bool)>> systems_{};
 };
 

@@ -26,6 +26,8 @@ add_library(SpaceInvaders3D SHARED
         game/GameOverState.cpp
         game/AlienManager.cpp
         game/GameWorldManager.cpp
+        ecs/systems/AlienSpawnSystem.cpp
+        ecs/systems/FiringSystem.cpp
         ecs/worlds/PrefabLibrary.cpp
         input/FireCommand.cpp
         input/MoveShipCommand.cpp

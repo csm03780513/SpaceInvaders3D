@@ -1,13 +1,13 @@
 #include "GameWorldManager.h"
 
 #include <algorithm>
-#include <cmath>
-#include <numeric>
 
 #include <glm/vec3.hpp>
 
 #include "Collision.h"
 #include "Util.h"
+#include "ecs/components/GameplayComponents.h"
+#include "ecs/systems/AlienSpawnSystem.h"
 #include "events/EventBus.h"
 #include "json/TinyJson.h"
 #include "mechanics/Damage.h"
@@ -46,49 +46,8 @@ void GameWorldManager::setBulletWidthHeight(const std::array<float, 2> &widthHei
     bulletWidthHeight_ = widthHeight;
 }
 
-std::optional<AlienMovementType> GameWorldManager::parseMovementType(const std::string &name) {
-    if (name == "SnakeWave") return AlienMovementType::SnakeWave;
-    if (name == "JustGoDown") return AlienMovementType::JustGoDown;
-    if (name == "TogetherOne") return AlienMovementType::TogetherOne;
-    if (name == "SineWave") return AlienMovementType::SineWave;
-    if (name == "Circle") return AlienMovementType::Circle;
-    if (name == "LeftRight") return AlienMovementType::LeftRight;
-    if (name == "MySnakeWave") return AlienMovementType::MySnakeWave;
-    return std::nullopt;
-}
-
-AlienMovementType GameWorldManager::pickWeighted(const std::unordered_map<AlienMovementType, uint32_t> &weights) {
-    uint32_t total = std::accumulate(weights.begin(), weights.end(), 0u,
-                                     [](uint32_t acc, const auto &pair) { return acc + pair.second; });
-    if (total == 0) {
-        return AlienMovementType::JustGoDown;
-    }
-
-    const uint32_t roll = Util::getRandomUint(0, total - 1);
-    uint32_t acc = 0;
-    for (const auto &[type, w] : weights) {
-        acc += w;
-        if (roll < acc) {
-            return type;
-        }
-    }
-    return weights.begin()->first;
-}
-
-void GameWorldManager::applyRuleSetup(const WaveRule &rule, Alien &alien, uint32_t level) {
-    if (rule.setX.has_value()) {
-        alien.x = *rule.setX;
-    }
-
-    if (rule.frequencyMul != 1.0f || rule.frequencyAddPerLevel != 0.0f) {
-        alien.frequency = alien.baseFrequency * rule.frequencyMul + (static_cast<float>(level) * rule.frequencyAddPerLevel);
-    }
-
-    alien.vy += rule.vyAdd;
-}
-
 void GameWorldManager::loadAlienConfig(IPlatformServices &platformServices) {
-    waveRules_.clear();
+    cachedWaveSettings_.waves.clear();
 
     std::vector<uint8_t> bytes;
     try {
@@ -144,7 +103,7 @@ void GameWorldManager::loadAlienConfig(IPlatformServices &platformServices) {
                         if (weightsVal->isObject()) {
                             for (const auto &[k, v] : weightsVal->asObject()) {
                                 if (!v.isNumber()) continue;
-                                auto mt = parseMovementType(k);
+                                auto mt = ecs::AlienSpawnSystem::parseMovementType(k);
                                 if (!mt.has_value()) continue;
                                 const auto w = static_cast<uint32_t>(std::max(0.0, v.asNumber()));
                                 rule.weights[*mt] = w;
@@ -157,7 +116,7 @@ void GameWorldManager::loadAlienConfig(IPlatformServices &platformServices) {
                 if (movementVal && movementVal->isObject()) {
                     const auto movementStr = TinyJson::getString(movementVal->asObject(), "type");
                     if (movementStr.has_value()) {
-                        auto mt = parseMovementType(*movementStr);
+                        auto mt = ecs::AlienSpawnSystem::parseMovementType(*movementStr);
                         if (mt.has_value()) rule.fixedMovement = *mt;
                     }
                     if (auto v = TinyJson::getNumber(movementVal->asObject(), "frequencyMul")) rule.frequencyMul = static_cast<float>(*v);
@@ -176,10 +135,35 @@ void GameWorldManager::loadAlienConfig(IPlatformServices &platformServices) {
                 }
             }
 
-            waveRules_.push_back(std::move(def));
+            cachedWaveSettings_.waves.push_back(std::move(def));
         }
     } catch (...) {
-        waveRules_.clear();
+        cachedWaveSettings_.waves.clear();
+    }
+
+    syncWaveSettings();
+}
+
+void GameWorldManager::syncWaveSettings() {
+    if (!settingsEntity_.has_value() || !world_.registry.alive(*settingsEntity_)) {
+        auto entity = world_.registry.create();
+        if (!entity.has_value()) {
+            return;
+        }
+        settingsEntity_ = entity;
+    }
+
+    auto &wavePool = world_.pool<WaveSettings>();
+    wavePool.add(*settingsEntity_, cachedWaveSettings_);
+
+    auto &movement = world_.pool<DirectionalMovement>();
+    if (!movement.has(*settingsEntity_)) {
+        movement.add(*settingsEntity_, DirectionalMovement{});
+    }
+
+    auto &cooldown = world_.pool<FireCooldown>();
+    if (!cooldown.has(*settingsEntity_)) {
+        cooldown.add(*settingsEntity_, FireCooldown{});
     }
 }
 
@@ -202,73 +186,38 @@ void GameWorldManager::initShip() {
 }
 
 void GameWorldManager::resetWorldForNewWave() {
-    world_.reset();
-
-    initShip();
-}
-
-static void applyModifiers(const ecs::PrefabLibrary &library, const std::vector<std::string> &mods, Alien &alien) {
-    for (const auto &name : mods) {
-        const auto *mod = library.modifier(name);
-        if (!mod) continue;
-        for (size_t i = 0; i < std::size(alien.resistances.byType); ++i) {
-            alien.resistances.byType[i] += mod->resistanceDelta.byType[i];
+    if (settingsEntity_.has_value()) {
+        auto &wavePool = world_.pool<WaveSettings>();
+        if (wavePool.has(*settingsEntity_)) {
+            cachedWaveSettings_ = wavePool.get(*settingsEntity_);
         }
-        alien.armor.flatReduction += mod->armorDelta.flatReduction;
-        // Apply any ambient ailments the modifier wants the alien to start with.
-        alien.ailments = mod->ailments;
     }
+
+    world_.reset();
+    settingsEntity_.reset();
+
+    syncWaveSettings();
+    initShip();
 }
 
 void GameWorldManager::initAliens() {
     resetWorldForNewWave();
 
-    level_++;
-    if (waveRules_.empty()) {
-        WaveDefinition fallback{};
-        waveRules_.push_back(fallback);
+    if (!settingsEntity_.has_value()) {
+        return;
     }
 
-    const WaveDefinition &wave = waveRules_[wave_ % waveRules_.size()];
-    activeAlienBulletPrefab_ = wave.bulletPrefab;
+    auto &wavePool = world_.pool<WaveSettings>();
+    WaveSettings &settings = wavePool.add(*settingsEntity_, cachedWaveSettings_);
+    settings.level++;
+    settings.needsSpawn = true;
+    cachedWaveSettings_ = settings;
 
-    auto &aliens = world_.pool<Alien>();
-    auto &render = world_.pool<MainPushConstants>();
+    auto &movement = world_.pool<DirectionalMovement>();
+    movement.add(*settingsEntity_, DirectionalMovement{});
 
-    for (uint32_t r = 0; r < wave.rows; ++r) {
-        for (uint32_t c = 0; c < wave.cols; ++c) {
-            const auto e = world_.registry.create();
-            if (!e.has_value()) continue;
-
-            Alien alien = prefabs_.alien(wave.prefabName).alien;
-            alien.x = wave.start.x + static_cast<float>(c) * wave.spacing.x;
-            alien.y = wave.start.y - static_cast<float>(r) * wave.spacing.y;
-            alien.baseX = alien.x;
-            alien.active = true;
-            alien.spawnRow = static_cast<uint16_t>(r);
-            alien.spawnCol = static_cast<uint16_t>(c);
-
-            WaveRule rule = wave.rule;
-            if (rule.type == WaveRule::Type::RandomWeighted) {
-                alien.movementType = pickWeighted(rule.weights);
-            } else {
-                alien.movementType = rule.fixedMovement;
-            }
-            applyRuleSetup(rule, alien, level_);
-            applyModifiers(prefabs_, wave.modifiers, alien);
-
-            const auto &prefab = prefabs_.alien(wave.prefabName);
-            auto &pc = render.add(*e, prefab.render);
-            pc.texturePos = prefab.render.texturePos;
-
-            aliens.add(*e, alien);
-        }
-    }
-
-    wave_++;
-    fireTimer_ = 0.0f;
-    alienMoveSpeed_ = 0.3f;
-    alienDirection_ = 1.0f;
+    auto &cooldown = world_.pool<FireCooldown>();
+    cooldown.add(*settingsEntity_, FireCooldown{});
 }
 
 void GameWorldManager::decayFlash(float deltaTime) {
@@ -279,103 +228,6 @@ void GameWorldManager::decayFlash(float deltaTime) {
         pc.flashAmount -= deltaTime * 5.0f;
         if (pc.flashAmount < 0.0f) pc.flashAmount = 0.0f;
     });
-}
-
-void GameWorldManager::updateAliens(float deltaTime) {
-    updateAlienMovement(deltaTime);
-}
-
-void GameWorldManager::updateBullets(float deltaTime) {
-    updateBulletMovement(deltaTime);
-}
-
-void GameWorldManager::updateAlienMovement(float deltaTime) {
-    bool hitEdge = false;
-
-    auto &aliens = world_.pool<Alien>();
-    auto &render = world_.pool<MainPushConstants>();
-
-    world_.registry.forEachAlive([&](ecs::EntityId e) {
-        Alien *alien = aliens.tryGet(e);
-        if (!alien || !alien->active) return;
-
-        if (render.has(e)) {
-            auto &pc = render.get(e);
-            pc.flashAmount -= deltaTime * 5.0f;
-            if (pc.flashAmount < 0.0f) pc.flashAmount = 0.0f;
-        }
-
-        switch (alien->movementType) {
-            case TogetherOne:
-                alien->y -= alien->vy * deltaTime;
-                break;
-            case SineWave:
-                alien->movementTimer += deltaTime;
-                alien->x = alien->baseX + alien->amplitude * std::sin(alien->movementTimer * alien->frequency);
-                alien->y -= alien->vy * deltaTime;
-                break;
-            case MySnakeWave:
-                alien->movementTimer += deltaTime;
-                alien->x = std::sin((alien->movementTimer + alien->baseX) * alien->frequency);
-                alien->y -= alien->vy * deltaTime;
-                break;
-            case SnakeWave: {
-                alien->movementTimer += deltaTime;
-
-                const int row = static_cast<int>(alien->spawnRow);
-                const int col = static_cast<int>(alien->spawnCol);
-
-                const float basePhase = alien->movementTimer * alien->frequency;
-                const float rowPhase = row * 0.45f;
-                const float colPhase = col * 0.25f;
-
-                const float primaryWave = std::sin(basePhase + rowPhase);
-                const float secondaryWave = std::sin(basePhase * 0.65f + colPhase);
-
-                alien->x = alien->baseX + alien->amplitude * (0.75f * primaryWave + 0.35f * secondaryWave);
-
-                const float verticalBobVelocity = std::cos(basePhase + rowPhase) * alien->frequency * 0.12f;
-                alien->y -= alien->vy * deltaTime;
-                alien->y += verticalBobVelocity * deltaTime;
-
-                alien->x += 0.05f * std::sin(basePhase * 1.8f + colPhase + rowPhase);
-                break;
-            }
-            case JustGoDown:
-                alien->y -= alien->vy * deltaTime;
-                break;
-            case Circle:
-                break;
-            case LeftRight:
-                alien->x += alienMoveSpeed_ * alienDirection_ * deltaTime;
-                if (alien->x > 0.85f) alien->x = 0.85f;
-                if (alien->x < -0.85f) alien->x = -0.85f;
-                if (alien->x > 0.84f || alien->x < -0.84f) {
-                    hitEdge = true;
-                }
-                break;
-        }
-    });
-
-    if (hitEdge) {
-        alienDirection_ *= -1.0f;
-        world_.registry.forEachAlive([&](ecs::EntityId e) {
-            Alien *alien = aliens.tryGet(e);
-            if (!alien || !alien->active) return;
-            alien->y -= 0.04f;
-        });
-    }
-}
-
-void GameWorldManager::updateBulletMovement(float deltaTime) {
-    std::vector<ecs::EntityId> toDestroy;
-    toDestroy.reserve(8);
-
-    bulletMovementSystem_.update(world_, deltaTime, toDestroy);
-
-    for (auto e : toDestroy) {
-        destroyEntity(e);
-    }
 }
 
 std::optional<ecs::EntityId> GameWorldManager::spawnBullet(const std::string &prefabName, const glm::vec2 &pos) {
@@ -400,26 +252,6 @@ std::optional<ecs::EntityId> GameWorldManager::spawnBullet(const std::string &pr
     bullets.add(*e, bullet);
     render.add(*e, MainPushConstants{});
     return *e;
-}
-
-void GameWorldManager::updateAndMaybeFire(bool isPlaying, float deltaTime) {
-    if (!isPlaying) return;
-    fireTimer_ += deltaTime;
-    if (fireTimer_ <= fireInterval_) return;
-    fireTimer_ = 0.0f;
-
-    std::vector<ecs::EntityId> aliveAliens;
-    aliveAliens.reserve(8);
-    auto &aliens = world_.pool<Alien>();
-    world_.registry.forEachAlive([&](ecs::EntityId e) {
-        const Alien *alien = aliens.tryGet(e);
-        if (alien && alien->active) aliveAliens.push_back(e);
-    });
-    if (aliveAliens.empty()) return;
-
-    const uint32_t idx = Util::getRandomUint(0, static_cast<uint32_t>(aliveAliens.size() - 1));
-    const Alien &alien = aliens.get(aliveAliens[idx]);
-    (void) spawnBullet(activeAlienBulletPrefab_, {alien.x, -alien.y});
 }
 
 bool GameWorldManager::isShipBulletHittingAlien(const Alien &alien, const Bullet &bullet) {
@@ -538,5 +370,17 @@ void GameWorldManager::destroyEntity(ecs::EntityId entity) {
     world_.pool<Bullet>().remove(entity);
     world_.pool<MainPushConstants>().remove(entity);
     world_.registry.destroy(entity);
+}
+
+std::optional<ecs::EntityId> GameWorldManager::settingsEntity() const {
+    return settingsEntity_;
+}
+
+ecs::PrefabLibrary &GameWorldManager::prefabs() {
+    return prefabs_;
+}
+
+const ecs::PrefabLibrary &GameWorldManager::prefabs() const {
+    return prefabs_;
 }
 
