@@ -1,19 +1,17 @@
 #pragma once
 
-#include <span>
 #include <vector>
 
 #include "../events/EventBus.h"
 #include "../PowerUpManager.h"
-#include "../GameObjectData.h"
 #include "../ecs/systems/DamageSystem.h"
 #include "../ecs/systems/AilmentSystem.h"
+#include "../game/GameWorldManager.h"
 
 class DamageResolver {
 public:
     DamageResolver(EventBus &bus,
-                   Ship &ship,
-                   std::span<Alien> aliens,
+                   GameWorldManager &world,
                    AilmentRules &ailRules,
                    ShieldRules &shieldRules);
     ~DamageResolver();
@@ -25,8 +23,7 @@ private:
     void onHit(const HitEvent &event);
 
     EventBus &bus_;
-    Ship &ship_;
-    std::span<Alien> aliens_;
+    GameWorldManager &world_;
     AilmentRules &ailRules_;
     ShieldRules &shieldRules_;
     DamageSystem damageSystem_;
@@ -36,16 +33,14 @@ private:
 class AilmentTicker {
 public:
     AilmentTicker(EventBus &bus,
-                  Ship &ship,
-                  std::span<Alien> aliens,
+                  GameWorldManager &world,
                   AilmentSystem &ailmentSystem);
 
     void update(float dt);
 
 private:
     EventBus &bus_;
-    Ship &ship_;
-    std::span<Alien> aliens_;
+    GameWorldManager &world_;
     AilmentSystem &ailmentSystem_;
     std::vector<DamagePopupSpawned> popupScratch_;
     std::vector<DamageAppliedEvent> appliedScratch_;
@@ -53,7 +48,7 @@ private:
 
 class PowerUpOnKill {
 public:
-    PowerUpOnKill(EventBus &bus, std::span<Alien> aliens, PowerUpManager &manager);
+    PowerUpOnKill(EventBus &bus, GameWorldManager &world, PowerUpManager &manager);
     ~PowerUpOnKill();
 
     PowerUpOnKill(const PowerUpOnKill &) = delete;
@@ -63,14 +58,14 @@ private:
     void onDamage(const DamageAppliedEvent &event);
 
     EventBus &bus_;
-    std::span<Alien> aliens_;
+    GameWorldManager &world_;
     PowerUpManager &manager_;
     uint32_t subscriptionId_ = 0;
 };
 
 class ScoreTracker {
 public:
-    ScoreTracker(EventBus &bus, int &actualScore);
+    ScoreTracker(EventBus &bus, GameWorldManager &world, int &actualScore);
     ~ScoreTracker();
 
     ScoreTracker(const ScoreTracker &) = delete;
@@ -80,6 +75,7 @@ private:
     void onDamage(const DamageAppliedEvent &event);
 
     EventBus &bus_;
+    GameWorldManager &world_;
     int &actualScore_;
     uint32_t subscriptionId_ = 0;
 };
@@ -87,8 +83,7 @@ private:
 class GameMechanicsCoordinator {
 public:
     GameMechanicsCoordinator(EventBus &bus,
-                             Ship &ship,
-                             std::span<Alien> aliens,
+                             GameWorldManager &world,
                              PowerUpManager &powerUpManager,
                              AilmentSystem &ailmentSystem,
                              AilmentRules &ailRules,

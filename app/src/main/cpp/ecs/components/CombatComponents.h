@@ -93,7 +93,7 @@ struct Bullet {
     bool active{};
     std::array<float, 2> widthHeight{};
     BulletType bulletType{};
-    const float size = 0.05f * 0.5f; //half alien
+    static constexpr float size = 0.05f * 0.5f; // half alien
     DamagePayload payload{};
 };
 

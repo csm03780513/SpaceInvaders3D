@@ -23,6 +23,9 @@ add_library(SpaceInvaders3D SHARED
         game/MainMenuState.cpp
         game/PlayingState.cpp
         game/GameOverState.cpp
+        game/AlienManager.cpp
+        game/CombatManager.cpp
+        game/GameWorldManager.cpp
         input/FireCommand.cpp
         input/MoveShipCommand.cpp
         input/RestartGameCommand.cpp

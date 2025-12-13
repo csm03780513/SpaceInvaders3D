@@ -4,11 +4,10 @@
 #include <vector>
 
 DamageResolver::DamageResolver(EventBus &bus,
-                               Ship &ship,
-                               std::span<Alien> aliens,
+                               GameWorldManager &world,
                                AilmentRules &ailRules,
                                ShieldRules &shieldRules)
-        : bus_(bus), ship_(ship), aliens_(aliens), ailRules_(ailRules), shieldRules_(shieldRules) {
+        : bus_(bus), world_(world), ailRules_(ailRules), shieldRules_(shieldRules) {
     damageSystem_.ctx.ailRules = &ailRules_;
     damageSystem_.ctx.shRules = &shieldRules_;
     subscriptionId_ = bus_.subscribeHit([this](const HitEvent &event) { onHit(event); });
@@ -27,17 +26,25 @@ void DamageResolver::onHit(const HitEvent &event) {
     std::vector<DamageAppliedEvent> applied;
     std::vector<DamagePopupSpawned> popups;
 
-    if (event.target == ShipEntityId) {
+    auto &w = world_.world();
+    const ecs::EntityId target = static_cast<ecs::EntityId>(event.target);
+
+    if (!w.registry.alive(target)) {
+        return;
+    }
+
+    if (w.ships.has(target)) {
+        Ship &ship = w.ships.get(target);
         damageSystem_.apply(event.target,
-                            ship_.health,
-                            ship_.resistances,
+                            ship.health,
+                            ship.resistances,
                             nullptr,
-                            ship_.ailments,
+                            ship.ailments,
                             event,
                             applied,
                             popups);
-    } else if (event.target < aliens_.size()) {
-        Alien &alien = aliens_[event.target];
+    } else if (w.aliens.has(target)) {
+        Alien &alien = w.aliens.get(target);
         if (!alien.active) {
             return;
         }
@@ -60,10 +67,9 @@ void DamageResolver::onHit(const HitEvent &event) {
 }
 
 AilmentTicker::AilmentTicker(EventBus &bus,
-                             Ship &ship,
-                             std::span<Alien> aliens,
+                             GameWorldManager &world,
                              AilmentSystem &ailmentSystem)
-        : bus_(bus), ship_(ship), aliens_(aliens), ailmentSystem_(ailmentSystem) {
+        : bus_(bus), world_(world), ailmentSystem_(ailmentSystem) {
     popupScratch_.reserve(32);
     appliedScratch_.reserve(16);
 }
@@ -72,17 +78,21 @@ void AilmentTicker::update(float dt) {
     popupScratch_.clear();
     appliedScratch_.clear();
 
-    for (uint32_t i = 0; i < aliens_.size(); ++i) {
-        Alien &alien = aliens_[i];
-        if (!alien.active) {
-            continue;
-        }
-        ailmentSystem_.tick(dt, i, alien.health, alien.ailments,
-                            {alien.x, alien.y}, popupScratch_, appliedScratch_);
-    }
+    auto &w = world_.world();
+    const ecs::EntityId shipEntity = world_.shipEntity();
 
-    ailmentSystem_.tick(dt, ShipEntityId, ship_.health, ship_.ailments,
-                        {ship_.x, ship_.y}, popupScratch_, appliedScratch_);
+    w.registry.forEachAlive([&](ecs::EntityId e) {
+        if (w.aliens.has(e)) {
+            Alien &alien = w.aliens.get(e);
+            if (!alien.active) return;
+            ailmentSystem_.tick(dt, e, alien.health, alien.ailments, {alien.x, alien.y}, popupScratch_, appliedScratch_);
+        }
+    });
+
+    if (w.registry.alive(shipEntity) && w.ships.has(shipEntity)) {
+        Ship &ship = w.ships.get(shipEntity);
+        ailmentSystem_.tick(dt, shipEntity, ship.health, ship.ailments, {ship.x, ship.y}, popupScratch_, appliedScratch_);
+    }
 
     for (const auto &popup: popupScratch_) {
         bus_.publish(popup);
@@ -92,8 +102,8 @@ void AilmentTicker::update(float dt) {
     }
 }
 
-PowerUpOnKill::PowerUpOnKill(EventBus &bus, std::span<Alien> aliens, PowerUpManager &manager)
-        : bus_(bus), aliens_(aliens), manager_(manager) {
+PowerUpOnKill::PowerUpOnKill(EventBus &bus, GameWorldManager &world, PowerUpManager &manager)
+        : bus_(bus), world_(world), manager_(manager) {
     subscriptionId_ = bus_.subscribeDamageApplied([this](const DamageAppliedEvent &event) { onDamage(event); });
 }
 
@@ -104,21 +114,26 @@ PowerUpOnKill::~PowerUpOnKill() {
 }
 
 void PowerUpOnKill::onDamage(const DamageAppliedEvent &event) {
-    if (!event.killed || event.target == ShipEntityId || event.target >= aliens_.size()) {
+    if (!event.killed) {
         return;
     }
 
-    Alien &alien = aliens_[event.target];
-    if (!alien.active) {
+    const ecs::EntityId target = static_cast<ecs::EntityId>(event.target);
+    auto &w = world_.world();
+    if (!w.registry.alive(target)) {
         return;
     }
 
-    alien.active = false;
+    if (!w.aliens.has(target)) {
+        return;
+    }
+
+    world_.destroyEntity(target);
     manager_.spawnPowerUp(event.worldPos);
 }
 
-ScoreTracker::ScoreTracker(EventBus &bus, int &actualScore)
-        : bus_(bus), actualScore_(actualScore) {
+ScoreTracker::ScoreTracker(EventBus &bus, GameWorldManager &world, int &actualScore)
+        : bus_(bus), world_(world), actualScore_(actualScore) {
     subscriptionId_ = bus_.subscribeDamageApplied([this](const DamageAppliedEvent &event) { onDamage(event); });
 }
 
@@ -129,23 +144,22 @@ ScoreTracker::~ScoreTracker() {
 }
 
 void ScoreTracker::onDamage(const DamageAppliedEvent &event) {
-    if (event.killed && event.target != ShipEntityId) {
+    if (event.killed && static_cast<ecs::EntityId>(event.target) != world_.shipEntity()) {
         actualScore_ += 100;
     }
 }
 
 GameMechanicsCoordinator::GameMechanicsCoordinator(EventBus &bus,
-                                                   Ship &ship,
-                                                   std::span<Alien> aliens,
+                                                   GameWorldManager &world,
                                                    PowerUpManager &powerUpManager,
                                                    AilmentSystem &ailmentSystem,
                                                    AilmentRules &ailRules,
                                                    ShieldRules &shieldRules,
                                                    int &actualScore)
-        : damageResolver_(bus, ship, aliens, ailRules, shieldRules),
-          ailmentTicker_(bus, ship, aliens, ailmentSystem),
-          powerUpOnKill_(bus, aliens, powerUpManager),
-          scoreTracker_(bus, actualScore) {
+        : damageResolver_(bus, world, ailRules, shieldRules),
+          ailmentTicker_(bus, world, ailmentSystem),
+          powerUpOnKill_(bus, world, powerUpManager),
+          scoreTracker_(bus, world, actualScore) {
 }
 
 void GameMechanicsCoordinator::update(float dt) {

@@ -18,7 +18,7 @@ void MainMenuState::handleInput(const InputEvent &event) {
     for (const auto &entry: entries) {
         if (entry.name != "start" && entry.name != "exit") continue;
         const auto widthHeight = Util::getQuadWidthHeight(quadVerts, 6,{entry.scale.x, entry.scale.y});
-        const AABB bounds = Collision::getAABB(entry.offset.x, entry.offset.y,widthHeight[0],widthHeight[1]);|entry.offset.x, entry.offset.y
+        const AABB bounds = Collision::getAABB(entry.offset.x, entry.offset.y,widthHeight[0],widthHeight[1]);
         if (!isPointInside(bounds, event.normalizedX, event.normalizedY)) continue;
 
         if (entry.name == "start") {

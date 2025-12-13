@@ -8,21 +8,18 @@
 #include <unordered_map>
 #include <cstdint>
 #include "GameTime.h"
+#include "GameConstants.h"
 #include "PowerUpManager.h"
 #include "Util.h"
 #include "ECS/events/CombatEvents.h"
 #include "ECS/systems/AilmentSystem.h"
 #include "events/EventBus.h"
+#include "game/GameWorldManager.h"
 #include "mechanics/CombatEventSubscribers.h"
 #include "platform/PlatformServices.h"
 
-static constexpr int NUM_ALIENS_X = 8;
-static constexpr int NUM_ALIENS_Y = 3;
-static constexpr int MAX_ALIENS = NUM_ALIENS_X * NUM_ALIENS_Y;
 constexpr int SFX_SAMPLE_RATE = 44100;
 constexpr int SFX_CHANNELS = 1;
-
-static constexpr int MAX_BULLETS = 50;
 
 
 struct PipelineHandles;
@@ -39,7 +36,7 @@ public:
     void updatePlayingLogic(float dt);
     void prepareFrame(bool isPlaying);
 
-    void updateShip() const;
+    void updateShip();
 
     void spawnBullet(BulletType bulletType,glm::vec2 spawnPos);
 
@@ -66,10 +63,6 @@ public:
     float rateOfFire = 0.2f;
     float lastFireTime = 0.0f;
     bool canFire = false;
-
-    MainPushConstants shipPC_ = {.texturePos=0};
-    MainPushConstants bulletPC_[MAX_BULLETS] = {};
-    MainPushConstants alienPC_[MAX_ALIENS] = {};
 
     std::unordered_map<TextureSections, std::vector<UiEntry>> uiMainMenu = {
             {TextureSections::MainMenu, {
@@ -220,6 +213,8 @@ private:
     AilmentRules ailRules_;
     ShieldRules  shieldRules_{ .kineticHalfOnShield = true, .darkMatterIgnoresArmor = true };
 
+    GameWorldManager worldManager_{};
+
 
     // Score tracking and animation
     int actualScore = 0;            // Game logic value
@@ -300,13 +295,9 @@ private:
 
     void initVulkan();
 
-    static void updateBullet();
 
-    void updateAliens();
 
     void updateUniformBuffer();
-
-    void updateCollision();
 
     PipelineHandles createPipeline(GfxPipelineData &gfxPipelineData);
 
@@ -315,8 +306,6 @@ private:
     void createDescriptorSetLayout(VkDescriptorSetLayoutCreateInfo info, VkDescriptorSetLayout &layout);
 
     void createMainGfxPipeline();
-
-    void initAliens();
 
 
     void createUniformBuffer();
@@ -355,8 +344,6 @@ private:
 
     void createAndUploadBuffer(const void *vertices, VkBuffer &buffer, VkDeviceMemory &bufferMemory,
                                VkDeviceSize size,VkBufferUsageFlags usage);
-
-    void alienFireBullet();
 
     void spawnDamageText(const DamagePopupSpawned &damagePopupSpawned);
     void updateFloatingDamage();

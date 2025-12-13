@@ -37,14 +37,7 @@ const bool enableValidationLayers = false;
 const bool enableValidationLayers = true;
 #endif
 
-
-Bullet bullets_[MAX_BULLETS] = {};
-Ship ship_ ={};
-Alien aliens_[MAX_ALIENS] = {};
-
-float alienMoveSpeed_ = 0.3f;
 float bulletMoveSpeed_ = 2.0f;
-float alienDirection_ = 1.0f; // 1 = right, -1 = left
 
 
 std::vector<char> loadShaderAsset(IPlatformServices &platform, const char *filename);
@@ -54,9 +47,6 @@ VkShaderModule createShaderModule(VkDevice device, const std::vector<char> &code
 void createBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkDeviceSize size,
                   VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer &buffer,
                   VkDeviceMemory &bufferMemory, VkDeviceSize customAllocSize = 0);
-
-
-bool isCollision(const Alien &alien, const Bullet &bullet);
 
 void createImageView(VkDevice device, VkImage image, VkFormat format, VkImageView &imageView);
 
@@ -131,27 +121,6 @@ VkShaderModule createShaderModule(VkDevice device, const std::vector<char> &code
         throw std::runtime_error("Failed to create shader module");
     }
     return shaderModule;
-}
-
-inline bool isCollision(const Alien &alien, const Bullet &bullet) {
-
-    if (bullet.bulletType == BulletType::Ship) {
-        auto alienAABB = Collision::getAABB(alien.x, alien.y, alien.widthHeight[0],
-                                            alien.widthHeight[1]);
-        auto bulletAABB = Collision::getAABB(bullet.x, -bullet.y, bullet.widthHeight[0],
-                                             bullet.widthHeight[1]);
-
-        return Collision::isColliding(alienAABB, bulletAABB);
-    } else if (bullet.bulletType == BulletType::Alien) {
-        auto shipAABB = Collision::getAABB(ship_.x, ship_.y, ship_.widthHeight[0],
-                                           ship_.widthHeight[1]);
-        auto bulletAABB = Collision::getAABB(bullet.x, bullet.y, bullet.widthHeight[0],
-                                             bullet.widthHeight[1]);
-        return Collision::isColliding(shipAABB, bulletAABB);
-
-    }
-
-    return false;
 }
 
 std::vector<char> loadShaderAsset(IPlatformServices &platform, const char *filename) {
@@ -521,18 +490,19 @@ Renderer::Renderer(IPlatformServices &platformServices) : platformServices_(plat
     powerUpManager_ = std::make_shared<PowerUpManager>(device_, util_, sfxMixer_);
     particleSystem_ = std::make_unique<ParticleSystem>(device_, powerUpManager_);
 
+    worldManager_.loadAlienConfig(platformServices_);
 
     loadAllTextures();
     loadText();
     loadGameObjects();
     createUniformBuffer();
-    initAliens();
+    worldManager_.initShip();
+    worldManager_.initAliens();
     initShip();
 
     mechanics_ = std::make_unique<GameMechanicsCoordinator>(
             eventBus_,
-            ship_,
-            std::span<Alien>(aliens_, MAX_ALIENS),
+            worldManager_,
             *powerUpManager_,
             ailSys_,
             ailRules_,
@@ -1803,48 +1773,57 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
                                          shipDescriptorSet_);
 
     // --- Draw ship
-    float flashAmount = {0.0f};
-
-    shipPC_.pos = {shipX_, ship_.y};
-    shipPC_.shakeOffset = shakeOffset;
+    auto &w = worldManager_.world();
+    const ecs::EntityId shipEntity = worldManager_.shipEntity();
+    Ship &ship = w.ships.get(shipEntity);
+    MainPushConstants &shipPC = w.render.get(shipEntity);
+    shipPC.texturePos = 0;
+    shipPC.pos = {shipX_, ship.y};
+    shipPC.shakeOffset = shakeOffset;
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipeline_);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineLayout_, 0, 1,
                             &shipDescriptorSet_, 0, nullptr);
     vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
                        sizeof(MainPushConstants),
-                       &shipPC_);
+                       &shipPC);
 
     vkCmdBindVertexBuffers(cmd, 0, 1, &shipVertexBuffer_, offsets);
     vkCmdDraw(cmd, 6, 1, 0, 0);
 
-    auto shipAABB = Collision::getAABB(ship_.x, ship_.y, ship_.widthHeight[0],
-                                       ship_.widthHeight[1]);
+    auto shipAABB = Collision::getAABB(ship.x, ship.y, ship.widthHeight[0],
+                                       ship.widthHeight[1]);
 //    util_->recordDrawBoundingBox(cmd, shipAABB, {0.0f, 1.0f, 1.0f});
 
 
-    // --- Draw bullets (for each active bullet, updateExplosionParticles buffer and draw)
-    for (int i = 0; i < MAX_BULLETS; ++i) {
-        if (!bullets_[i].active) continue;
-        bulletPC_[i].pos = {bullets_[i].x, bullets_[i].y};
-        bulletPC_[i].shakeOffset = shakeOffset;
-        bulletPC_[i].texturePos = 2;
-        bulletPC_[i].scale = {0.5f, 0.5f};
+    // --- Draw bullets
+    w.registry.forEachAlive([&](ecs::EntityId e) {
+        Bullet *bullet = w.bullets.tryGet(e);
+        if (!bullet || !bullet->active) return;
+
+        MainPushConstants pc{};
+        pc.pos = {bullet->x, bullet->y};
+        pc.shakeOffset = shakeOffset;
+        pc.texturePos = 2;
+        pc.scale = {0.5f, 0.5f};
 
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipeline_);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineLayout_, 0, 1,
                                 &shipDescriptorSet_, 0, nullptr);
         vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
-                           sizeof(MainPushConstants), &bulletPC_[i]);
+                           sizeof(MainPushConstants), &pc);
         vkCmdBindVertexBuffers(cmd, 0, 1, &bulletVertexBuffer_, offsets);
         vkCmdDraw(cmd, 6, 1, 0, 0);
+    });
 
-    }
+    // --- Draw aliens
+    w.registry.forEachAlive([&](ecs::EntityId e) {
+        Alien *alien = w.aliens.tryGet(e);
+        if (!alien || !alien->active) return;
 
-    for (int i = 0; i < MAX_ALIENS; ++i) {
-        if (!aliens_[i].active) continue;
-        alienPC_[i].pos = {aliens_[i].x, -aliens_[i].y};
-        alienPC_[i].shakeOffset = shakeOffset;
+        MainPushConstants &pc = w.render.get(e);
+        pc.pos = {alien->x, -alien->y};
+        pc.shakeOffset = shakeOffset;
 
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipeline_);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineLayout_, 0, 1,
@@ -1852,11 +1831,10 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
         vkCmdBindVertexBuffers(cmd, 0, 1, &alienVertexBuffer_, offsets);
         vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
                            sizeof(MainPushConstants),
-                           &alienPC_[i]);
+                           &pc);
         vkCmdDraw(cmd, 6, 1, 0, 0);
 //        util_->recordDrawBoundingBox(cmd, alienAABB, {1.0f,0.0f,0.0f});
-
-    }
+    });
 
     if (gameState != GameState::Playing) {
         // Set special color in push constant or UBO (e.g. red for GAME OVER)
@@ -1965,14 +1943,9 @@ void Renderer::restartGame() {
     // Reset player
 
     // Reset aliens
-    initAliens();
-    ship_.health.hull = 100.0f;
-    alienMoveSpeed_ = 0.3f;
-
-    // Reset bullets
-    for (auto &bullet: bullets_) {
-        bullet.active = false;
-    }
+    worldManager_.initAliens();
+    initShip();
+    worldManager_.world().ships.get(worldManager_.shipEntity()).health.hull = 100.0f;
 
     floatingDamageInstances_.clear();
     pendingFloatingDamageUploads_.clear();
@@ -1995,57 +1968,43 @@ void Renderer::setShipPosition(float x, float y, bool fireBullet) {
 void Renderer::spawnBullet(BulletType bulletType, glm::vec2 spawnPos) {
 
     if (gameState == GameState::Playing) {
-        int spawned = 0;
-        bool doubleShot = powerUpManager_->doubleShotActive;
-        for (int i = 0; i < MAX_BULLETS; ++i) {
-            if (!bullets_[i].active && BulletType::Ship == bulletType && canFire) {
-                bullets_[i].bulletType = bulletType;
-                if (doubleShot && spawned == 0) {
-                    // Left bullet
-                    bullets_[i].x = spawnPos.x - 0.05f;
-                    bullets_[i].y = spawnPos.y - 0.04f;
-                    bullets_[i].active = true;
-                    bullets_[i].payload = makeKinetic(Util::getRandomFloat(10.0f,40.0f), 0.2f);
-//                    if (sfxMixer_) sfxMixer_->playClip("shoot", 0.05f);
-                    spawned++;
-                } else if (doubleShot && spawned == 1) {
-                    // Right bullet
-                    bullets_[i].x = spawnPos.x + 0.05f;
-                    bullets_[i].y = spawnPos.y - 0.04f;
-                    bullets_[i].active = true;
-                    bullets_[i].payload = makeKinetic(Util::getRandomFloat(10.0f,40.0f));
-//                    if (sfxMixer_) sfxMixer_->playClip("shoot", 0.05f);
-                    spawned++;
-                    break; // Spawned both bullets
-                } else if (!doubleShot) {
-                    // Normal shot: center
-                    bullets_[i].x = spawnPos.x;
-                    bullets_[i].y = spawnPos.y - 0.04f;
-                    bullets_[i].active = true;
-                    bullets_[i].payload = makePlasma(Util::getRandomFloat(10.0f,40.0f));
-                  //  if (sfxMixer_) sfxMixer_->playClip("shoot", 0.05f);
-                    break;
-                }
-//                 canFire = false;
-//                 lastFireTime = 0.0f;
+        if (bulletType == BulletType::Ship) {
+            if (!canFire) {
+                return;
             }
 
-            if (!bullets_[i].active && bulletType == BulletType::Alien) {
-                bullets_[i].x = spawnPos.x;
-                bullets_[i].y = spawnPos.y + 0.04f;
-                bullets_[i].active = true;
-                bullets_[i].bulletType = bulletType;
-                bullets_[i].payload = makeKinetic(Util::getRandomFloat(10.0f,30.0f));
-                break;
+            const bool doubleShot = powerUpManager_->doubleShotActive;
+            if (doubleShot) {
+                (void) worldManager_.spawnBullet(bulletType,
+                                                 {spawnPos.x - 0.05f, spawnPos.y - 0.04f},
+                                                 makeKinetic(Util::getRandomFloat(10.0f, 40.0f), 0.2f));
+                (void) worldManager_.spawnBullet(bulletType,
+                                                 {spawnPos.x + 0.05f, spawnPos.y - 0.04f},
+                                                 makeKinetic(Util::getRandomFloat(10.0f, 40.0f)));
+                return;
             }
+
+            (void) worldManager_.spawnBullet(bulletType,
+                                             {spawnPos.x, spawnPos.y - 0.04f},
+                                             makePlasma(Util::getRandomFloat(10.0f, 40.0f)));
+            return;
+        }
+
+        if (bulletType == BulletType::Alien) {
+            (void) worldManager_.spawnBullet(bulletType,
+                                             {spawnPos.x, spawnPos.y + 0.04f},
+                                             makeKinetic(Util::getRandomFloat(10.0f, 30.0f)));
+            return;
         }
     }
 }
 
-void Renderer::updateShip() const {
-    ship_.x = shipX_;
-    ship_.y = shipY_;
-    ship_.color[0] = shipX_;
+void Renderer::updateShip() {
+    auto &w = worldManager_.world();
+    Ship &ship = w.ships.get(worldManager_.shipEntity());
+    ship.x = shipX_;
+    ship.y = shipY_;
+    ship.color[0] = shipX_;
 }
 
 void Renderer::setGameState(GameState state) {
@@ -2066,263 +2025,30 @@ const std::vector<UiEntry> &Renderer::getUiEntries(TextureSections section) cons
 }
 
 bool Renderer::hasActiveAliens() const {
-    for (const auto &alien: aliens_) {
-        if (alien.active) {
-            return true;
-        }
-    }
-    return false;
+    return worldManager_.hasActiveAliens();
 }
 
 bool Renderer::hasAlienBelow(float threshold) const {
-    for (const auto &alien: aliens_) {
-        if (alien.active && alien.y < threshold) {
-            return true;
-        }
-    }
-    return false;
-}
-
-void Renderer::updateBullet() {
-    for (int i = 0; i < MAX_BULLETS; ++i) {
-        if (bullets_[i].active) {
-            if (bullets_[i].bulletType == BulletType::Ship)
-                bullets_[i].y -= bulletMoveSpeed_ * GameTime::deltaTime; // Move up
-            if (bullets_[i].bulletType == BulletType::Alien)
-                bullets_[i].y += 0.5f * GameTime::deltaTime;             // Move down
-
-            if ((bullets_[i].bulletType == BulletType::Ship && bullets_[i].y < -1.0f) ||
-                (bullets_[i].bulletType == BulletType::Alien && bullets_[i].y > 1.0f)) {
-                bullets_[i].active = false; // Off screen
-            }
-        }
-    }
-
-}
-
-//float timePassed = 0.0f;
-
-void Renderer::updateAliens() {
-    bool hitEdge = false;
-
-    for (int i = 0; i < MAX_ALIENS; ++i) {
-//        timePassed += Time::deltaTime;
-        if (!aliens_[i].active) continue;
-        // update flash amount (fade in/out) smoothly
-        alienPC_[i].flashAmount -= GameTime::deltaTime * 5.0f; // fade speed (0.2s)
-        if (alienPC_[i].flashAmount < 0.0f) alienPC_[i].flashAmount = 0.0f;
-
-        switch (aliens_[i].movementType) {
-            case TogetherOne:
-                aliens_[i].y -= aliens_[i].vy * GameTime::deltaTime;
-                break;
-            case SineWave:
-                aliens_[i].movementTimer += GameTime::deltaTime;
-                aliens_[i].x = aliens_[i].baseX + aliens_[i].amplitude *
-                                                  sin((aliens_[i].movementTimer *
-                                                       aliens_[i].frequency));
-                aliens_[i].y -= aliens_[i].vy * GameTime::deltaTime;
-                break;
-            case MySnakeWave:
-                aliens_[i].movementTimer += GameTime::deltaTime;
-                aliens_[i].x = sin((aliens_[i].movementTimer + aliens_[i].baseX) * aliens_[i].frequency);
-                aliens_[i].y -= aliens_[i].vy * GameTime::deltaTime;
-                break;
-            case SnakeWave: {
-                aliens_[i].movementTimer += GameTime::deltaTime;
-
-                const int row = i / NUM_ALIENS_X;
-                const int col = i % NUM_ALIENS_X;
-
-                // Travelling wave that offsets rows/columns for a snaking motion.
-                const float basePhase = aliens_[i].movementTimer * aliens_[i].frequency;
-                const float rowPhase = row * 0.45f;
-                const float colPhase = col * 0.25f;
-
-                const float primaryWave = sin(basePhase + rowPhase);
-                const float secondaryWave = sin(basePhase * 0.65f + colPhase);
-
-                aliens_[i].x = aliens_[i].baseX +
-                               aliens_[i].amplitude * (0.75f * primaryWave + 0.35f * secondaryWave);
-
-                // Add a subtle vertical bob to make the formation feel alive.
-                const float verticalBobVelocity =
-                        cos(basePhase + rowPhase) * aliens_[i].frequency * 0.12f;
-                aliens_[i].y -= aliens_[i].vy * GameTime::deltaTime;
-                aliens_[i].y += verticalBobVelocity * GameTime::deltaTime;
-
-                // Nudge columns out of phase to emphasize the snake-like trail.
-                aliens_[i].x += 0.05f * sin(basePhase * 1.8f + colPhase + rowPhase);
-
-                break;
-            }
-            case JustGoDown:
-                aliens_[i].y -= aliens_[i].vy * GameTime::deltaTime;
-                break;
-            case Circle:
-                break;
-            case LeftRight:
-                // Clamp X position just inside the edge
-                if (aliens_[i].x > 0.85f) aliens_[i].x = 0.85f;
-                if (aliens_[i].x < -0.85f) aliens_[i].x = -0.85f;
-
-                aliens_[i].x += alienMoveSpeed_ * alienDirection_ * GameTime::deltaTime;
-
-                // Check if any alien hits the left or right edge
-                if (aliens_[i].x > 0.85f || aliens_[i].x < -0.85f) {
-                    hitEdge = true;
-                    if (hitEdge) {
-                        alienDirection_ *= -1;
-                        // Move all aliens down a bit
-                        for (auto &alien: aliens_) {
-                            if (alien.active)
-                                alien.y -= 0.04f;
-                        }
-                    }
-                }
-                break;
-        }
-
-    }
-
-}
-
-uint32_t wave = 0;
-uint32_t numOfAliens = 100;
-uint32_t level = 0;
-
-void Renderer::initAliens() {
-    Resistances enemyRes{};
-    enemyRes.byType[(int)DamageType::Kinetic]   = 0.10f;
-    enemyRes.byType[(int)DamageType::Fire]      = 0.10f;
-    enemyRes.byType[(int)DamageType::Lightning] = 0.05f;
-    enemyRes.byType[(int)DamageType::Cold]      = 0.00f;
-    enemyRes.byType[(int)DamageType::Poison]    = 0.00f;
-    enemyRes.byType[(int)DamageType::Radiation] = 0.15f;
-    enemyRes.byType[(int)DamageType::Plasma]    = 0.05f;
-    enemyRes.byType[(int)DamageType::DarkMatter]= -0.10f; // vulnerable
-    enemyRes.byType[(int)DamageType::Cosmic]    = 0.20f;
-//    numOfAliens = Util::getRandomUint(0, NUM_ALIENS_X * NUM_ALIENS_Y);
-    float startX = -0.7f;
-    float startY = 0.8f;
-    float dx = 0.2f;
-    float dy = 0.15f;
-    level++;
-    if (wave >= 4) wave = 0; // reset wave
-    for (int y = 0; y < NUM_ALIENS_Y; ++y) {
-        for (int x = 0; x < NUM_ALIENS_X; ++x) {
-            int idx = y * NUM_ALIENS_X + x;
-            aliens_[idx].x = startX + x * dx;
-            aliens_[idx].baseX = startX + x * dx;
-            aliens_[idx].movementTimer = 0.0f;
-            aliens_[idx].y = startY - y * dy;
-            aliens_[idx].active = true;
-            aliens_[idx].health.hull = 100.0f;
-            aliens_[idx].health.dead = false;
-            aliens_[idx].resistances = enemyRes;
-            aliens_[idx].ailments = {};
-
-            aliens_[idx].widthHeight = Util::getQuadWidthHeight(alienVerts, 6, {1.0, 1.0});
-            alienPC_[idx].texturePos = 1;
-            if (numOfAliens >= 1) {
-                switch (wave) {
-                    case 0:
-                        aliens_[idx].movementType = AlienMovementType::LeftRight;
-                        break;
-                    case 1:
-                        aliens_[idx].frequency = aliens_[idx].baseFrequency * 7 + (level * 0.05);
-                        aliens_[idx].movementType = AlienMovementType::SnakeWave;
-                        aliens_[idx].vy += 0.01f;
-                        break;
-                    case 2:
-                        aliens_[idx].movementType = AlienMovementType::SineWave;
-                        aliens_[idx].frequency = aliens_[idx].baseFrequency * 5 + (level * 0.05);
-                        aliens_[idx].vy += 0.01f;
-                        break;
-                    case 3:
-                        aliens_[idx].movementType = AlienMovementType::TogetherOne;
-                        aliens_[idx].x = 0.0f;
-                        aliens_[idx].vy += 0.01f;
-                        break;
-                    default:
-                        aliens_[idx].movementType = AlienMovementType::JustGoDown;
-                        break;
-                }
-                // numOfAliens--;
-            }
-        }
-    }
-    wave++;
+    return worldManager_.hasAlienBelow(threshold);
 }
 
 void Renderer::initShip() {
-    Resistances enemyRes{};
-    enemyRes.byType[(int)DamageType::Kinetic]   = 0.10f;
-    enemyRes.byType[(int)DamageType::Fire]      = 0.10f;
-    enemyRes.byType[(int)DamageType::Lightning] = 0.05f;
-    enemyRes.byType[(int)DamageType::Cold]      = 0.00f;
-    enemyRes.byType[(int)DamageType::Poison]    = 0.00f;
-    enemyRes.byType[(int)DamageType::Radiation] = 0.15f;
-    enemyRes.byType[(int)DamageType::Plasma]    = 0.05f;
-    enemyRes.byType[(int)DamageType::DarkMatter]= -0.10f; // vulnerable
-    enemyRes.byType[(int)DamageType::Cosmic]    = 0.20f;
+    Resistances shipRes{};
+    shipRes.byType[(int)DamageType::Kinetic]   = 0.10f;
+    shipRes.byType[(int)DamageType::Fire]      = 0.10f;
+    shipRes.byType[(int)DamageType::Lightning] = 0.05f;
+    shipRes.byType[(int)DamageType::Cold]      = 0.00f;
+    shipRes.byType[(int)DamageType::Poison]    = 0.00f;
+    shipRes.byType[(int)DamageType::Radiation] = 0.15f;
+    shipRes.byType[(int)DamageType::Plasma]    = 0.05f;
+    shipRes.byType[(int)DamageType::DarkMatter]= -0.10f; // vulnerable
+    shipRes.byType[(int)DamageType::Cosmic]    = 0.20f;
 
-    ship_.resistances = enemyRes;
-    ship_.widthHeight = Util::getQuadWidthHeight(shipVerts, 6, {1, 1});
+    Ship &ship = worldManager_.world().ships.get(worldManager_.shipEntity());
+    ship.resistances = shipRes;
+    ship.widthHeight = Util::getQuadWidthHeight(shipVerts, 6, {1, 1});
 
 }
-
-
-uint x = 0;
-
-// process only spawned projectile collisions
-void Renderer::updateCollision() {
-    for (auto& bullet : bullets_) {
-        if (!bullet.active) continue;
-
-        for (uint i = 0; i < MAX_ALIENS; i++) {
-            if (!aliens_[i].active) continue;
-
-            // Player bullet hits alien
-            if (isCollision(aliens_[i], bullet) && bullet.bulletType == BulletType::Ship) {
-                bullet.active = false;
-
-                // Queue a HitEvent for later DamageSystem processing
-                eventBus_.publish(HitEvent{
-                        .attacker   = /* optional: player entity id */ 0,
-                        .target     = i, // or aliens_[i].entityId
-                        .payload    = bullet.payload,
-                        .hitWorldPos= glm::vec2(aliens_[i].x, aliens_[i].y)
-                });
-
-                // simple visual feedback
-                alienPC_[i].flashAmount = 1.0f;
-
-                // short particle burst on hit
-                particleSystem_->spawn(glm::vec3(aliens_[i].x, -aliens_[i].y, 1.0f), 5);
-                break;
-            }
-
-            // Alien bullet hits ship
-            if (isCollision(aliens_[i], bullet) && bullet.bulletType == BulletType::Alien && !powerUpManager_->shieldActive) {
-
-                bullet.active = false;
-
-                eventBus_.publish(HitEvent{
-                        .attacker   = i,  // alien index
-                        .target     = ShipEntityId,
-                        .payload    = bullet.payload,
-                        .hitWorldPos= glm::vec2(ship_.x, ship_.y)
-                });
-
-                shipPC_.flashAmount = 1.0f;
-                particleSystem_->spawn(glm::vec3(bullet.x, bullet.y, 0.0f), 10);
-                break;
-            }
-        }
-    }
-}
-
 void Renderer::spawnDamageText(const DamagePopupSpawned &damagePopupSpawned) {
     std::vector<Vertex> vertices = fontManager_->buildTextVertices(damagePopupSpawned.text, 0.0f, 0.0f, 1.0f, floatingDamageStartScale_);
 
@@ -2555,21 +2281,24 @@ void Renderer::updatePlayingLogic(float dt) {
     updateUniformBuffer();
     updateShip();
 
-    updateAliens();
-    updateCollision();
+    worldManager_.updateAliens(dt);
+    worldManager_.processCollisions(powerUpManager_->shieldActive, *particleSystem_, eventBus_);
     if (mechanics_) {
         mechanics_->update(dt);
     }
     powerUpManager_->updatePowerUpData();
-    powerUpManager_->checkIfPowerUpCollected(ship_);
+    powerUpManager_->checkIfPowerUpCollected(worldManager_.world().ships.get(worldManager_.shipEntity()));
 }
 
 void Renderer::prepareFrame(bool isPlaying) {
     animateScore();
 
-    updateBullet();
-    alienFireBullet();
-    particleSystem_->updateHaloEffect(ship_);
+    worldManager_.setBulletSpeeds(bulletMoveSpeed_, 0.5f);
+    worldManager_.updateBullets(GameTime::deltaTime);
+    worldManager_.updateAndMaybeFire(isPlaying, GameTime::deltaTime);
+    worldManager_.decayFlash(GameTime::deltaTime);
+
+    particleSystem_->updateHaloEffect(worldManager_.world().ships.get(worldManager_.shipEntity()));
     particleSystem_->updateStarField(starInstanceBufferMemory_);
     particleSystem_->updateExplosionParticles(particlesInstanceBufferMemory_);
 
@@ -2579,9 +2308,6 @@ void Renderer::prepareFrame(bool isPlaying) {
         shakeOffset.y = (rand() / (float) RAND_MAX - 0.5f) * 2.0f * shakeMagnitude;
         shakeTimer -= GameTime::deltaTime;
     }
-    shipPC_.flashAmount -= GameTime::deltaTime * 5.0f; // fade speed (0.2s)
-    if (shipPC_.flashAmount < 0.0f) shipPC_.flashAmount = 0.0f;
-
     glm::vec2 offsetPos{0.75, -0.8f};
 
     VkDeviceSize powerUpWriteCursor = powerUpTextStartOffset_;
@@ -2693,10 +2419,7 @@ void Renderer::loadGameObjects() {
     createAndUploadBuffer(quadVerts, bulletVertexBuffer_, bulletVertexBufferMemory_,
                           sizeof(quadVerts), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
 
-    for (auto &bullet: bullets_) {
-        bullet.active = false;
-        bullet.widthHeight = Util::getQuadWidthHeight(quadVerts, 6, {0.2, 0.5});
-    }
+    worldManager_.setBulletWidthHeight(Util::getQuadWidthHeight(quadVerts, 6, {0.2, 0.5}));
 
     createAndUploadBuffer(quadVerts, vertexBuffer_, vertexBufferMemory_, sizeof(quadVerts),
                           VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
@@ -2844,19 +2567,4 @@ Renderer::~Renderer() {
 
 }
 
-
-void Renderer::alienFireBullet() {
-    if (gameState == GameState::Playing) {
-        static float timer = 0.0f;
-        timer += GameTime::deltaTime;
-        if (timer > 1.0f) {
-            timer = 0.0f;
-            Alien alien = aliens_[Util::getRandomUint(0, MAX_ALIENS)];
-            if (alien.active) {
-                spawnBullet(BulletType::Alien, {alien.x, -alien.y});
-            }
-        }
-
-    }
-}
 
