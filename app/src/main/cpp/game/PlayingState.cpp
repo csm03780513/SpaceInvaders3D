@@ -23,17 +23,10 @@ void PlayingState::handleInput(const InputEvent &event) {
 }
 
 void PlayingState::update(float dt) {
+    (void) dt;
     context_.setGameState(GameState::Playing);
-    context_.updatePlaying(dt);
-
     if (touchActive_) {
         context_.setShipPosition(touchX_, touchY_, true);
-    }
-
-    if (context_.hasAlienBelow(-0.9f)) {
-        game_.requestState(GameState::Lost);
-    } else if (!context_.hasActiveAliens()) {
-        game_.requestState(GameState::Won);
     }
 }
 

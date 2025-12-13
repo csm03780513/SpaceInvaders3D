@@ -33,16 +33,9 @@ public:
 
     void drawFrame();
 
-    void updatePlayingLogic(float dt);
     void prepareFrame(bool isPlaying);
 
-    void updateShip();
-
-    void spawnBullet(BulletType bulletType,glm::vec2 spawnPos);
-
-    void setShipPosition(float x, float y, bool fireBullet);
-
-    void restartGame();
+    void resetVisuals();
 
     void stopAudioPlayer();
 
@@ -52,17 +45,17 @@ public:
     [[nodiscard]] GameState getGameState() const;
     [[nodiscard]] const std::vector<UiEntry> &getUiEntries(TextureSections section) const;
 
+    GameWorldManager &worldManager();
+    PowerUpManager &powerUps();
+    ParticleSystem &particleSystem();
+    EventBus &eventBus();
+    GameMechanicsCoordinator *mechanics();
+
     void onWindowLost();
     void onWindowResumed();
 
     [[nodiscard]] bool hasActiveAliens() const;
     [[nodiscard]] bool hasAlienBelow(float threshold) const;
-
-    float shipX_ = 0.0f;
-    float shipY_ = 0.0f;
-    float rateOfFire = 0.2f;
-    float lastFireTime = 0.0f;
-    bool canFire = false;
 
     std::unordered_map<TextureSections, std::vector<UiEntry>> uiMainMenu = {
             {TextureSections::MainMenu, {

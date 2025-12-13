@@ -20,6 +20,7 @@ add_library(SpaceInvaders3D SHARED
         PipelineBuilder.cpp
         game/Game.cpp
         game/RenderContext.cpp
+        game/SimulationScheduler.cpp
         game/MainMenuState.cpp
         game/PlayingState.cpp
         game/GameOverState.cpp
