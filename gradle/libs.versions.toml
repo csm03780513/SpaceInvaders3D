@@ -1,0 +1,11 @@
+[versions]
+# Android Gradle Plugin version
+agp = "8.13.2"
+# Oboe audio library version
+oboe = "1.10.0"
+
+[libraries]
+oboe = { module = "com.google.oboe:oboe", version.ref = "oboe" }
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
