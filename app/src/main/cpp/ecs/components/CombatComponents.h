@@ -94,6 +94,7 @@ struct Bullet {
     std::array<float, 2> widthHeight{};
     BulletType bulletType{};
     static constexpr float size = 0.05f * 0.5f; // half alien
+    float speed{1.0f};
     DamagePayload payload{};
 };
 
@@ -119,6 +120,8 @@ struct Alien {
     AlienMovementType movementType{AlienMovementType::LeftRight};
     bool active{};
     std::array<float, 2> widthHeight{};
+    uint16_t spawnRow = 0;
+    uint16_t spawnCol = 0;
 
     Health health;
     Armor armor;

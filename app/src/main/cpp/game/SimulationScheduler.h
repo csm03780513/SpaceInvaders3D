@@ -2,6 +2,7 @@
 
 #include <glm/vec2.hpp>
 #include <memory>
+#include <string>
 
 #include "GameConstants.h"
 
@@ -38,7 +39,7 @@ private:
 
     float rateOfFire_ = 0.2f;
     float fireAccumulator_ = 0.0f;
-    float shipBulletSpeed_ = 2.0f;
-    float alienBulletSpeed_ = 0.5f;
+    std::string shipBulletPrefab_{"ship_primary"};
+    std::string dualBulletPrefab_{"ship_dual"};
 };
 

@@ -488,6 +488,7 @@ Renderer::Renderer(IPlatformServices &platformServices) : platformServices_(plat
     powerUpManager_ = std::make_shared<PowerUpManager>(device_, util_, sfxMixer_);
     particleSystem_ = std::make_unique<ParticleSystem>(device_, powerUpManager_);
 
+    worldManager_.loadPrefabs(platformServices_);
     worldManager_.loadAlienConfig(platformServices_);
 
     loadAllTextures();
