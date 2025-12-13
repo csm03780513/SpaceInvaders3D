@@ -362,27 +362,7 @@ void GameWorldManager::updateBulletMovement(float deltaTime) {
     std::vector<ecs::EntityId> toDestroy;
     toDestroy.reserve(8);
 
-    world_.registry.forEachAlive([&](ecs::EntityId e) {
-        Bullet *b = world_.bullets.tryGet(e);
-        if (!b) return;
-
-        if (!b->active) {
-            toDestroy.push_back(e);
-            return;
-        }
-
-        if (b->bulletType == BulletType::Ship) {
-            b->y -= b->speed * deltaTime;
-        } else if (b->bulletType == BulletType::Alien) {
-            b->y += b->speed * deltaTime;
-        }
-
-        if ((b->bulletType == BulletType::Ship && b->y < -1.0f) ||
-            (b->bulletType == BulletType::Alien && b->y > 1.0f)) {
-            b->active = false;
-            toDestroy.push_back(e);
-        }
-    });
+    bulletMovementSystem_.update(world_, deltaTime, toDestroy);
 
     for (auto e : toDestroy) {
         destroyEntity(e);

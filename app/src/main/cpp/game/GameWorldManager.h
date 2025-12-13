@@ -11,6 +11,7 @@
 
 #include "GameConstants.h"
 #include "ecs/worlds/GameWorld.h"
+#include "ecs/systems/BulletMovementSystem.h"
 #include "ecs/worlds/PrefabLibrary.h"
 
 class EventBus;
@@ -90,6 +91,7 @@ private:
     void updateBulletMovement(float deltaTime);
 
     ecs::GameWorld world_{};
+    ecs::BulletMovementSystem bulletMovementSystem_{};
     ecs::PrefabLibrary prefabs_{};
 
     std::vector<WaveDefinition> waveRules_{};
