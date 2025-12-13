@@ -27,14 +27,16 @@ void DamageResolver::onHit(const HitEvent &event) {
     std::vector<DamagePopupSpawned> popups;
 
     auto &w = world_.world();
+    auto &ships = w.pool<Ship>();
+    auto &aliens = w.pool<Alien>();
     const ecs::EntityId target = static_cast<ecs::EntityId>(event.target);
 
     if (!w.registry.alive(target)) {
         return;
     }
 
-    if (w.ships.has(target)) {
-        Ship &ship = w.ships.get(target);
+    if (ships.has(target)) {
+        Ship &ship = ships.get(target);
         damageSystem_.apply(event.target,
                             ship.health,
                             ship.resistances,
@@ -43,8 +45,8 @@ void DamageResolver::onHit(const HitEvent &event) {
                             event,
                             applied,
                             popups);
-    } else if (w.aliens.has(target)) {
-        Alien &alien = w.aliens.get(target);
+    } else if (aliens.has(target)) {
+        Alien &alien = aliens.get(target);
         if (!alien.active) {
             return;
         }
@@ -79,19 +81,21 @@ void AilmentTicker::update(float dt) {
     appliedScratch_.clear();
 
     auto &w = world_.world();
-    const ecs::EntityId shipEntity = world_.shipEntity();
+    auto &aliens = w.pool<Alien>();
+    auto &ships = w.pool<Ship>();
+    const auto shipEntity = world_.shipEntity();
 
     w.registry.forEachAlive([&](ecs::EntityId e) {
-        if (w.aliens.has(e)) {
-            Alien &alien = w.aliens.get(e);
+        if (aliens.has(e)) {
+            Alien &alien = aliens.get(e);
             if (!alien.active) return;
             ailmentSystem_.tick(dt, e, alien.health, alien.ailments, {alien.x, alien.y}, popupScratch_, appliedScratch_);
         }
     });
 
-    if (w.registry.alive(shipEntity) && w.ships.has(shipEntity)) {
-        Ship &ship = w.ships.get(shipEntity);
-        ailmentSystem_.tick(dt, shipEntity, ship.health, ship.ailments, {ship.x, ship.y}, popupScratch_, appliedScratch_);
+    if (shipEntity.has_value() && w.registry.alive(*shipEntity) && ships.has(*shipEntity)) {
+        Ship &ship = ships.get(*shipEntity);
+        ailmentSystem_.tick(dt, *shipEntity, ship.health, ship.ailments, {ship.x, ship.y}, popupScratch_, appliedScratch_);
     }
 
     for (const auto &popup: popupScratch_) {
@@ -124,7 +128,9 @@ void PowerUpOnKill::onDamage(const DamageAppliedEvent &event) {
         return;
     }
 
-    if (!w.aliens.has(target)) {
+    auto &aliens = w.pool<Alien>();
+
+    if (!aliens.has(target)) {
         return;
     }
 
@@ -144,7 +150,8 @@ ScoreTracker::~ScoreTracker() {
 }
 
 void ScoreTracker::onDamage(const DamageAppliedEvent &event) {
-    if (event.killed && static_cast<ecs::EntityId>(event.target) != world_.shipEntity()) {
+    const auto shipId = world_.shipEntity();
+    if (event.killed && (!shipId.has_value() || static_cast<ecs::EntityId>(event.target) != *shipId)) {
         actualScore_ += 100;
     }
 }

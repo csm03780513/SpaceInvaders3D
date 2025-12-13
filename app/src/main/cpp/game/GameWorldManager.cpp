@@ -28,8 +28,14 @@ const ecs::GameWorld &GameWorldManager::world() const {
     return world_;
 }
 
-ecs::EntityId GameWorldManager::shipEntity() const {
-    return world_.shipEntity;
+std::optional<ecs::EntityId> GameWorldManager::shipEntity() const {
+    std::optional<ecs::EntityId> ship{};
+    const auto &ships = world_.pool<Ship>();
+    world_.registry.forEachAlive([&](ecs::EntityId e) {
+        if (ship.has_value()) return;
+        if (ships.has(e)) ship = e;
+    });
+    return ship;
 }
 
 void GameWorldManager::loadPrefabs(IPlatformServices &platformServices) {
@@ -178,25 +184,25 @@ void GameWorldManager::loadAlienConfig(IPlatformServices &platformServices) {
 }
 
 void GameWorldManager::initShip() {
-    if (world_.shipEntity == 0 || !world_.registry.alive(world_.shipEntity)) {
+    auto shipId = shipEntity();
+    if (!shipId.has_value() || !world_.registry.alive(*shipId)) {
         const auto e = world_.registry.create();
         if (!e.has_value()) {
             return;
         }
-        world_.shipEntity = *e;
+        shipId = e;
     }
 
+    auto &ships = world_.pool<Ship>();
+    auto &render = world_.pool<MainPushConstants>();
+
     const auto &prefab = prefabs_.ship("player");
-    world_.ships.add(world_.shipEntity, prefab.ship);
-    world_.render.add(world_.shipEntity, prefab.render);
+    ships.add(*shipId, prefab.ship);
+    render.add(*shipId, prefab.render);
 }
 
 void GameWorldManager::resetWorldForNewWave() {
-    world_.registry.reset();
-    world_.ships.reset();
-    world_.aliens.reset();
-    world_.bullets.reset();
-    world_.render.reset();
+    world_.reset();
 
     initShip();
 }
@@ -215,10 +221,6 @@ static void applyModifiers(const ecs::PrefabLibrary &library, const std::vector<
 }
 
 void GameWorldManager::initAliens() {
-    if (!world_.registry.alive(world_.shipEntity) || !world_.ships.has(world_.shipEntity)) {
-        initShip();
-    }
-
     resetWorldForNewWave();
 
     level_++;
@@ -229,6 +231,9 @@ void GameWorldManager::initAliens() {
 
     const WaveDefinition &wave = waveRules_[wave_ % waveRules_.size()];
     activeAlienBulletPrefab_ = wave.bulletPrefab;
+
+    auto &aliens = world_.pool<Alien>();
+    auto &render = world_.pool<MainPushConstants>();
 
     for (uint32_t r = 0; r < wave.rows; ++r) {
         for (uint32_t c = 0; c < wave.cols; ++c) {
@@ -253,10 +258,10 @@ void GameWorldManager::initAliens() {
             applyModifiers(prefabs_, wave.modifiers, alien);
 
             const auto &prefab = prefabs_.alien(wave.prefabName);
-            auto &pc = world_.render.add(*e, prefab.render);
+            auto &pc = render.add(*e, prefab.render);
             pc.texturePos = prefab.render.texturePos;
 
-            world_.aliens.add(*e, alien);
+            aliens.add(*e, alien);
         }
     }
 
@@ -267,9 +272,10 @@ void GameWorldManager::initAliens() {
 }
 
 void GameWorldManager::decayFlash(float deltaTime) {
+    auto &render = world_.pool<MainPushConstants>();
     world_.registry.forEachAlive([&](ecs::EntityId e) {
-        if (!world_.render.has(e)) return;
-        auto &pc = world_.render.get(e);
+        if (!render.has(e)) return;
+        auto &pc = render.get(e);
         pc.flashAmount -= deltaTime * 5.0f;
         if (pc.flashAmount < 0.0f) pc.flashAmount = 0.0f;
     });
@@ -286,12 +292,15 @@ void GameWorldManager::updateBullets(float deltaTime) {
 void GameWorldManager::updateAlienMovement(float deltaTime) {
     bool hitEdge = false;
 
+    auto &aliens = world_.pool<Alien>();
+    auto &render = world_.pool<MainPushConstants>();
+
     world_.registry.forEachAlive([&](ecs::EntityId e) {
-        Alien *alien = world_.aliens.tryGet(e);
+        Alien *alien = aliens.tryGet(e);
         if (!alien || !alien->active) return;
 
-        if (world_.render.has(e)) {
-            auto &pc = world_.render.get(e);
+        if (render.has(e)) {
+            auto &pc = render.get(e);
             pc.flashAmount -= deltaTime * 5.0f;
             if (pc.flashAmount < 0.0f) pc.flashAmount = 0.0f;
         }
@@ -351,7 +360,7 @@ void GameWorldManager::updateAlienMovement(float deltaTime) {
     if (hitEdge) {
         alienDirection_ *= -1.0f;
         world_.registry.forEachAlive([&](ecs::EntityId e) {
-            Alien *alien = world_.aliens.tryGet(e);
+            Alien *alien = aliens.tryGet(e);
             if (!alien || !alien->active) return;
             alien->y -= 0.04f;
         });
@@ -375,6 +384,9 @@ std::optional<ecs::EntityId> GameWorldManager::spawnBullet(const std::string &pr
         return std::nullopt;
     }
 
+    auto &bullets = world_.pool<Bullet>();
+    auto &render = world_.pool<MainPushConstants>();
+
     const auto &prefab = prefabs_.bullet(prefabName);
     Bullet bullet{};
     bullet.active = true;
@@ -385,8 +397,8 @@ std::optional<ecs::EntityId> GameWorldManager::spawnBullet(const std::string &pr
     bullet.widthHeight = prefab.size[0] > 0.0f && prefab.size[1] > 0.0f ? prefab.size : bulletWidthHeight_;
     bullet.speed = prefab.speed;
 
-    world_.bullets.add(*e, bullet);
-    world_.render.add(*e, MainPushConstants{});
+    bullets.add(*e, bullet);
+    render.add(*e, MainPushConstants{});
     return *e;
 }
 
@@ -398,14 +410,15 @@ void GameWorldManager::updateAndMaybeFire(bool isPlaying, float deltaTime) {
 
     std::vector<ecs::EntityId> aliveAliens;
     aliveAliens.reserve(8);
+    auto &aliens = world_.pool<Alien>();
     world_.registry.forEachAlive([&](ecs::EntityId e) {
-        const Alien *alien = world_.aliens.tryGet(e);
+        const Alien *alien = aliens.tryGet(e);
         if (alien && alien->active) aliveAliens.push_back(e);
     });
     if (aliveAliens.empty()) return;
 
     const uint32_t idx = Util::getRandomUint(0, static_cast<uint32_t>(aliveAliens.size() - 1));
-    const Alien &alien = world_.aliens.get(aliveAliens[idx]);
+    const Alien &alien = aliens.get(aliveAliens[idx]);
     (void) spawnBullet(activeAlienBulletPrefab_, {alien.x, -alien.y});
 }
 
@@ -424,7 +437,15 @@ bool GameWorldManager::isAlienBulletHittingShip(const Ship &ship, const Bullet &
 void GameWorldManager::processCollisions(bool shieldActive,
                                         ParticleSystem &particleSystem,
                                         EventBus &eventBus) {
-    Ship *ship = world_.ships.tryGet(world_.shipEntity);
+    auto shipId = shipEntity();
+    if (!shipId.has_value() || !world_.registry.alive(*shipId)) return;
+
+    auto &ships = world_.pool<Ship>();
+    auto &aliens = world_.pool<Alien>();
+    auto &bullets = world_.pool<Bullet>();
+    auto &render = world_.pool<MainPushConstants>();
+
+    Ship *ship = ships.tryGet(*shipId);
     if (!ship) return;
 
     std::vector<ecs::EntityId> bulletsToDestroy;
@@ -432,14 +453,14 @@ void GameWorldManager::processCollisions(bool shieldActive,
 
     std::vector<std::pair<ecs::EntityId, Alien *>> activeAliens;
     world_.registry.forEachAlive([&](ecs::EntityId e) {
-        Alien *alien = world_.aliens.tryGet(e);
+        Alien *alien = aliens.tryGet(e);
         if (alien && alien->active) {
             activeAliens.emplace_back(e, alien);
         }
     });
 
     world_.registry.forEachAlive([&](ecs::EntityId be) {
-        Bullet *bullet = world_.bullets.tryGet(be);
+        Bullet *bullet = bullets.tryGet(be);
         if (!bullet || !bullet->active) return;
 
         if (bullet->bulletType == BulletType::Ship) {
@@ -450,14 +471,14 @@ void GameWorldManager::processCollisions(bool shieldActive,
                 bulletsToDestroy.push_back(be);
 
                 eventBus.publish(HitEvent{
-                        .attacker = world_.shipEntity,
+                        .attacker = *shipId,
                         .target = ae,
                         .payload = bullet->payload,
                         .hitWorldPos = glm::vec2(alien->x, alien->y),
                 });
 
-                if (world_.render.has(ae)) {
-                    world_.render.get(ae).flashAmount = 1.0f;
+                if (render.has(ae)) {
+                    render.get(ae).flashAmount = 1.0f;
                 }
                 particleSystem.spawn(glm::vec3(alien->x, -alien->y, 1.0f), 5);
                 break;
@@ -471,13 +492,13 @@ void GameWorldManager::processCollisions(bool shieldActive,
                 bulletsToDestroy.push_back(be);
                 eventBus.publish(HitEvent{
                         .attacker = 0,
-                        .target = world_.shipEntity,
+                        .target = *shipId,
                         .payload = bullet->payload,
                         .hitWorldPos = glm::vec2(ship->x, ship->y),
                 });
 
-                if (world_.render.has(world_.shipEntity)) {
-                    world_.render.get(world_.shipEntity).flashAmount = 1.0f;
+                if (render.has(*shipId)) {
+                    render.get(*shipId).flashAmount = 1.0f;
                 }
                 particleSystem.spawn(glm::vec3(bullet->x, bullet->y, 0.0f), 10);
             }
@@ -491,8 +512,9 @@ void GameWorldManager::processCollisions(bool shieldActive,
 
 bool GameWorldManager::hasActiveAliens() const {
     bool hasAliens = false;
+    const auto &aliens = world_.pool<Alien>();
     world_.registry.forEachAlive([&](ecs::EntityId e) {
-        const Alien *a = world_.aliens.tryGet(e);
+        const Alien *a = aliens.tryGet(e);
         if (a && a->active) hasAliens = true;
     });
     return hasAliens;
@@ -500,8 +522,9 @@ bool GameWorldManager::hasActiveAliens() const {
 
 bool GameWorldManager::hasAlienBelow(float threshold) const {
     bool below = false;
+    const auto &aliens = world_.pool<Alien>();
     world_.registry.forEachAlive([&](ecs::EntityId e) {
-        const Alien *a = world_.aliens.tryGet(e);
+        const Alien *a = aliens.tryGet(e);
         if (a && a->active && a->y < threshold) below = true;
     });
     return below;
@@ -510,10 +533,10 @@ bool GameWorldManager::hasAlienBelow(float threshold) const {
 void GameWorldManager::destroyEntity(ecs::EntityId entity) {
     if (!world_.registry.alive(entity)) return;
 
-    world_.ships.remove(entity);
-    world_.aliens.remove(entity);
-    world_.bullets.remove(entity);
-    world_.render.remove(entity);
+    world_.pool<Ship>().remove(entity);
+    world_.pool<Alien>().remove(entity);
+    world_.pool<Bullet>().remove(entity);
+    world_.pool<MainPushConstants>().remove(entity);
     world_.registry.destroy(entity);
 }
 

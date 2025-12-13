@@ -26,7 +26,7 @@ public:
     [[nodiscard]] ecs::GameWorld &world();
     [[nodiscard]] const ecs::GameWorld &world() const;
 
-    [[nodiscard]] ecs::EntityId shipEntity() const;
+    [[nodiscard]] std::optional<ecs::EntityId> shipEntity() const;
 
     void loadPrefabs(IPlatformServices &platformServices);
     void loadAlienConfig(IPlatformServices &platformServices);

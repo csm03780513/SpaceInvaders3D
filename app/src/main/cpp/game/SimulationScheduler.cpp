@@ -17,14 +17,19 @@ void SimulationScheduler::setShipInput(float x, float y, bool fireBullet) {
 
 void SimulationScheduler::applyShipInput() {
     auto &world = deps_.world.world();
-    if (!world.ships.has(deps_.world.shipEntity())) {
+    auto shipId = deps_.world.shipEntity();
+    if (!shipId.has_value()) {
+        return;
+    }
+    auto &ships = world.pool<Ship>();
+    if (!ships.has(*shipId)) {
         return;
     }
     if (!hasPendingInput_) {
         return;
     }
 
-    auto &ship = world.ships.get(deps_.world.shipEntity());
+    auto &ship = ships.get(*shipId);
     ship.x = pendingShipPos_.x;
     ship.y = pendingShipPos_.y;
 
@@ -41,7 +46,12 @@ void SimulationScheduler::trySpawnShipBullet() {
 
     auto &world = deps_.world.world();
     const auto shipEntity = deps_.world.shipEntity();
-    if (!world.ships.has(shipEntity)) {
+    if (!shipEntity.has_value()) {
+        return;
+    }
+
+    auto &ships = world.pool<Ship>();
+    if (!ships.has(*shipEntity)) {
         return;
     }
 
@@ -81,12 +91,24 @@ void SimulationScheduler::tick(float dt, bool isPlaying) {
         deps_.mechanics->update(dt);
     }
     deps_.powerUps.updatePowerUpData();
-    deps_.powerUps.checkIfPowerUpCollected(deps_.world.world().ships.get(deps_.world.shipEntity()));
+    const auto shipId = deps_.world.shipEntity();
+    if (shipId.has_value()) {
+        auto &ships = deps_.world.world().pool<Ship>();
+        if (ships.has(*shipId)) {
+            deps_.powerUps.checkIfPowerUpCollected(ships.get(*shipId));
+        }
+    }
 }
 
 void SimulationScheduler::resetWorld() {
     deps_.world.initAliens();
-    deps_.world.world().ships.get(deps_.world.shipEntity()).health.hull = 100.0f;
+    const auto shipId = deps_.world.shipEntity();
+    if (shipId.has_value()) {
+        auto &ships = deps_.world.world().pool<Ship>();
+        if (ships.has(*shipId)) {
+            ships.get(*shipId).health.hull = 100.0f;
+        }
+    }
 
     fireAccumulator_ = rateOfFire_;
     wantsToFire_ = false;
