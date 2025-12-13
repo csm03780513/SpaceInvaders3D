@@ -3,6 +3,7 @@
 #include <vector>
 
 #include "GameConstants.h"
+#include "ecs/components/CombatComponents.h"
 #include "ecs/worlds/GameWorld.h"
 
 namespace ecs {
@@ -10,8 +11,9 @@ namespace ecs {
 class BulletMovementSystem {
 public:
     void update(GameWorld &world, float deltaTime, std::vector<EntityId> &toDestroy) const {
+        auto &bullets = world.pool<Bullet>();
         world.registry.forEachAlive([&](EntityId id) {
-            Bullet *bullet = world.bullets.tryGet(id);
+            Bullet *bullet = bullets.tryGet(id);
             if (!bullet) return;
 
             if (!bullet->active) {

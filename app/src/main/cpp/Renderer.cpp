@@ -1773,31 +1773,37 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
 
     // --- Draw ship
     auto &w = worldManager_.world();
-    const ecs::EntityId shipEntity = worldManager_.shipEntity();
-    Ship &ship = w.ships.get(shipEntity);
-    MainPushConstants &shipPC = w.render.get(shipEntity);
-    shipPC.texturePos = 0;
-    shipPC.pos = {ship.x, ship.y};
-    shipPC.shakeOffset = shakeOffset;
+    auto &ships = w.pool<Ship>();
+    auto &bullets = w.pool<Bullet>();
+    auto &aliens = w.pool<Alien>();
+    auto &render = w.pool<MainPushConstants>();
+    const auto shipEntity = worldManager_.shipEntity();
+    if (shipEntity.has_value() && ships.has(*shipEntity) && render.has(*shipEntity)) {
+        Ship &ship = ships.get(*shipEntity);
+        MainPushConstants &shipPC = render.get(*shipEntity);
+        shipPC.texturePos = 0;
+        shipPC.pos = {ship.x, ship.y};
+        shipPC.shakeOffset = shakeOffset;
 
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipeline_);
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineLayout_, 0, 1,
-                            &shipDescriptorSet_, 0, nullptr);
-    vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
-                       sizeof(MainPushConstants),
-                       &shipPC);
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipeline_);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineLayout_, 0, 1,
+                                &shipDescriptorSet_, 0, nullptr);
+        vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
+                           sizeof(MainPushConstants),
+                           &shipPC);
 
-    vkCmdBindVertexBuffers(cmd, 0, 1, &shipVertexBuffer_, offsets);
-    vkCmdDraw(cmd, 6, 1, 0, 0);
+        vkCmdBindVertexBuffers(cmd, 0, 1, &shipVertexBuffer_, offsets);
+        vkCmdDraw(cmd, 6, 1, 0, 0);
 
-    auto shipAABB = Collision::getAABB(ship.x, ship.y, ship.widthHeight[0],
-                                       ship.widthHeight[1]);
-//    util_->recordDrawBoundingBox(cmd, shipAABB, {0.0f, 1.0f, 1.0f});
+        auto shipAABB = Collision::getAABB(ship.x, ship.y, ship.widthHeight[0],
+                                           ship.widthHeight[1]);
+//        util_->recordDrawBoundingBox(cmd, shipAABB, {0.0f, 1.0f, 1.0f});
+    }
 
 
     // --- Draw bullets
     w.registry.forEachAlive([&](ecs::EntityId e) {
-        Bullet *bullet = w.bullets.tryGet(e);
+        Bullet *bullet = bullets.tryGet(e);
         if (!bullet || !bullet->active) return;
 
         MainPushConstants pc{};
@@ -1817,10 +1823,11 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
 
     // --- Draw aliens
     w.registry.forEachAlive([&](ecs::EntityId e) {
-        Alien *alien = w.aliens.tryGet(e);
+        Alien *alien = aliens.tryGet(e);
         if (!alien || !alien->active) return;
 
-        MainPushConstants &pc = w.render.get(e);
+        if (!render.has(e)) return;
+        MainPushConstants &pc = render.get(e);
         pc.pos = {alien->x, -alien->y};
         pc.shakeOffset = shakeOffset;
 
@@ -1995,9 +2002,13 @@ void Renderer::initShip() {
     shipRes.byType[(int)DamageType::DarkMatter]= -0.10f; // vulnerable
     shipRes.byType[(int)DamageType::Cosmic]    = 0.20f;
 
-    Ship &ship = worldManager_.world().ships.get(worldManager_.shipEntity());
-    ship.resistances = shipRes;
-    ship.widthHeight = Util::getQuadWidthHeight(shipVerts, 6, {1, 1});
+    const auto shipEntity = worldManager_.shipEntity();
+    auto &ships = worldManager_.world().pool<Ship>();
+    if (shipEntity.has_value() && ships.has(*shipEntity)) {
+        Ship &ship = ships.get(*shipEntity);
+        ship.resistances = shipRes;
+        ship.widthHeight = Util::getQuadWidthHeight(shipVerts, 6, {1, 1});
+    }
 
 }
 void Renderer::spawnDamageText(const DamagePopupSpawned &damagePopupSpawned) {
@@ -2226,7 +2237,13 @@ void Renderer::prepareFrame(bool isPlaying) {
 
     updateUniformBuffer();
 
-    particleSystem_->updateHaloEffect(worldManager_.world().ships.get(worldManager_.shipEntity()));
+    const auto shipEntity = worldManager_.shipEntity();
+    if (shipEntity.has_value()) {
+        auto &ships = worldManager_.world().pool<Ship>();
+        if (ships.has(*shipEntity)) {
+            particleSystem_->updateHaloEffect(ships.get(*shipEntity));
+        }
+    }
     particleSystem_->updateStarField(starInstanceBufferMemory_);
     particleSystem_->updateExplosionParticles(particlesInstanceBufferMemory_);
 
