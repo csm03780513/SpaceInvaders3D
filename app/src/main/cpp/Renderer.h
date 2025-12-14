@@ -10,8 +10,8 @@
 #include "GameTime.h"
 #include "PowerUpManager.h"
 #include "Util.h"
-#include "ECS/events/CombatEvents.h"
-#include "ECS/systems/AilmentSystem.h"
+#include "ecs/events/CombatEvents.h"
+#include "ecs/systems/AilmentSystem.h"
 #include "events/EventBus.h"
 #include "mechanics/CombatEventSubscribers.h"
 #include "platform/PlatformServices.h"
@@ -60,6 +60,7 @@ public:
 
     [[nodiscard]] bool hasActiveAliens() const;
     [[nodiscard]] bool hasAlienBelow(float threshold) const;
+    [[nodiscard]] bool hasShipDead() const;
 
     float shipX_ = 0.0f;
     float shipY_ = 0.0f;
@@ -71,14 +72,17 @@ public:
     MainPushConstants bulletPC_[MAX_BULLETS] = {};
     MainPushConstants alienPC_[MAX_ALIENS] = {};
 
-    std::unordered_map<TextureSections, std::vector<UiEntry>> uiMainMenu = {
+    std::unordered_map<TextureSections, std::vector<UiEntry>> uiTextures = {
             {TextureSections::MainMenu, {
                 UiEntry{{0.0f, -0.6f},{15.0f, 6.0f},0,"title"},
                 UiEntry{{0.0f, 0.0f},{9.0f, 1.5f},1,"start"},
                 UiEntry{{0.0f, 0.2f},{9.0f, 1.5f},2,"exit"}
             }},
             {TextureSections::Lost,{
-                UiEntry{{0.0f, 0.0f},{12.0f,6.0f},3}
+                UiEntry{{0.0f, 0.0f},{12.0f,6.0f},3,"you_died"}
+            }},
+            {TextureSections::Playing,{
+                UiEntry{{-0.6f, -0.75f}, {5.0f, 0.2f}, 4, "player_hull"}
             }}
     };
     // In your renderer, have a shake timer and amplitude:
@@ -186,6 +190,7 @@ private:
 
     VkBuffer fontVertexBuffer_;
     VkDeviceMemory fontBufferMemory_;
+    VkDeviceSize fontBufferSize_ = 0;
     VkDeviceSize scoreOffset_ = 0;
     VkDeviceSize powerUpTextCDOffset = 0;
     VkDeviceSize powerUpTextStartOffset_ = 0;
@@ -280,6 +285,11 @@ private:
     VkDeviceMemory exitBtnMemory_;
     VkImageView exitBtnView_;
     VkSampler exitBtnSampler_;
+
+    VkImage shipHpImage_;
+    VkDeviceMemory shipHpMemory_;
+    VkImageView shipHpView_;
+    VkSampler shipHpSampler_;
 
     VkPipeline fontPipeline_{VK_NULL_HANDLE};
     VkPipelineLayout fontPipelineLayout_{VK_NULL_HANDLE};

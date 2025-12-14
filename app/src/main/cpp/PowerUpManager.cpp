@@ -19,7 +19,7 @@ AABB shipBox;
 
 void PowerUpManager::spawnPowerUp(const glm::vec2 &pos) {
     float randomChance = rand() / float(RAND_MAX);
-    if (randomChance < 0.1f) { // 10% chance
+    if (randomChance < powerUpChance) { // 10% chance
         PowerUpData p{};
         p.type = (rand() % 2 == 0) ? PowerUpType::DoubleShot : PowerUpType::Shield;
         p.pos = glm::vec3(pos.x, pos.y, 0.0f); // Spawn at alien’s last position

@@ -30,7 +30,7 @@ void PlayingState::update(float dt) {
         context_.setShipPosition(touchX_, touchY_, true);
     }
 
-    if (context_.hasAlienBelow(-0.9f)) {
+    if (context_.hasAlienBelow(-0.9f) || context_.hasShipDead()) {
         game_.requestState(GameState::Lost);
     } else if (!context_.hasActiveAliens()) {
         game_.requestState(GameState::Won);

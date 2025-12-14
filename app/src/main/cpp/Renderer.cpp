@@ -2,7 +2,7 @@
 #include "PipelineBuilder.h"
 #include "DescriptorHelper.h"
 #include "SFXMixer.h"
-#include "ECS/systems/AilmentSystem.h"
+#include "ecs/systems/AilmentSystem.h"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
@@ -573,13 +573,15 @@ void Renderer::loadAllTextures() {
                 GameTextureType::Exit);
     loadTexture("tap_to_restart_2.png", overlayImage_, overlayImageDeviceMemory_, overlayImageView_,
                 overlaySampler_, GameTextureType::Overlay);
+    loadTexture("ship_hp.png", shipHpImage_, shipHpMemory_, shipHpView_,
+                shipHpSampler_, GameTextureType::Overlay);
 
 
 }
 
 void Renderer::createImageOverlayDescriptor(GfxPipelineData &gfxPipelineData) {
 
-    constexpr uint32_t uiTextureCount = 4;
+    constexpr uint32_t uiTextureCount = 5;
     VkDescriptorSetLayoutBinding overlaySamplerLayoutBinding{};
     overlaySamplerLayoutBinding.binding = 0;
     overlaySamplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -599,7 +601,8 @@ void Renderer::createImageOverlayDescriptor(GfxPipelineData &gfxPipelineData) {
         {titleSampler_,titleView_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
         {startSampler_,startView_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
         {exitBtnSampler_,exitBtnView_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
-        {overlaySampler_,overlayImageView_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}
+        {overlaySampler_,overlayImageView_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+        {shipHpSampler_,shipHpView_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}
     }};
 
 
@@ -1869,6 +1872,8 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
         recordUiSection(cmd, TextureSections::MainMenu);
     } else if (gameState == GameState::Lost) {
         recordUiSection(cmd, TextureSections::Lost);
+    } else if (gameState == GameState::Playing) {
+        recordUiSection(cmd, TextureSections::Playing);
     }
 
     for (const auto &[textName, textData]: allTextVertices) {
@@ -1966,7 +1971,10 @@ void Renderer::restartGame() {
 
     // Reset aliens
     initAliens();
-    ship_.health.hull = 100.0f;
+    if(ship_.health.dead || hasAlienBelow(0.9f)) {
+        ship_.health.hull = 100.0f;
+        ship_.health.dead = false;
+    }
     alienMoveSpeed_ = 0.3f;
 
     // Reset bullets
@@ -2058,8 +2066,8 @@ GameState Renderer::getGameState() const {
 
 const std::vector<UiEntry> &Renderer::getUiEntries(TextureSections section) const {
     static const std::vector<UiEntry> kEmptyUiEntries{};
-    auto it = uiMainMenu.find(section);
-    if (it != uiMainMenu.end()) {
+    auto it = uiTextures.find(section);
+    if (it != uiTextures.end()) {
         return it->second;
     }
     return kEmptyUiEntries;
@@ -2081,6 +2089,10 @@ bool Renderer::hasAlienBelow(float threshold) const {
         }
     }
     return false;
+}
+
+bool Renderer::hasShipDead() const {
+    return ship_.health.dead;
 }
 
 void Renderer::updateBullet() {
@@ -2208,6 +2220,7 @@ void Renderer::initAliens() {
     float dx = 0.2f;
     float dy = 0.15f;
     level++;
+    powerUpManager_->powerUpChance +=0.05;
     if (wave >= 4) wave = 0; // reset wave
     for (int y = 0; y < NUM_ALIENS_Y; ++y) {
         for (int x = 0; x < NUM_ALIENS_X; ++x) {
@@ -2222,7 +2235,7 @@ void Renderer::initAliens() {
             aliens_[idx].resistances = enemyRes;
             aliens_[idx].ailments = {};
 
-            aliens_[idx].widthHeight = Util::getQuadWidthHeight(alienVerts, 6, {1.0, 1.0});
+            aliens_[idx].widthHeight = Util::getQuadWidthHeight(quadVerts, 6, {1.0, 1.0});
             alienPC_[idx].texturePos = 1;
             if (numOfAliens >= 1) {
                 switch (wave) {
@@ -2268,7 +2281,7 @@ void Renderer::initShip() {
     enemyRes.byType[(int)DamageType::Cosmic]    = 0.20f;
 
     ship_.resistances = enemyRes;
-    ship_.widthHeight = Util::getQuadWidthHeight(shipVerts, 6, {1, 1});
+    ship_.widthHeight = Util::getQuadWidthHeight(quadVerts, 6, {1, 1});
 
 }
 
@@ -2312,7 +2325,7 @@ void Renderer::updateCollision() {
                         .attacker   = i,  // alien index
                         .target     = ShipEntityId,
                         .payload    = bullet.payload,
-                        .hitWorldPos= glm::vec2(ship_.x, ship_.y)
+                        .hitWorldPos= glm::vec2(ship_.x, -ship_.y)
                 });
 
                 shipPC_.flashAmount = 1.0f;
@@ -2362,6 +2375,14 @@ void Renderer::updateFloatingDamage() {
                                return (currentTime - instance.startTime) >= instance.lifetime;
                            }),
             floatingDamageInstances_.end());
+
+    // When all popups have expired, rewind the write cursor so new popups
+    // reuse the font buffer space instead of marching forward until it
+    // silently runs off the end (which caused popups to stop showing after
+    // several hits).
+    if (floatingDamageInstances_.empty()) {
+        floatingDamageBufferCursor_ = powerUpTextCDOffset;
+    }
 }
 
 void Renderer::drawFloatingDamageTexts(VkCommandBuffer cmd) {
@@ -2395,8 +2416,8 @@ void Renderer::drawFloatingDamageTexts(VkCommandBuffer cmd) {
 }
 
 void Renderer::recordUiSection(VkCommandBuffer cmd, TextureSections section) {
-    auto sectionIt = uiMainMenu.find(section);
-    if (sectionIt == uiMainMenu.end() || sectionIt->second.empty()) {
+    auto sectionIt = uiTextures.find(section);
+    if (sectionIt == uiTextures.end() || sectionIt->second.empty()) {
         return;
     }
 
@@ -2411,6 +2432,9 @@ void Renderer::recordUiSection(VkCommandBuffer cmd, TextureSections section) {
         uiPushConstant.texturePos = uiTex.textureIndex;
         uiPushConstant.offset = uiTex.offset;
         uiPushConstant.scale = uiTex.scale;
+        if(section == TextureSections::Playing) {
+            uiPushConstant.hpRatio = ship_.health.hull / ship_.health.maxHull;
+        }
 
         vkCmdPushConstants(cmd, overlayPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
                            sizeof(UiPushConstants), &uiPushConstant);
@@ -2607,6 +2631,14 @@ void Renderer::prepareFrame(bool isPlaying) {
     if (!pendingFloatingDamageUploads_.empty()) {
         floatingDamageBufferCursor_ = std::max(floatingDamageBufferCursor_, powerUpTextCDOffset);
         for (auto &upload: pendingFloatingDamageUploads_) {
+            const VkDeviceSize bytesNeeded = upload.vertices.size() * sizeof(Vertex);
+            // If we would overflow the font buffer, wrap back to the start of the
+            // dynamic region (just after the static UI text). This prevents silent
+            // overruns that stop new damage popups from rendering after many hits.
+            if (floatingDamageBufferCursor_ + bytesNeeded > fontBufferSize_) {
+                floatingDamageBufferCursor_ = powerUpTextCDOffset;
+            }
+
             VkDeviceSize allocationOffset = floatingDamageBufferCursor_;
             updateFontBuffer(device_, upload.vertices, fontBufferMemory_, allocationOffset);
 
@@ -2631,6 +2663,7 @@ void Renderer::loadText() {
                  VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                  fontVertexBuffer_, fontBufferMemory_, fontSize);
+    fontBufferSize_ = fontSize;
 
     // Title text
     std::vector<Vertex> titleVertices = fontManager_->buildTextVertices(
@@ -2702,11 +2735,11 @@ void Renderer::loadGameObjects() {
                           VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
 
 
-    createAndUploadBuffer(shipVerts, shipVertexBuffer_, shipVertexBufferMemory_, sizeof(shipVerts),
+    createAndUploadBuffer(quadVerts, shipVertexBuffer_, shipVertexBufferMemory_, sizeof(quadVerts),
                           VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
 
-    createAndUploadBuffer(alienVerts, alienVertexBuffer_, alienVertexBufferMemory_,
-                          sizeof(alienVerts), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+    createAndUploadBuffer(quadVerts, alienVertexBuffer_, alienVertexBufferMemory_,
+                          sizeof(quadVerts), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
 
     createAndUploadBuffer(uiQuadVerts, overlayVertexBuffer_, overlayVertexBufferMemory_,
                           sizeof(uiQuadVerts), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);

@@ -21,6 +21,7 @@ public:
 
     bool hasActiveAliens() const;
     bool hasAlienBelow(float threshold) const;
+    bool hasShipDead() const;
 
 private:
     Renderer &renderer_;

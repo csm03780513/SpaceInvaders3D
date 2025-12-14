@@ -64,7 +64,7 @@ private:
 
     EventBus &bus_;
     std::span<Alien> aliens_;
-    PowerUpManager &manager_;
+    PowerUpManager &powerUpManager;
     uint32_t subscriptionId_ = 0;
 };
 

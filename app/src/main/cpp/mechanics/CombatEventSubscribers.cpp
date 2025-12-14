@@ -93,7 +93,7 @@ void AilmentTicker::update(float dt) {
 }
 
 PowerUpOnKill::PowerUpOnKill(EventBus &bus, std::span<Alien> aliens, PowerUpManager &manager)
-        : bus_(bus), aliens_(aliens), manager_(manager) {
+        : bus_(bus), aliens_(aliens), powerUpManager(manager) {
     subscriptionId_ = bus_.subscribeDamageApplied([this](const DamageAppliedEvent &event) { onDamage(event); });
 }
 
@@ -114,7 +114,7 @@ void PowerUpOnKill::onDamage(const DamageAppliedEvent &event) {
     }
 
     alien.active = false;
-    manager_.spawnPowerUp(event.worldPos);
+    powerUpManager.spawnPowerUp(event.worldPos);
 }
 
 ScoreTracker::ScoreTracker(EventBus &bus, int &actualScore)

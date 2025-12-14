@@ -43,3 +43,7 @@ bool RenderContext::hasActiveAliens() const {
 bool RenderContext::hasAlienBelow(float threshold) const {
     return renderer_.hasAlienBelow(threshold);
 }
+
+bool RenderContext::hasShipDead() const {
+    return renderer_.hasShipDead();
+}

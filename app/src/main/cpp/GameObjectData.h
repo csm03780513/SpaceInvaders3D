@@ -106,6 +106,7 @@ struct UiPushConstants {
     glm::vec2 offset{0.0f,0.0f};
     glm::vec2 scale{0.0f,0.0f};
     uint texturePos{0};
+    float hpRatio{1.0f};
 };
 
 
@@ -181,6 +182,7 @@ enum class GameTextureType {
 enum class TextureSections {
     MainMenu,
     Lost,
+    Playing,
     Pause
 };
 
@@ -221,44 +223,11 @@ static const Vertex starVerts[4] = {
 
 static const uint16_t particlesIndices[6] = {0, 1, 2, 2, 3, 0};
 
-// Relative to (0, 0); will offset per-bullet in the shader or CPU
-static const Vertex bulletVerts[6] = {
-        // First triangle
-        {{-0.02f, -0.05f, 0.0f}, {1, 1, 0}, {0.0f, 0.0f}},
-        {{0.02f,  -0.05f, 0.0f}, {1, 1, 0}, {1.0f, 0.0f}},
-        {{-0.02f, 0.00f,  0.0f}, {1, 1, 0}, {0.0f, 1.0f}},
-        // Second triangle
-        {{0.02f,  -0.05f, 0.0f}, {1, 1, 0}, {1.0f, 0.0f}},
-        {{0.02f,  0.00f,  0.0f}, {1, 1, 0}, {1.0f, 1.0f}},
-        {{-0.02f, 0.00f,  0.0f}, {1, 1, 0}, {0.0f, 1.0f}}
-};
-
-static const Vertex alienVerts[6] = {
-        // Rectangle centered at (0, 0), width 0.12, height 0.07
-        {{-0.07f, -0.045f, 0.0f}, {0.3f, 1.0f, 0.3f}, {0.0f, 0.0f}}, // green
-        {{0.07f,  -0.045f, 0.0f}, {0.3f, 1.0f, 0.3f}, {1.0f, 0.0f}},
-        {{-0.07f, 0.045f,  0.0f}, {0.6f, 1.0f, 0.6f}, {0.0f, 1.0f}},
-
-        {{0.07f,  -0.045f, 0.0f}, {0.3f, 1.0f, 0.3f}, {1.0f, 0.0f}},
-        {{0.07f,  0.045f,  0.0f}, {0.6f, 1.0f, 0.6f}, {1.0f, 1.0f}},
-        {{-0.07f, 0.045f,  0.0f}, {0.6f, 1.0f, 0.6f}, {0.0f, 1.0f}},
-};
 
 static Vertex triangleVerts[3] = {
         {{0.0f,  -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
         {{0.5f,  0.5f,  0.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
         {{-0.5f, 0.5f,  0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}}
-};
-
-static OverlayVertex overlayQuadVerts[6] = {
-        {{-0.06f, -0.3f,  0.0f}, {0.0f, 0.0f}}, // bottom-left
-        {{0.6f,  -0.3f,  0.0f}, {1.0f, 0.0f}}, // bottom-right
-        {{-0.6f, -0.05f, 0.0f}, {0.0f, 1.0f}}, // top-left
-
-        {{0.6f,  -0.3f,  0.0f}, {1.0f, 0.0f}}, // bottom-right
-        {{0.6f,  -0.05f, 0.0f}, {1.0f, 1.0f}}, // top-right
-        {{-0.6f, -0.05f, 0.0f}, {0.0f, 1.0f}} // top-left
-
 };
 
 static OverlayVertex uiQuadVerts[6] = {
@@ -272,23 +241,11 @@ static OverlayVertex uiQuadVerts[6] = {
 
 };
 
-
 static Vertex quadVerts[6] = {
         // Rectangle centered at (0, 0), width 0.12, height 0.07
         {{-0.08f, -0.045f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 0.0f}}, // green
         {{0.08f,  -0.045f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 0.0f}},
         {{-0.08f, 0.045f,  0.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}},
-
-        {{0.08f,  0.045f,  0.0f}, {0.3f, 1.0f, 0.3f}, {1.0f, 1.0f}},
-        {{-0.08f, 0.045f,  0.0f}, {0.6f, 1.0f, 0.6f}, {0.0f, 1.0f}},
-        {{0.08f,  -0.045f, 0.0f}, {0.6f, 1.0f, 0.6f}, {1.0f, 0.0f}},
-};
-
-static Vertex shipVerts[6] = {
-        // Rectangle centered at (0, 0), width 0.12, height 0.07
-        {{-0.08f, -0.045f, 0.0f}, {0.3f, 1.0f, 0.3f}, {0.0f, 0.0f}}, // green
-        {{0.08f,  -0.045f, 0.0f}, {0.3f, 1.0f, 0.3f}, {1.0f, 0.0f}},
-        {{-0.08f, 0.045f,  0.0f}, {0.6f, 1.0f, 0.6f}, {0.0f, 1.0f}},
 
         {{0.08f,  0.045f,  0.0f}, {0.3f, 1.0f, 0.3f}, {1.0f, 1.0f}},
         {{-0.08f, 0.045f,  0.0f}, {0.6f, 1.0f, 0.6f}, {0.0f, 1.0f}},

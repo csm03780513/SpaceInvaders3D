@@ -43,6 +43,7 @@ public:
     std::unordered_map<GameText,PowerUpIndicator> collectedPowerUps;
     bool doubleShotActive = false;
     float doubleShotTimer = 0.0f;
+    float powerUpChance = 0.1f;
     bool shieldActive = false;
     float shieldTimer = 0.0f;
     VkBuffer powerUpBuffer;
