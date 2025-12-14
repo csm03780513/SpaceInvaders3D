@@ -1,0 +1,9 @@
+[versions]
+agp = "8.13.2"
+oboe = "1.10.0"
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+
+[libraries]
+oboe = { module = "com.google.oboe:oboe", version.ref = "oboe" }

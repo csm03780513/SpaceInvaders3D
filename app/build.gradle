@@ -4,12 +4,12 @@ plugins {
 
 android {
     namespace 'com.csm.spaceinvaders3d'
-    compileSdk 34
+    compileSdkVersion 36
 
     defaultConfig {
         applicationId "com.csm.spaceinvaders3d"
         minSdk 24
-        targetSdk 34
+        targetSdk 36
         //noinspection OldTargetApi
         versionCode 1
         versionName "1.0"
