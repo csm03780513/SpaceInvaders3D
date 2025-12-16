@@ -40,11 +40,8 @@ const bool enableValidationLayers = true;
 
 Bullet bullets_[MAX_BULLETS] = {};
 Ship ship_ ={};
-Alien aliens_[MAX_ALIENS] = {};
 
-float alienMoveSpeed_ = 0.3f;
 float bulletMoveSpeed_ = 2.0f;
-float alienDirection_ = 1.0f; // 1 = right, -1 = left
 
 
 std::vector<char> loadShaderAsset(IPlatformServices &platform, const char *filename);
@@ -520,19 +517,20 @@ Renderer::Renderer(IPlatformServices &platformServices) : platformServices_(plat
     util_ = std::make_shared<Util>(device_);
     powerUpManager_ = std::make_shared<PowerUpManager>(device_, util_, sfxMixer_);
     particleSystem_ = std::make_unique<ParticleSystem>(device_, powerUpManager_);
+    alienManager_ = std::make_unique<AlienManager>(powerUpManager_);
 
 
     loadAllTextures();
     loadText();
     loadGameObjects();
     createUniformBuffer();
-    initAliens();
+    alienManager_->initAliens();
     initShip();
 
     mechanics_ = std::make_unique<GameMechanicsCoordinator>(
             eventBus_,
             ship_,
-            std::span<Alien>(aliens_, MAX_ALIENS),
+            alienManager_->aliens(),
             *powerUpManager_,
             ailSys_,
             ailRules_,
@@ -1844,21 +1842,24 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
 
     }
 
-    for (int i = 0; i < MAX_ALIENS; ++i) {
-        if (!aliens_[i].active) continue;
-        alienPC_[i].pos = {aliens_[i].x, -aliens_[i].y};
-        alienPC_[i].shakeOffset = shakeOffset;
+    if (alienManager_) {
+        auto aliens = alienManager_->aliens();
+        auto alienPC = alienManager_->pushConstants();
+        for (size_t i = 0; i < aliens.size(); ++i) {
+            if (!aliens[i].active) continue;
+            alienPC[i].pos = {aliens[i].x, -aliens[i].y};
+            alienPC[i].shakeOffset = shakeOffset;
 
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipeline_);
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineLayout_, 0, 1,
-                                &shipDescriptorSet_, 0, nullptr);
-        vkCmdBindVertexBuffers(cmd, 0, 1, &alienVertexBuffer_, offsets);
-        vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
-                           sizeof(MainPushConstants),
-                           &alienPC_[i]);
-        vkCmdDraw(cmd, 6, 1, 0, 0);
-//        util_->recordDrawBoundingBox(cmd, alienAABB, {1.0f,0.0f,0.0f});
-
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipeline_);
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineLayout_, 0, 1,
+                                    &shipDescriptorSet_, 0, nullptr);
+            vkCmdBindVertexBuffers(cmd, 0, 1, &alienVertexBuffer_, offsets);
+            vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
+                               sizeof(MainPushConstants),
+                               &alienPC[i]);
+            vkCmdDraw(cmd, 6, 1, 0, 0);
+//            util_->recordDrawBoundingBox(cmd, alienAABB, {1.0f,0.0f,0.0f});
+        }
     }
 
     if (gameState != GameState::Playing) {
@@ -1970,12 +1971,13 @@ void Renderer::restartGame() {
     // Reset player
 
     // Reset aliens
-    initAliens();
+    if (alienManager_) {
+        alienManager_->initAliens();
+    }
     if(ship_.health.dead || hasAlienBelow(0.9f)) {
         ship_.health.hull = 100.0f;
         ship_.health.dead = false;
     }
-    alienMoveSpeed_ = 0.3f;
 
     // Reset bullets
     for (auto &bullet: bullets_) {
@@ -2074,21 +2076,11 @@ const std::vector<UiEntry> &Renderer::getUiEntries(TextureSections section) cons
 }
 
 bool Renderer::hasActiveAliens() const {
-    for (const auto &alien: aliens_) {
-        if (alien.active) {
-            return true;
-        }
-    }
-    return false;
+    return alienManager_ ? alienManager_->hasActiveAliens() : false;
 }
 
 bool Renderer::hasAlienBelow(float threshold) const {
-    for (const auto &alien: aliens_) {
-        if (alien.active && alien.y < threshold) {
-            return true;
-        }
-    }
-    return false;
+    return alienManager_ ? alienManager_->hasAlienBelow(threshold) : false;
 }
 
 bool Renderer::hasShipDead() const {
@@ -2114,160 +2106,6 @@ void Renderer::updateBullet() {
 
 //float timePassed = 0.0f;
 
-void Renderer::updateAliens() {
-    bool hitEdge = false;
-
-    for (int i = 0; i < MAX_ALIENS; ++i) {
-//        timePassed += Time::deltaTime;
-        if (!aliens_[i].active) continue;
-        // update flash amount (fade in/out) smoothly
-        alienPC_[i].flashAmount -= GameTime::deltaTime * 5.0f; // fade speed (0.2s)
-        if (alienPC_[i].flashAmount < 0.0f) alienPC_[i].flashAmount = 0.0f;
-
-        switch (aliens_[i].movementType) {
-            case TogetherOne:
-                aliens_[i].y -= aliens_[i].vy * GameTime::deltaTime;
-                break;
-            case SineWave:
-                aliens_[i].movementTimer += GameTime::deltaTime;
-                aliens_[i].x = aliens_[i].baseX + aliens_[i].amplitude *
-                                                  sin((aliens_[i].movementTimer *
-                                                       aliens_[i].frequency));
-                aliens_[i].y -= aliens_[i].vy * GameTime::deltaTime;
-                break;
-            case MySnakeWave:
-                aliens_[i].movementTimer += GameTime::deltaTime;
-                aliens_[i].x = sin((aliens_[i].movementTimer + aliens_[i].baseX) * aliens_[i].frequency);
-                aliens_[i].y -= aliens_[i].vy * GameTime::deltaTime;
-                break;
-            case SnakeWave: {
-                aliens_[i].movementTimer += GameTime::deltaTime;
-
-                const int row = i / NUM_ALIENS_X;
-                const int col = i % NUM_ALIENS_X;
-
-                // Travelling wave that offsets rows/columns for a snaking motion.
-                const float basePhase = aliens_[i].movementTimer * aliens_[i].frequency;
-                const float rowPhase = row * 0.45f;
-                const float colPhase = col * 0.25f;
-
-                const float primaryWave = sin(basePhase + rowPhase);
-                const float secondaryWave = sin(basePhase * 0.65f + colPhase);
-
-                aliens_[i].x = aliens_[i].baseX +
-                               aliens_[i].amplitude * (0.75f * primaryWave + 0.35f * secondaryWave);
-
-                // Add a subtle vertical bob to make the formation feel alive.
-                const float verticalBobVelocity =
-                        cos(basePhase + rowPhase) * aliens_[i].frequency * 0.12f;
-                aliens_[i].y -= aliens_[i].vy * GameTime::deltaTime;
-                aliens_[i].y += verticalBobVelocity * GameTime::deltaTime;
-
-                // Nudge columns out of phase to emphasize the snake-like trail.
-                aliens_[i].x += 0.05f * sin(basePhase * 1.8f + colPhase + rowPhase);
-
-                break;
-            }
-            case JustGoDown:
-                aliens_[i].y -= aliens_[i].vy * GameTime::deltaTime;
-                break;
-            case Circle:
-                break;
-            case LeftRight:
-                // Clamp X position just inside the edge
-                if (aliens_[i].x > 0.85f) aliens_[i].x = 0.85f;
-                if (aliens_[i].x < -0.85f) aliens_[i].x = -0.85f;
-
-                aliens_[i].x += alienMoveSpeed_ * alienDirection_ * GameTime::deltaTime;
-
-                // Check if any alien hits the left or right edge
-                if (aliens_[i].x > 0.85f || aliens_[i].x < -0.85f) {
-                    hitEdge = true;
-                    if (hitEdge) {
-                        alienDirection_ *= -1;
-                        // Move all aliens down a bit
-                        for (auto &alien: aliens_) {
-                            if (alien.active)
-                                alien.y -= 0.04f;
-                        }
-                    }
-                }
-                break;
-        }
-
-    }
-
-}
-
-uint32_t wave = 0;
-uint32_t numOfAliens = 100;
-uint32_t level = 0;
-
-void Renderer::initAliens() {
-    Resistances enemyRes{};
-    enemyRes.byType[(int)DamageType::Kinetic]   = 0.10f;
-    enemyRes.byType[(int)DamageType::Fire]      = 0.10f;
-    enemyRes.byType[(int)DamageType::Lightning] = 0.05f;
-    enemyRes.byType[(int)DamageType::Cold]      = 0.00f;
-    enemyRes.byType[(int)DamageType::Poison]    = 0.00f;
-    enemyRes.byType[(int)DamageType::Radiation] = 0.15f;
-    enemyRes.byType[(int)DamageType::Plasma]    = 0.05f;
-    enemyRes.byType[(int)DamageType::DarkMatter]= -0.10f; // vulnerable
-    enemyRes.byType[(int)DamageType::Cosmic]    = 0.20f;
-//    numOfAliens = Util::getRandomUint(0, NUM_ALIENS_X * NUM_ALIENS_Y);
-    float startX = -0.7f;
-    float startY = 0.8f;
-    float dx = 0.2f;
-    float dy = 0.15f;
-    level++;
-    powerUpManager_->powerUpChance +=0.05;
-    if (wave >= 4) wave = 0; // reset wave
-    for (int y = 0; y < NUM_ALIENS_Y; ++y) {
-        for (int x = 0; x < NUM_ALIENS_X; ++x) {
-            int idx = y * NUM_ALIENS_X + x;
-            aliens_[idx].x = startX + x * dx;
-            aliens_[idx].baseX = startX + x * dx;
-            aliens_[idx].movementTimer = 0.0f;
-            aliens_[idx].y = startY - y * dy;
-            aliens_[idx].active = true;
-            aliens_[idx].health.hull = 100.0f;
-            aliens_[idx].health.dead = false;
-            aliens_[idx].resistances = enemyRes;
-            aliens_[idx].ailments = {};
-
-            aliens_[idx].widthHeight = Util::getQuadWidthHeight(quadVerts, 6, {1.0, 1.0});
-            alienPC_[idx].texturePos = 1;
-            if (numOfAliens >= 1) {
-                switch (wave) {
-                    case 0:
-                        aliens_[idx].movementType = AlienMovementType::LeftRight;
-                        break;
-                    case 1:
-                        aliens_[idx].frequency = aliens_[idx].baseFrequency * 7 + (level * 0.05);
-                        aliens_[idx].movementType = AlienMovementType::SnakeWave;
-                        aliens_[idx].vy += 0.01f;
-                        break;
-                    case 2:
-                        aliens_[idx].movementType = AlienMovementType::SineWave;
-                        aliens_[idx].frequency = aliens_[idx].baseFrequency * 5 + (level * 0.05);
-                        aliens_[idx].vy += 0.01f;
-                        break;
-                    case 3:
-                        aliens_[idx].movementType = AlienMovementType::TogetherOne;
-                        aliens_[idx].x = 0.0f;
-                        aliens_[idx].vy += 0.01f;
-                        break;
-                    default:
-                        aliens_[idx].movementType = AlienMovementType::JustGoDown;
-                        break;
-                }
-                // numOfAliens--;
-            }
-        }
-    }
-    wave++;
-}
-
 void Renderer::initShip() {
     Resistances enemyRes{};
     enemyRes.byType[(int)DamageType::Kinetic]   = 0.10f;
@@ -2290,34 +2128,39 @@ uint x = 0;
 
 // process only spawned projectile collisions
 void Renderer::updateCollision() {
+    if (!alienManager_) {
+        return;
+    }
+
+    auto aliens = alienManager_->aliens();
     for (auto& bullet : bullets_) {
         if (!bullet.active) continue;
 
-        for (uint i = 0; i < MAX_ALIENS; i++) {
-            if (!aliens_[i].active) continue;
+        for (uint i = 0; i < aliens.size(); i++) {
+            if (!aliens[i].active) continue;
 
             // Player bullet hits alien
-            if (isCollision(aliens_[i], bullet) && bullet.bulletType == BulletType::Ship) {
+            if (isCollision(aliens[i], bullet) && bullet.bulletType == BulletType::Ship) {
                 bullet.active = false;
 
                 // Queue a HitEvent for later DamageSystem processing
                 eventBus_.publish(HitEvent{
                         .attacker   = /* optional: player entity id */ 0,
-                        .target     = i, // or aliens_[i].entityId
+                        .target     = i, // or aliens[i].entityId
                         .payload    = bullet.payload,
-                        .hitWorldPos= glm::vec2(aliens_[i].x, aliens_[i].y)
+                        .hitWorldPos= glm::vec2(aliens[i].x, aliens[i].y)
                 });
 
                 // simple visual feedback
-                alienPC_[i].flashAmount = 1.0f;
+                alienManager_->flashAlien(i);
 
                 // short particle burst on hit
-                particleSystem_->spawn(glm::vec3(aliens_[i].x, -aliens_[i].y, 1.0f), 5);
+                particleSystem_->spawn(glm::vec3(aliens[i].x, -aliens[i].y, 1.0f), 5);
                 break;
             }
 
             // Alien bullet hits ship
-            if (isCollision(aliens_[i], bullet) && bullet.bulletType == BulletType::Alien && !powerUpManager_->shieldActive) {
+            if (isCollision(aliens[i], bullet) && bullet.bulletType == BulletType::Alien && !powerUpManager_->shieldActive) {
 
                 bullet.active = false;
 
@@ -2579,7 +2422,9 @@ void Renderer::updatePlayingLogic(float dt) {
     updateUniformBuffer();
     updateShip();
 
-    updateAliens();
+    if (alienManager_) {
+        alienManager_->update(dt);
+    }
     updateCollision();
     if (mechanics_) {
         mechanics_->update(dt);
@@ -2884,9 +2729,11 @@ void Renderer::alienFireBullet() {
         timer += GameTime::deltaTime;
         if (timer > 1.0f) {
             timer = 0.0f;
-            Alien alien = aliens_[Util::getRandomUint(0, MAX_ALIENS)];
-            if (alien.active) {
-                spawnBullet(BulletType::Alien, {alien.x, -alien.y});
+            if (alienManager_) {
+                auto randomAlien = alienManager_->randomActiveAlienPos();
+                if (randomAlien.has_value()) {
+                    spawnBullet(BulletType::Alien, {randomAlien->x, -randomAlien->y});
+                }
             }
         }
 

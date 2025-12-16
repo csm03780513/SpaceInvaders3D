@@ -37,6 +37,7 @@ add_library(SpaceInvaders3D SHARED
         Util.cpp
         Collision.cpp
         events/EventBus.cpp
+        mechanics/AlienManager.cpp
         mechanics/CombatEventSubscribers.cpp
         SFXMixer.cpp
         #        volk/volk.c

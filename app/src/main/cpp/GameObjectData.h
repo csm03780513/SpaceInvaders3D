@@ -37,6 +37,9 @@
 
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "Vulkan", __VA_ARGS__)
 constexpr int MAX_POWERUPS = 10;
+static constexpr int NUM_ALIENS_X = 8;
+static constexpr int NUM_ALIENS_Y = 3;
+static constexpr int MAX_ALIENS = NUM_ALIENS_X * NUM_ALIENS_Y;
 
 
 struct UniformBufferObject {

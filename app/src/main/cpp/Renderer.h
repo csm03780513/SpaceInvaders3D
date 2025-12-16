@@ -14,11 +14,9 @@
 #include "ecs/systems/AilmentSystem.h"
 #include "events/EventBus.h"
 #include "mechanics/CombatEventSubscribers.h"
+#include "mechanics/AlienManager.h"
 #include "platform/PlatformServices.h"
-
-static constexpr int NUM_ALIENS_X = 8;
-static constexpr int NUM_ALIENS_Y = 3;
-static constexpr int MAX_ALIENS = NUM_ALIENS_X * NUM_ALIENS_Y;
+#include "GameObjectData.h"
 constexpr int SFX_SAMPLE_RATE = 44100;
 constexpr int SFX_CHANNELS = 1;
 
@@ -70,7 +68,6 @@ public:
 
     MainPushConstants shipPC_ = {.texturePos=0};
     MainPushConstants bulletPC_[MAX_BULLETS] = {};
-    MainPushConstants alienPC_[MAX_ALIENS] = {};
 
     std::unordered_map<TextureSections, std::vector<UiEntry>> uiTextures = {
             {TextureSections::MainMenu, {
@@ -312,8 +309,6 @@ private:
 
     static void updateBullet();
 
-    void updateAliens();
-
     void updateUniformBuffer();
 
     void updateCollision();
@@ -325,9 +320,6 @@ private:
     void createDescriptorSetLayout(VkDescriptorSetLayoutCreateInfo info, VkDescriptorSetLayout &layout);
 
     void createMainGfxPipeline();
-
-    void initAliens();
-
 
     void createUniformBuffer();
 
@@ -384,6 +376,7 @@ private:
     EventBus eventBus_;
     std::unique_ptr<GameMechanicsCoordinator> mechanics_;
     uint32_t damagePopupSubscriptionId_ = 0;
+    std::unique_ptr<AlienManager> alienManager_;
 
     bool swapchainValid_ = false;
     bool pendingSwapchainRecreation_ = false;
