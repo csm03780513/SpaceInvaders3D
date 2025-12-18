@@ -38,10 +38,7 @@ const bool enableValidationLayers = true;
 #endif
 
 
-Bullet bullets_[MAX_BULLETS] = {};
 Ship ship_ ={};
-
-float bulletMoveSpeed_ = 2.0f;
 
 
 std::vector<char> loadShaderAsset(IPlatformServices &platform, const char *filename);
@@ -51,9 +48,6 @@ VkShaderModule createShaderModule(VkDevice device, const std::vector<char> &code
 void createBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkDeviceSize size,
                   VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer &buffer,
                   VkDeviceMemory &bufferMemory, VkDeviceSize customAllocSize = 0);
-
-
-bool isCollision(const Alien &alien, const Bullet &bullet);
 
 void createImageView(VkDevice device, VkImage image, VkFormat format, VkImageView &imageView);
 
@@ -128,27 +122,6 @@ VkShaderModule createShaderModule(VkDevice device, const std::vector<char> &code
         throw std::runtime_error("Failed to create shader module");
     }
     return shaderModule;
-}
-
-inline bool isCollision(const Alien &alien, const Bullet &bullet) {
-
-    if (bullet.bulletType == BulletType::Ship) {
-        auto alienAABB = Collision::getAABB(alien.x, alien.y, alien.widthHeight[0],
-                                            alien.widthHeight[1]);
-        auto bulletAABB = Collision::getAABB(bullet.x, -bullet.y, bullet.widthHeight[0],
-                                             bullet.widthHeight[1]);
-
-        return Collision::isColliding(alienAABB, bulletAABB);
-    } else if (bullet.bulletType == BulletType::Alien) {
-        auto shipAABB = Collision::getAABB(ship_.x, ship_.y, ship_.widthHeight[0],
-                                           ship_.widthHeight[1]);
-        auto bulletAABB = Collision::getAABB(bullet.x, bullet.y, bullet.widthHeight[0],
-                                             bullet.widthHeight[1]);
-        return Collision::isColliding(shipAABB, bulletAABB);
-
-    }
-
-    return false;
 }
 
 std::vector<char> loadShaderAsset(IPlatformServices &platform, const char *filename) {
@@ -518,6 +491,7 @@ Renderer::Renderer(IPlatformServices &platformServices) : platformServices_(plat
     powerUpManager_ = std::make_shared<PowerUpManager>(device_, util_, sfxMixer_);
     particleSystem_ = std::make_unique<ParticleSystem>(device_, powerUpManager_);
     alienManager_ = std::make_unique<AlienManager>(powerUpManager_);
+    projectileManager_ = std::make_unique<ProjectileManager>(eventBus_, *powerUpManager_, *particleSystem_);
 
 
     loadAllTextures();
@@ -1824,22 +1798,26 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
 //    util_->recordDrawBoundingBox(cmd, shipAABB, {0.0f, 1.0f, 1.0f});
 
 
-    // --- Draw bullets (for each active bullet, updateExplosionParticles buffer and draw)
-    for (int i = 0; i < MAX_BULLETS; ++i) {
-        if (!bullets_[i].active) continue;
-        bulletPC_[i].pos = {bullets_[i].x, bullets_[i].y};
-        bulletPC_[i].shakeOffset = shakeOffset;
-        bulletPC_[i].texturePos = 2;
-        bulletPC_[i].scale = {0.5f, 0.5f};
+    // --- Draw bullets (for each active bullet, update push constants and draw)
+    if (projectileManager_) {
+        auto bullets = projectileManager_->bullets();
+        auto bulletPC = projectileManager_->pushConstants();
+        for (size_t i = 0; i < bullets.size(); ++i) {
+            if (!bullets[i].active) continue;
+            bulletPC[i].pos = {bullets[i].x, bullets[i].y};
+            bulletPC[i].shakeOffset = shakeOffset;
+            bulletPC[i].texturePos = 2;
+            bulletPC[i].scale = {0.5f, 0.5f};
 
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipeline_);
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineLayout_, 0, 1,
-                                &shipDescriptorSet_, 0, nullptr);
-        vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
-                           sizeof(MainPushConstants), &bulletPC_[i]);
-        vkCmdBindVertexBuffers(cmd, 0, 1, &bulletVertexBuffer_, offsets);
-        vkCmdDraw(cmd, 6, 1, 0, 0);
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipeline_);
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineLayout_, 0, 1,
+                                    &shipDescriptorSet_, 0, nullptr);
+            vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
+                               sizeof(MainPushConstants), &bulletPC[i]);
+            vkCmdBindVertexBuffers(cmd, 0, 1, &bulletVertexBuffer_, offsets);
+            vkCmdDraw(cmd, 6, 1, 0, 0);
 
+        }
     }
 
     if (alienManager_) {
@@ -1980,8 +1958,8 @@ void Renderer::restartGame() {
     }
 
     // Reset bullets
-    for (auto &bullet: bullets_) {
-        bullet.active = false;
+    if (projectileManager_) {
+        projectileManager_->reset();
     }
 
     floatingDamageInstances_.clear();
@@ -2003,52 +1981,12 @@ void Renderer::setShipPosition(float x, float y, bool fireBullet) {
 }
 
 void Renderer::spawnBullet(BulletType bulletType, glm::vec2 spawnPos) {
+    if (gameState != GameState::Playing || !projectileManager_) return;
 
-    if (gameState == GameState::Playing) {
-        int spawned = 0;
-        bool doubleShot = powerUpManager_->doubleShotActive;
-        for (int i = 0; i < MAX_BULLETS; ++i) {
-            if (!bullets_[i].active && BulletType::Ship == bulletType && canFire) {
-                bullets_[i].bulletType = bulletType;
-                if (doubleShot && spawned == 0) {
-                    // Left bullet
-                    bullets_[i].x = spawnPos.x - 0.05f;
-                    bullets_[i].y = spawnPos.y - 0.04f;
-                    bullets_[i].active = true;
-                    bullets_[i].payload = makeKinetic(Util::getRandomFloat(10.0f,40.0f), 0.2f);
-//                    if (sfxMixer_) sfxMixer_->playClip("shoot", 0.05f);
-                    spawned++;
-                } else if (doubleShot && spawned == 1) {
-                    // Right bullet
-                    bullets_[i].x = spawnPos.x + 0.05f;
-                    bullets_[i].y = spawnPos.y - 0.04f;
-                    bullets_[i].active = true;
-                    bullets_[i].payload = makeKinetic(Util::getRandomFloat(10.0f,40.0f));
-//                    if (sfxMixer_) sfxMixer_->playClip("shoot", 0.05f);
-                    spawned++;
-                    break; // Spawned both bullets
-                } else if (!doubleShot) {
-                    // Normal shot: center
-                    bullets_[i].x = spawnPos.x;
-                    bullets_[i].y = spawnPos.y - 0.04f;
-                    bullets_[i].active = true;
-                    bullets_[i].payload = makePlasma(Util::getRandomFloat(10.0f,40.0f));
-                  //  if (sfxMixer_) sfxMixer_->playClip("shoot", 0.05f);
-                    break;
-                }
-//                 canFire = false;
-//                 lastFireTime = 0.0f;
-            }
-
-            if (!bullets_[i].active && bulletType == BulletType::Alien) {
-                bullets_[i].x = spawnPos.x;
-                bullets_[i].y = spawnPos.y + 0.04f;
-                bullets_[i].active = true;
-                bullets_[i].bulletType = bulletType;
-                bullets_[i].payload = makeKinetic(Util::getRandomFloat(10.0f,30.0f));
-                break;
-            }
-        }
+    if (bulletType == BulletType::Ship) {
+        projectileManager_->spawnShipBullets(spawnPos, powerUpManager_->doubleShotActive, canFire);
+    } else {
+        projectileManager_->spawnAlienBullet(spawnPos);
     }
 }
 
@@ -2087,23 +2025,6 @@ bool Renderer::hasShipDead() const {
     return ship_.health.dead;
 }
 
-void Renderer::updateBullet() {
-    for (int i = 0; i < MAX_BULLETS; ++i) {
-        if (bullets_[i].active) {
-            if (bullets_[i].bulletType == BulletType::Ship)
-                bullets_[i].y -= bulletMoveSpeed_ * GameTime::deltaTime; // Move up
-            if (bullets_[i].bulletType == BulletType::Alien)
-                bullets_[i].y += 0.5f * GameTime::deltaTime;             // Move down
-
-            if ((bullets_[i].bulletType == BulletType::Ship && bullets_[i].y < -1.0f) ||
-                (bullets_[i].bulletType == BulletType::Alien && bullets_[i].y > 1.0f)) {
-                bullets_[i].active = false; // Off screen
-            }
-        }
-    }
-
-}
-
 //float timePassed = 0.0f;
 
 void Renderer::initShip() {
@@ -2125,59 +2046,6 @@ void Renderer::initShip() {
 
 
 uint x = 0;
-
-// process only spawned projectile collisions
-void Renderer::updateCollision() {
-    if (!alienManager_) {
-        return;
-    }
-
-    auto aliens = alienManager_->aliens();
-    for (auto& bullet : bullets_) {
-        if (!bullet.active) continue;
-
-        for (uint i = 0; i < aliens.size(); i++) {
-            if (!aliens[i].active) continue;
-
-            // Player bullet hits alien
-            if (isCollision(aliens[i], bullet) && bullet.bulletType == BulletType::Ship) {
-                bullet.active = false;
-
-                // Queue a HitEvent for later DamageSystem processing
-                eventBus_.publish(HitEvent{
-                        .attacker   = /* optional: player entity id */ 0,
-                        .target     = i, // or aliens[i].entityId
-                        .payload    = bullet.payload,
-                        .hitWorldPos= glm::vec2(aliens[i].x, aliens[i].y)
-                });
-
-                // simple visual feedback
-                alienManager_->flashAlien(i);
-
-                // short particle burst on hit
-                particleSystem_->spawn(glm::vec3(aliens[i].x, -aliens[i].y, 1.0f), 5);
-                break;
-            }
-
-            // Alien bullet hits ship
-            if (isCollision(aliens[i], bullet) && bullet.bulletType == BulletType::Alien && !powerUpManager_->shieldActive) {
-
-                bullet.active = false;
-
-                eventBus_.publish(HitEvent{
-                        .attacker   = i,  // alien index
-                        .target     = ShipEntityId,
-                        .payload    = bullet.payload,
-                        .hitWorldPos= glm::vec2(ship_.x, -ship_.y)
-                });
-
-                shipPC_.flashAmount = 1.0f;
-                particleSystem_->spawn(glm::vec3(bullet.x, bullet.y, 0.0f), 10);
-                break;
-            }
-        }
-    }
-}
 
 void Renderer::spawnDamageText(const DamagePopupSpawned &damagePopupSpawned) {
     std::vector<Vertex> vertices = fontManager_->buildTextVertices(damagePopupSpawned.text, 0.0f, 0.0f, 1.0f, floatingDamageStartScale_);
@@ -2425,7 +2293,9 @@ void Renderer::updatePlayingLogic(float dt) {
     if (alienManager_) {
         alienManager_->update(dt);
     }
-    updateCollision();
+    if (projectileManager_ && alienManager_) {
+        projectileManager_->handleCollisions(alienManager_->aliens(), ship_, shipPC_, *alienManager_);
+    }
     if (mechanics_) {
         mechanics_->update(dt);
     }
@@ -2436,8 +2306,12 @@ void Renderer::updatePlayingLogic(float dt) {
 void Renderer::prepareFrame(bool isPlaying) {
     animateScore();
 
-    updateBullet();
-    alienFireBullet();
+    if (projectileManager_ && gameState == GameState::Playing) {
+        projectileManager_->update(GameTime::deltaTime);
+        if (alienManager_) {
+            projectileManager_->tryAlienFire(GameTime::deltaTime, *alienManager_);
+        }
+    }
     particleSystem_->updateHaloEffect(ship_);
     particleSystem_->updateStarField(starInstanceBufferMemory_);
     particleSystem_->updateExplosionParticles(particlesInstanceBufferMemory_);
@@ -2570,10 +2444,10 @@ void Renderer::loadGameObjects() {
 
     createAndUploadBuffer(quadVerts, bulletVertexBuffer_, bulletVertexBufferMemory_,
                           sizeof(quadVerts), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
-
-    for (auto &bullet: bullets_) {
-        bullet.active = false;
-        bullet.widthHeight = Util::getQuadWidthHeight(quadVerts, 6, {0.2, 0.5});
+    if (projectileManager_) {
+        auto bulletSize = Util::getQuadWidthHeight(quadVerts, 6, {0.2, 0.5});
+        projectileManager_->setBulletSize(bulletSize);
+        projectileManager_->reset();
     }
 
     createAndUploadBuffer(quadVerts, vertexBuffer_, vertexBufferMemory_, sizeof(quadVerts),
@@ -2720,23 +2594,5 @@ Renderer::~Renderer() {
     }
 
 
-}
-
-
-void Renderer::alienFireBullet() {
-    if (gameState == GameState::Playing) {
-        static float timer = 0.0f;
-        timer += GameTime::deltaTime;
-        if (timer > 1.0f) {
-            timer = 0.0f;
-            if (alienManager_) {
-                auto randomAlien = alienManager_->randomActiveAlienPos();
-                if (randomAlien.has_value()) {
-                    spawnBullet(BulletType::Alien, {randomAlien->x, -randomAlien->y});
-                }
-            }
-        }
-
-    }
 }
 

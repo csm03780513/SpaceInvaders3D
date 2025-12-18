@@ -15,16 +15,15 @@
 #include "events/EventBus.h"
 #include "mechanics/CombatEventSubscribers.h"
 #include "mechanics/AlienManager.h"
+#include "mechanics/ProjectileManager.h"
 #include "platform/PlatformServices.h"
 #include "GameObjectData.h"
 constexpr int SFX_SAMPLE_RATE = 44100;
 constexpr int SFX_CHANNELS = 1;
 
-static constexpr int MAX_BULLETS = 50;
-
-
 struct PipelineHandles;
 class PipelineBuilder;
+class ProjectileManager;
 
 class Renderer {
 public:
@@ -67,7 +66,6 @@ public:
     bool canFire = false;
 
     MainPushConstants shipPC_ = {.texturePos=0};
-    MainPushConstants bulletPC_[MAX_BULLETS] = {};
 
     std::unordered_map<TextureSections, std::vector<UiEntry>> uiTextures = {
             {TextureSections::MainMenu, {
@@ -93,6 +91,7 @@ private:
 
     std::unique_ptr<FontManager> fontManager_;
     std::unique_ptr<ParticleSystem> particleSystem_;
+    std::unique_ptr<ProjectileManager> projectileManager_;
     std::shared_ptr<PowerUpManager> powerUpManager_;
     std::shared_ptr<SFXMixer> sfxMixer_;
     std::vector<std::string> explosionClipIds_;
@@ -307,11 +306,7 @@ private:
 
     void initVulkan();
 
-    static void updateBullet();
-
     void updateUniformBuffer();
-
-    void updateCollision();
 
     PipelineHandles createPipeline(GfxPipelineData &gfxPipelineData);
 
@@ -357,8 +352,6 @@ private:
 
     void createAndUploadBuffer(const void *vertices, VkBuffer &buffer, VkDeviceMemory &bufferMemory,
                                VkDeviceSize size,VkBufferUsageFlags usage);
-
-    void alienFireBullet();
 
     void spawnDamageText(const DamagePopupSpawned &damagePopupSpawned);
     void updateFloatingDamage();

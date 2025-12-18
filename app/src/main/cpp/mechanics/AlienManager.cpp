@@ -5,12 +5,13 @@
 
 #include "Util.h"
 
+
 AlienManager::AlienManager(std::shared_ptr<PowerUpManager> powerUpManager)
         : powerUpManager_(std::move(powerUpManager)) {
 }
 
 void AlienManager::resetMovementState() {
-    alienMoveSpeed_ = 0.3f;
+//    alienMoveSpeed_ = 0.3f;
     alienDirection_ = 1.0f;
 }
 
@@ -36,14 +37,23 @@ void AlienManager::initAliens() {
     if (powerUpManager_) {
         powerUpManager_->powerUpChance += 0.05f;
     }
+    if(wave_ == 3) {
+        buildBossAlien();
+        wave_++;
+        return;
+    }
+
     if (wave_ >= 4) wave_ = 0; // reset wave
+
 
     for (int y = 0; y < NUM_ALIENS_Y; ++y) {
         for (int x = 0; x < NUM_ALIENS_X; ++x) {
             int idx = y * NUM_ALIENS_X + x;
             aliens_[idx].x = startX + x * dx;
+            aliens_[idx].unitType = UnitType::Standard;
             aliens_[idx].baseX = startX + x * dx;
             aliens_[idx].movementTimer = 0.0f;
+            aliens_[idx].movementSpeed = 0.3f;
             aliens_[idx].y = startY - y * dy;
             aliens_[idx].active = true;
             aliens_[idx].health.hull = 100.0f;
@@ -130,9 +140,21 @@ void AlienManager::update(float dt) {
                 break;
             case LeftRight:
                 alien.x = std::clamp(alien.x, -0.85f, 0.85f);
-                alien.x += alienMoveSpeed_ * alienDirection_ * dt;
+                alien.x += alien.movementSpeed * alienDirection_ * dt;
                 if (alien.x > 0.85f || alien.x < -0.85f) {
                     hitEdge = true;
+                } else if (alien.unitType == UnitType::Relic) {
+                    // randomly spike speed and occasionally flip direction to keep boss unpredictable
+                    const float roll = Util::getRandomFloat(0.0f, 1.0f);
+                    const float eventChance = 0.35f * dt;  // ~35% chance per second
+                    if (roll < eventChance) {
+                        const float speedBoost = Util::getRandomFloat(1.15f, 1.6f);
+                        alien.movementSpeed = std::clamp(alien.movementSpeed * speedBoost, 0.25f, 1.2f);
+                        if (Util::getRandomFloat(0.0f, 1.0f) < 0.55f) {
+                            alienDirection_ *= -1.0f;
+                        }
+                    }
+
                 }
                 break;
         }
@@ -141,7 +163,7 @@ void AlienManager::update(float dt) {
     if (hitEdge) {
         alienDirection_ *= -1.0f;
         for (auto &alien: aliens_) {
-            if (alien.active) {
+            if (alien.active && alien.unitType == UnitType::Standard) {
                 alien.y -= 0.04f;
             }
         }
@@ -195,4 +217,43 @@ std::optional<glm::vec2> AlienManager::randomActiveAlienPos() const {
         }
     }
     return std::nullopt;
+}
+
+void AlienManager::buildBossAlien() {
+    Resistances enemyRes{};
+    enemyRes.byType[(int) DamageType::Kinetic] = 0.50f;
+    enemyRes.byType[(int) DamageType::Fire] = 0.10f;
+    enemyRes.byType[(int) DamageType::Lightning] = 0.05f;
+    enemyRes.byType[(int) DamageType::Cold] = 0.00f;
+    enemyRes.byType[(int) DamageType::Poison] = 0.00f;
+    enemyRes.byType[(int) DamageType::Radiation] = 0.15f;
+    enemyRes.byType[(int) DamageType::Plasma] = 0.05f;
+    enemyRes.byType[(int) DamageType::DarkMatter] = -0.10f; // vulnerable
+    enemyRes.byType[(int) DamageType::Cosmic] = 0.20f;
+
+    auto &bossAlien = aliens_[0];
+    bossAlien.unitType = UnitType::Relic;
+    bossAlien.x = 0.0f;
+    bossAlien.y = 0.8f;
+    bossAlien.baseX = 0.0f;
+    bossAlien.movementTimer = 0.0f;
+    bossAlien.amplitude = 0.5f;
+    bossAlien.frequency = 0.1f;
+    bossAlien.baseFrequency = 0.1f;
+    bossAlien.movementType = AlienMovementType::LeftRight;
+    bossAlien.active = true;
+    bossAlien.health.hull = 1000.0f;
+    bossAlien.health.dead = false;
+    bossAlien.resistances = enemyRes;
+    bossAlien.ailments = {};
+
+
+    bossAlien.widthHeight = Util::getQuadWidthHeight(quadVerts, 6, {1.0, 1.0});
+    alienPC_[0].texturePos = 1;
+
+
+
+
+
+
 }

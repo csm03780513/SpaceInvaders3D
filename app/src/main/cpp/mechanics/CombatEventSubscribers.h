@@ -8,6 +8,7 @@
 #include "../GameObjectData.h"
 #include "../ecs/systems/DamageSystem.h"
 #include "../ecs/systems/AilmentSystem.h"
+#include "AlienManager.h"
 
 class DamageResolver {
 public:
