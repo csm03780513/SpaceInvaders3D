@@ -60,6 +60,8 @@ void PowerUpManager::recordCommandBuffer(VkCommandBuffer cmd, VkPipelineLayout p
         pushConstants.shakeOffset = shakeOffset;
         pushConstants.time = elapsedTime_;
         pushConstants.canPulse = 1;
+        pushConstants.rotation = 0.0f;
+        pushConstants.aspect = 1.0f;
         if (powerUp.type == PowerUpType::DoubleShot) pushConstants.texturePos = 3;
         if (powerUp.type == PowerUpType::Shield) pushConstants.texturePos = 4;
 

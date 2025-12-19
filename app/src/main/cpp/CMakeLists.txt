@@ -40,6 +40,7 @@ add_library(SpaceInvaders3D SHARED
         mechanics/AlienManager.cpp
         mechanics/CombatEventSubscribers.cpp
         mechanics/ProjectileManager.cpp
+        mechanics/ShipManager.cpp
         SFXMixer.cpp
         #        volk/volk.c
 )

@@ -2,10 +2,14 @@
 #include "AlienManager.h"
 #include "../ParticleSystem.h"
 #include "../PowerUpManager.h"
+#include <glm/geometric.hpp>
 #include <glm/vec3.hpp>
+#include <utility>
 
-ProjectileManager::ProjectileManager(EventBus &eventBus, PowerUpManager &powerUps, ParticleSystem &particles)
-        : eventBus_(eventBus), powerUpManager_(powerUps), particleSystem_(particles) {}
+ProjectileManager::ProjectileManager(EventBus &eventBus, PowerUpManager &powerUps,
+                                     ParticleSystem &particles,
+                                     std::shared_ptr<SFXMixer> sfxMixer)
+        : eventBus_(eventBus), powerUpManager_(powerUps), particleSystem_(particles),sfxMixer_(std::move(sfxMixer)) {}
 
 void ProjectileManager::setBulletSize(const std::array<float, 2> &size) {
     bulletSize_ = size;
@@ -33,6 +37,7 @@ void ProjectileManager::spawnShipBullets(glm::vec2 spawnPos, bool doubleShot, bo
             bullet.y = spawnPos.y - 0.04f;
             bullet.active = true;
             bullet.payload = makeKinetic(Util::getRandomFloat(10.0f, 40.0f), 0.2f);
+            bullet.velocity = {0.0f, -bullet.moveSpeed};
             spawned++;
             continue;
         }
@@ -42,6 +47,7 @@ void ProjectileManager::spawnShipBullets(glm::vec2 spawnPos, bool doubleShot, bo
             bullet.y = spawnPos.y - 0.04f;
             bullet.active = true;
             bullet.payload = makeKinetic(Util::getRandomFloat(10.0f, 40.0f));
+            bullet.velocity = {0.0f, -bullet.moveSpeed};
             break;
         }
 
@@ -50,20 +56,59 @@ void ProjectileManager::spawnShipBullets(glm::vec2 spawnPos, bool doubleShot, bo
             bullet.y = spawnPos.y - 0.04f;
             bullet.active = true;
             bullet.payload = makePlasma(Util::getRandomFloat(10.0f, 40.0f));
+            bullet.velocity = {0.0f, -bullet.moveSpeed};
             break;
         }
     }
 }
 
-void ProjectileManager::spawnAlienBullet(glm::vec2 spawnPos) {
-    for (auto &bullet: bullets_) {
-        if (bullet.active) continue;
-        bullet.x = spawnPos.x;
-        bullet.y = spawnPos.y + 0.04f;
-        bullet.active = true;
-        bullet.bulletType = BulletType::Alien;
-        bullet.payload = makeKinetic(Util::getRandomFloat(10.0f, 30.0f));
-        break;
+void ProjectileManager::spawnAlienBullet(const Alien &alien, const Ship &ship) {
+    auto allocateBullet = [this]() -> Bullet* {
+        for (auto &b : bullets_) {
+            if (!b.active) return &b;
+        }
+        return nullptr;
+    };
+
+    Bullet *bullet = allocateBullet();
+    if (!bullet) return;
+
+    bullet->x = alien.x;
+    bullet->y = -alien.y + 0.04f;
+    bullet->active = true;
+    bullet->bulletType = BulletType::Alien;
+    constexpr float kAlienBulletSpeed = 0.5f;
+    bullet->velocity = {0.0f, kAlienBulletSpeed};
+
+    switch (alien.unitType) {
+        case UnitType::Standard:
+            bullet->payload = makeKinetic(Util::getRandomFloat(10.0f, 30.0f));
+            break;
+        case UnitType::Enhanced:
+            bullet->payload = makePlasma(Util::getRandomFloat(12.0f, 28.0f));
+            break;
+        case UnitType::Prototype:
+            bullet->payload = makeKinetic(Util::getRandomFloat(14.0f, 32.0f), 0.18f, 2.0f);
+            break;
+        case UnitType::Relic:
+            sfxMixer_->playClip("shoot",0.1f);
+            bullet->payload = makePlasma(Util::getRandomFloat(18.0f, 38.0f));
+            {
+                const glm::vec2 start{bullet->x, bullet->y};
+                const glm::vec2 target{ship.x, ship.y};
+                glm::vec2 dir = target - start;
+                const float len = glm::length(dir);
+                if (len > 0.0001f) {
+                    dir /= len;
+                } else {
+                    dir = {0.0f, 1.0f};
+                }
+                bullet->velocity = dir * kAlienBulletSpeed;
+            }
+            break;
+        case UnitType::OverCharged:
+            bullet->payload = makeKinetic(Util::getRandomFloat(20.0f, 42.0f), 0.22f, 2.1f);
+            break;
     }
 }
 
@@ -71,11 +116,8 @@ void ProjectileManager::update(float dt) {
     for (auto &bullet: bullets_) {
         if (!bullet.active) continue;
 
-        if (bullet.bulletType == BulletType::Ship) {
-            bullet.y -= bulletMoveSpeed_ * dt;
-        } else if (bullet.bulletType == BulletType::Alien) {
-            bullet.y += 0.5f * dt;
-        }
+        bullet.x += bullet.velocity.x * dt;
+        bullet.y += bullet.velocity.y * dt;
 
         if ((bullet.bulletType == BulletType::Ship && bullet.y < -1.0f) ||
             (bullet.bulletType == BulletType::Alien && bullet.y > 1.0f)) {
@@ -123,9 +165,7 @@ void ProjectileManager::handleCollisions(std::span<Alien> aliens, Ship &ship, Ma
                 break;
             }
 
-            if (bullet.bulletType == BulletType::Alien &&
-                !powerUpManager_.shieldActive &&
-                isCollision(aliens[i], bullet, ship)) {
+            if (bullet.bulletType == BulletType::Alien && !powerUpManager_.shieldActive && isCollision(aliens[i], bullet, ship)) {
 
                 bullet.active = false;
 
@@ -144,14 +184,14 @@ void ProjectileManager::handleCollisions(std::span<Alien> aliens, Ship &ship, Ma
     }
 }
 
-void ProjectileManager::tryAlienFire(float dt, AlienManager &alienManager) {
+void ProjectileManager::tryAlienFire(float dt, AlienManager &alienManager, const Ship &ship) {
     alienFireTimer_ += dt;
     if (alienFireTimer_ < 1.0f) return;
 
     alienFireTimer_ = 0.0f;
-    auto randomAlien = alienManager.randomActiveAlienPos();
-    if (randomAlien.has_value()) {
-        spawnAlienBullet({randomAlien->x, -randomAlien->y});
+    const Alien* randomAlien = alienManager.randomActiveAlien();
+    if (randomAlien) {
+        spawnAlienBullet(*randomAlien, ship);
     }
 }
 

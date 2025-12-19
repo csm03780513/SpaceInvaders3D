@@ -202,21 +202,21 @@ void AlienManager::flashAlien(uint32_t index) {
     }
 }
 
-std::optional<glm::vec2> AlienManager::randomActiveAlienPos() const {
+const Alien* AlienManager::randomActiveAlien() const {
     for (int attempt = 0; attempt < MAX_ALIENS; ++attempt) {
         uint32_t idx = Util::getRandomUint(0, MAX_ALIENS - 1);
         const auto &alien = aliens_[idx];
         if (alien.active) {
-            return glm::vec2{alien.x, alien.y};
+            return &alien;
         }
     }
 
     for (const auto &alien: aliens_) {
         if (alien.active) {
-            return glm::vec2{alien.x, alien.y};
+            return &alien;
         }
     }
-    return std::nullopt;
+    return nullptr;
 }
 
 void AlienManager::buildBossAlien() {

@@ -6,6 +6,10 @@
 
 #include "GameObjectData.h"
 #include "InputEvent.h"
+#include "events/EventBus.h"
+#include "ecs/systems/AilmentSystem.h"
+#include "ecs/components/CombatComponents.h"
+#include "mechanics/ShipManager.h"
 
 class IPlatformServices;
 
@@ -16,6 +20,13 @@ class MainMenuState;
 class PlayingState;
 class GameOverState;
 class InputCommand;
+class SFXMixer;
+class Util;
+class PowerUpManager;
+class ParticleSystem;
+class ProjectileManager;
+class AlienManager;
+class GameMechanicsCoordinator;
 
 class Game {
 public:
@@ -35,9 +46,17 @@ public:
     void render();
 
     void requestState(GameState state);
+    void setRenderState(GameState state);
+    void setShipInput(float x, float y, bool fireBullet);
+    void updatePlaying(float dt);
+    void restartGame();
+    [[nodiscard]] bool hasActiveAliens() const;
+    [[nodiscard]] bool hasAlienBelow(float threshold) const;
+    [[nodiscard]] bool hasShipDead() const;
 
 private:
     void ensureRenderer();
+    void initializeSystems();
     void initializeStates();
     void shutdownRenderer();
     void applyPendingStateChange();
@@ -60,4 +79,19 @@ private:
 
     std::queue<std::unique_ptr<InputCommand>> pendingCommands_;
     std::mutex commandMutex_;
+
+    std::shared_ptr<SFXMixer> sfxMixer_;
+    std::shared_ptr<Util> util_;
+    std::shared_ptr<PowerUpManager> powerUpManager_;
+    std::unique_ptr<ParticleSystem> particleSystem_;
+    std::unique_ptr<AlienManager> alienManager_;
+    std::unique_ptr<ProjectileManager> projectileManager_;
+    std::unique_ptr<GameMechanicsCoordinator> mechanics_;
+    EventBus eventBus_;
+    uint32_t damagePopupSubscriptionId_ = 0;
+    AilmentSystem ailSys_;
+    AilmentRules ailRules_;
+    ShieldRules shieldRules_{ .kineticHalfOnShield = true, .darkMatterIgnoresArmor = true };
+    int actualScore_ = 0;
+    ShipManager shipManager_{};
 };

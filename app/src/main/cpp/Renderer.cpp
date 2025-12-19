@@ -1,8 +1,11 @@
 #include "Renderer.h"
 #include "PipelineBuilder.h"
 #include "DescriptorHelper.h"
-#include "SFXMixer.h"
-#include "ecs/systems/AilmentSystem.h"
+#include "PowerUpManager.h"
+#include "ParticleSystem.h"
+#include "Util.h"
+#include "mechanics/AlienManager.h"
+#include "mechanics/ProjectileManager.h"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
@@ -12,14 +15,11 @@
 #include <unordered_map>
 #include <algorithm>
 #include <utility>
+#include <cmath>
 #include <span>
 #include <array>
 
-struct TextData {
-    VkBuffer buffer;
-    std::vector<Vertex> vertices;
-    VkDeviceSize offset;
-};
+
 
 std::unordered_map<GameText, TextData> allTextVertices;
 
@@ -36,9 +36,6 @@ const bool enableValidationLayers = false;
 #else
 const bool enableValidationLayers = true;
 #endif
-
-
-Ship ship_ ={};
 
 
 std::vector<char> loadShaderAsset(IPlatformServices &platform, const char *filename);
@@ -463,60 +460,14 @@ void createTextureSampler(VkDevice device, VkSampler &sampler, GameTextureType t
     vkCreateSampler(device, &samplerInfo, nullptr, &sampler);
 }
 
-void Renderer::stopAudioPlayer() {
-    if (sfxMixer_) {
-        sfxMixer_->stop();
-    }
-}
-
-void Renderer::resumeAudioPlayer() {
-    if (sfxMixer_) {
-        sfxMixer_->resume();
-    }
-}
-
 Renderer::Renderer(IPlatformServices &platformServices) : platformServices_(platformServices) {
 
     initVulkan();
-    sfxMixer_ = std::make_shared<SFXMixer>();
-    sfxMixer_->initialize(platformServices_, SFX_SAMPLE_RATE, SFX_CHANNELS);
-    sfxMixer_->loadClip("shoot", "shoot.wav");
-    sfxMixer_->loadClip("explode_1", "explode_1.wav");
-    sfxMixer_->loadClip("explode_2", "explode_2.wav");
-    sfxMixer_->loadClip("shield", "explode_2.wav");
-    explosionClipIds_ = {"explode_1", "explode_2"};
-
     fontManager_ = std::make_unique<FontManager>();
-    util_ = std::make_shared<Util>(device_);
-    powerUpManager_ = std::make_shared<PowerUpManager>(device_, util_, sfxMixer_);
-    particleSystem_ = std::make_unique<ParticleSystem>(device_, powerUpManager_);
-    alienManager_ = std::make_unique<AlienManager>(powerUpManager_);
-    projectileManager_ = std::make_unique<ProjectileManager>(eventBus_, *powerUpManager_, *particleSystem_);
-
-
+    explosionClipIds_ = {"explode_1", "explode_2"};
     loadAllTextures();
     loadText();
-    loadGameObjects();
     createUniformBuffer();
-    alienManager_->initAliens();
-    initShip();
-
-    mechanics_ = std::make_unique<GameMechanicsCoordinator>(
-            eventBus_,
-            ship_,
-            alienManager_->aliens(),
-            *powerUpManager_,
-            ailSys_,
-            ailRules_,
-            shieldRules_,
-            actualScore);
-
-    damagePopupSubscriptionId_ = eventBus_.subscribeDamagePopup([this](const DamagePopupSpawned &popup) {
-        spawnDamageText(popup);
-    });
-
-    createGraphicsPipelines();
-
     gameState = GameState::MainMenu;
 }
 
@@ -768,7 +719,7 @@ void Renderer::createInstance() {
     // Create Vulkan instance
     VkApplicationInfo appInfo = {};
     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-    appInfo.pApplicationName = "3D Space Invaders";
+    appInfo.pApplicationName = "Space Endure";
     appInfo.apiVersion = VK_API_VERSION_1_1;
 
     // Required extensions
@@ -979,6 +930,8 @@ bool Renderer::createSwapchainResources() {
         swapchainValid_ = false;
         return false;
     }
+    aspect_ = static_cast<float>(swapchainExtent_.width) /
+              static_cast<float>(swapchainExtent_.height);
 
     uint32_t imageCount = surfCaps.minImageCount + 1;
     if (surfCaps.maxImageCount > 0 && imageCount > surfCaps.maxImageCount) {
@@ -1205,15 +1158,6 @@ void updateFontBuffer(VkDevice device, const std::vector<Vertex> &vertices, VkDe
     memcpy(mapped, vertices.data(), size);
     vkUnmapMemory(device, memory);
 }
-
-//void updateFontBuffer(VkDevice device, std::vector<Vertex> textVertices,
-//                      VkDeviceMemory fontVertexBufferMemory) {
-//    VkDeviceSize textBufferSize = textVertices.size() * sizeof(Vertex);
-//    void *fontData;
-//    vkMapMemory(device, fontVertexBufferMemory, 0, textBufferSize, 0, &fontData);
-//    memcpy(fontData, textVertices.data(), (size_t) textBufferSize);
-//    vkUnmapMemory(device, fontVertexBufferMemory);
-//}
 
 void uploadDataBuffer(VkDevice device, const void *dataToUpload, VkDeviceSize sizeOfData,
                       VkDeviceMemory bufferMemory) {
@@ -1583,7 +1527,12 @@ void Renderer::createParticlesGfxPipeline(GfxPipelineType gfxPipelineType) {
             particlesPipelineLayout_ = handles.layout;
             break;
         case GfxPipelineType::HaloEffect:
-            particleSystem_->haloPipeline = handles.pipeline;
+            if (particleSystem_) {
+                particleSystem_->haloPipeline = handles.pipeline;
+            } else {
+                vkDestroyPipeline(device_, handles.pipeline, nullptr);
+                vkDestroyPipelineLayout(device_, handles.layout, nullptr);
+            }
             break;
         default:
             break;
@@ -1746,23 +1695,29 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
 
     vkCmdBeginRenderPass(cmd, &renderBeginPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-    particleSystem_->recordCommandBuffer(cmd,
-                                         particlesPipelineLayout_,
-                                         starParticlesPipeline_,
-                                         starVertsBuffer_,
-                                         starIndexBuffer_,
-                                         starInstanceBuffer_,
-                                         GfxPipelineType::StarParticles);
+    if (particleSystem_) {
+        particleSystem_->recordCommandBuffer(cmd,
+                                             particlesPipelineLayout_,
+                                             starParticlesPipeline_,
+                                             starVertsBuffer_,
+                                             starIndexBuffer_,
+                                             starInstanceBuffer_,
+                                             GfxPipelineType::StarParticles);
+    }
 
 
     VkDeviceSize offsets[] = {0};
     // --- Draw triangle (or any background)
     float trianglePos[2] = {0.0, 0.0};
-    MainPushConstants trianglePC;
+    const float aspect = aspect_;
+
+    MainPushConstants trianglePC{};
     trianglePC.pos = {0.0f, -0.9f};
     trianglePC.shakeOffset = {0.0f, 0.0f};
     trianglePC.flashAmount = 0.0f;
     trianglePC.texturePos = 4;
+    trianglePC.rotation = 0.0f;
+    trianglePC.aspect = aspect;
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipeline_);
     vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
@@ -1774,28 +1729,31 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
     vkCmdDraw(cmd, sizeof(quadVerts) / sizeof(Vertex), 1, 0, 0);
 
 
-    powerUpManager_->recordCommandBuffer(cmd, mainPipelineLayout_, mainPipeline_, shakeOffset,
-                                         shipDescriptorSet_);
+    if (powerUpManager_) {
+        powerUpManager_->recordCommandBuffer(cmd, mainPipelineLayout_, mainPipeline_, shakeOffset,
+                                             shipDescriptorSet_);
+    }
 
     // --- Draw ship
-    float flashAmount = {0.0f};
+    if (ship_ && shipPC_) {
+        MainPushConstants shipPC = *shipPC_;
+        shipPC.aspect = aspect;
+        shipPC.shakeOffset = shakeOffset;
 
-    shipPC_.pos = {shipX_, ship_.y};
-    shipPC_.shakeOffset = shakeOffset;
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipeline_);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineLayout_, 0, 1,
+                                &shipDescriptorSet_, 0, nullptr);
+        vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
+                           sizeof(MainPushConstants),
+                           &shipPC);
 
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipeline_);
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineLayout_, 0, 1,
-                            &shipDescriptorSet_, 0, nullptr);
-    vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
-                       sizeof(MainPushConstants),
-                       &shipPC_);
+        vkCmdBindVertexBuffers(cmd, 0, 1, &shipVertexBuffer_, offsets);
+        vkCmdDraw(cmd, 6, 1, 0, 0);
 
-    vkCmdBindVertexBuffers(cmd, 0, 1, &shipVertexBuffer_, offsets);
-    vkCmdDraw(cmd, 6, 1, 0, 0);
-
-    auto shipAABB = Collision::getAABB(ship_.x, ship_.y, ship_.widthHeight[0],
-                                       ship_.widthHeight[1]);
-//    util_->recordDrawBoundingBox(cmd, shipAABB, {0.0f, 1.0f, 1.0f});
+        auto shipAABB = Collision::getAABB(ship_->x, ship_->y, ship_->widthHeight[0],
+                                           ship_->widthHeight[1]);
+//        util_->recordDrawBoundingBox(cmd, shipAABB, {0.0f, 1.0f, 1.0f});
+    }
 
 
     // --- Draw bullets (for each active bullet, update push constants and draw)
@@ -1808,6 +1766,13 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
             bulletPC[i].shakeOffset = shakeOffset;
             bulletPC[i].texturePos = 2;
             bulletPC[i].scale = {0.5f, 0.5f};
+            bulletPC[i].aspect = aspect;
+            if (std::abs(bullets[i].velocity.x) > 0.0001f || std::abs(bullets[i].velocity.y) > 0.0001f) {
+                // Sprite points up by default, rotate by +90° to align with velocity.
+                bulletPC[i].rotation = std::atan2(bullets[i].velocity.y, bullets[i].velocity.x) + 1.57079632679f;
+            } else {
+                bulletPC[i].rotation = 0.0f;
+            }
 
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipeline_);
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineLayout_, 0, 1,
@@ -1816,6 +1781,11 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
                                sizeof(MainPushConstants), &bulletPC[i]);
             vkCmdBindVertexBuffers(cmd, 0, 1, &bulletVertexBuffer_, offsets);
             vkCmdDraw(cmd, 6, 1, 0, 0);
+
+            auto bulletAAB = Collision::getAABB(bullets[i].x, bullets[i].y, bullets[i].widthHeight[0],
+                                                bullets[i].widthHeight[1]);
+
+                        util_->recordDrawBoundingBox(cmd, bulletAAB, {1.0f,0.0f,0.0f});
 
         }
     }
@@ -1827,6 +1797,8 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
             if (!aliens[i].active) continue;
             alienPC[i].pos = {aliens[i].x, -aliens[i].y};
             alienPC[i].shakeOffset = shakeOffset;
+            alienPC[i].rotation = 0.0f;
+            alienPC[i].aspect = aspect;
 
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipeline_);
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineLayout_, 0, 1,
@@ -1836,7 +1808,6 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
                                sizeof(MainPushConstants),
                                &alienPC[i]);
             vkCmdDraw(cmd, 6, 1, 0, 0);
-//            util_->recordDrawBoundingBox(cmd, alienAABB, {1.0f,0.0f,0.0f});
         }
     }
 
@@ -1878,36 +1849,37 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
             default:
                 break;
         }
-        auto it = powerUpManager_->collectedPowerUps.find(textName);
-        if (it != powerUpManager_->collectedPowerUps.end()) {
-            if (it->second.active) {
-                auto textPos = it->second.textPos;
-                fontPushConstants.pos = {textPos.x, textPos.y};
+        if (powerUpManager_) {
+            auto it = powerUpManager_->collectedPowerUps.find(textName);
+            if (it != powerUpManager_->collectedPowerUps.end()) {
+                if (it->second.active) {
+                    auto textPos = it->second.textPos;
+                    fontPushConstants.pos = {textPos.x, textPos.y};
 
-                MainPushConstants pushConstants = {};
-                pushConstants.pos = {textPos.x + 0.1, textPos.y + 0.03};
-                pushConstants.scale = {0.7f, 0.7f};
-                pushConstants.time = 0.0f;
-                pushConstants.canPulse = 0;
+                    MainPushConstants pushConstants = {};
+                    pushConstants.pos = {textPos.x + 0.1, textPos.y + 0.03};
+                    pushConstants.scale = {0.7f, 0.7f};
+                    pushConstants.time = 0.0f;
+                    pushConstants.canPulse = 0;
+                    pushConstants.aspect = aspect;
 
-                //show power up icons
-                if (textName == GameText::DoubleShotCD) pushConstants.texturePos = 3;
-                if (textName == GameText::ShieldCD) pushConstants.texturePos = 4;
+                    //show power up icons
+                    if (textName == GameText::DoubleShotCD) pushConstants.texturePos = 3;
+                    if (textName == GameText::ShieldCD) pushConstants.texturePos = 4;
 
-                VkDeviceSize offsets[] = {0};
-                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipeline_);
-                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineLayout_,
-                                        0, 1,
-                                        &shipDescriptorSet_, 0, nullptr);
-                vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
-                                   sizeof(MainPushConstants), &pushConstants);
+                    VkDeviceSize offsets[] = {0};
+                    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipeline_);
+                    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineLayout_,
+                                            0, 1,
+                                            &shipDescriptorSet_, 0, nullptr);
+                    vkCmdPushConstants(cmd, mainPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
+                                       sizeof(MainPushConstants), &pushConstants);
 
-                vkCmdBindVertexBuffers(cmd, 0, 1, &powerUpManager_->powerUpBuffer, offsets);
-                vkCmdDraw(cmd, 6, 1, 0, 0);
-
-
-            } else {
-                continue;
+                    vkCmdBindVertexBuffers(cmd, 0, 1, &powerUpManager_->powerUpBuffer, offsets);
+                    vkCmdDraw(cmd, 6, 1, 0, 0);
+                } else {
+                    continue;
+                }
             }
         }
 
@@ -1925,83 +1897,74 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
     drawFloatingDamageTexts(cmd);
 
 
-    particleSystem_->recordCommandBuffer(cmd,
-                                         particlesPipelineLayout_,
-                                         explosionParticlesPipeline_,
-                                         particlesVertexBuffer_,
-                                         particlesIndexBuffer_,
-                                         particlesInstanceBuffer_,
-                                         GfxPipelineType::ExplosionParticles);
+    if (particleSystem_) {
+        particleSystem_->recordCommandBuffer(cmd,
+                                             particlesPipelineLayout_,
+                                             explosionParticlesPipeline_,
+                                             particlesVertexBuffer_,
+                                             particlesIndexBuffer_,
+                                             particlesInstanceBuffer_,
+                                             GfxPipelineType::ExplosionParticles);
 
-    particleSystem_->recordCommandBuffer(cmd,
-                                         particlesPipelineLayout_,
-                                         starParticlesPipeline_,
-                                         starInstanceBuffer_,
-                                         starIndexBuffer_,
-                                         starInstanceBuffer_,
-                                         GfxPipelineType::HaloEffect);
+        particleSystem_->recordCommandBuffer(cmd,
+                                             particlesPipelineLayout_,
+                                             starParticlesPipeline_,
+                                             starInstanceBuffer_,
+                                             starIndexBuffer_,
+                                             starInstanceBuffer_,
+                                             GfxPipelineType::HaloEffect);
+    }
 
     vkCmdEndRenderPass(cmd);
     vkEndCommandBuffer(cmd);
-}
-
-void Renderer::restartGame() {
-    // Reset player
-
-    // Reset aliens
-    if (alienManager_) {
-        alienManager_->initAliens();
-    }
-    if(ship_.health.dead || hasAlienBelow(0.9f)) {
-        ship_.health.hull = 100.0f;
-        ship_.health.dead = false;
-    }
-
-    // Reset bullets
-    if (projectileManager_) {
-        projectileManager_->reset();
-    }
-
-    floatingDamageInstances_.clear();
-    pendingFloatingDamageUploads_.clear();
-    powerUpTextCDOffset = powerUpTextStartOffset_;
-    floatingDamageBufferCursor_ = powerUpTextCDOffset;
-    floatingDamageGlobalTime_ = 0.0f;
-
-    // Reset score, level, etc.
-    gameState = GameState::Playing;
-}
-
-void Renderer::setShipPosition(float x, float y, bool fireBullet) {
-    shipX_ = x;
-    shipY_ = y - 0.12f;
-    if (fireBullet) {
-        spawnBullet(BulletType::Ship, {x, y - 0.12f});
-    }
-}
-
-void Renderer::spawnBullet(BulletType bulletType, glm::vec2 spawnPos) {
-    if (gameState != GameState::Playing || !projectileManager_) return;
-
-    if (bulletType == BulletType::Ship) {
-        projectileManager_->spawnShipBullets(spawnPos, powerUpManager_->doubleShotActive, canFire);
-    } else {
-        projectileManager_->spawnAlienBullet(spawnPos);
-    }
-}
-
-void Renderer::updateShip() const {
-    ship_.x = shipX_;
-    ship_.y = shipY_;
-    ship_.color[0] = shipX_;
 }
 
 void Renderer::setGameState(GameState state) {
     gameState = state;
 }
 
-GameState Renderer::getGameState() const {
-    return gameState;
+void Renderer::bindGameplay(Ship *ship,
+                            MainPushConstants *shipPushConstants,
+                            AlienManager *alienManager,
+                            ProjectileManager *projectileManager,
+                            PowerUpManager *powerUpManager,
+                            ParticleSystem *particleSystem,
+                            GameMechanicsCoordinator *mechanics,
+                            Util *util) {
+    ship_ = ship;
+    shipPC_ = shipPushConstants;
+    alienManager_ = alienManager;
+    projectileManager_ = projectileManager;
+    powerUpManager_ = powerUpManager;
+    particleSystem_ = particleSystem;
+    mechanics_ = mechanics;
+    util_ = util;
+}
+
+void Renderer::initializeGameplayResources() {
+    if (!util_ || !particleSystem_) {
+        return;
+    }
+    if (!pipelinesInitialized_) {
+        createGraphicsPipelines();
+    }
+    loadGameObjects();
+}
+
+void Renderer::setScoreSource(const int *scoreSource) {
+    scoreSource_ = scoreSource;
+}
+
+void Renderer::onDamagePopup(const DamagePopupSpawned &popup) {
+    spawnDamageText(popup);
+}
+
+void Renderer::resetFloatingDamageState() {
+    floatingDamageInstances_.clear();
+    pendingFloatingDamageUploads_.clear();
+    powerUpTextCDOffset = powerUpTextStartOffset_;
+    floatingDamageBufferCursor_ = powerUpTextCDOffset;
+    floatingDamageGlobalTime_ = 0.0f;
 }
 
 const std::vector<UiEntry> &Renderer::getUiEntries(TextureSections section) const {
@@ -2013,39 +1976,7 @@ const std::vector<UiEntry> &Renderer::getUiEntries(TextureSections section) cons
     return kEmptyUiEntries;
 }
 
-bool Renderer::hasActiveAliens() const {
-    return alienManager_ ? alienManager_->hasActiveAliens() : false;
-}
-
-bool Renderer::hasAlienBelow(float threshold) const {
-    return alienManager_ ? alienManager_->hasAlienBelow(threshold) : false;
-}
-
-bool Renderer::hasShipDead() const {
-    return ship_.health.dead;
-}
-
 //float timePassed = 0.0f;
-
-void Renderer::initShip() {
-    Resistances enemyRes{};
-    enemyRes.byType[(int)DamageType::Kinetic]   = 0.10f;
-    enemyRes.byType[(int)DamageType::Fire]      = 0.10f;
-    enemyRes.byType[(int)DamageType::Lightning] = 0.05f;
-    enemyRes.byType[(int)DamageType::Cold]      = 0.00f;
-    enemyRes.byType[(int)DamageType::Poison]    = 0.00f;
-    enemyRes.byType[(int)DamageType::Radiation] = 0.15f;
-    enemyRes.byType[(int)DamageType::Plasma]    = 0.05f;
-    enemyRes.byType[(int)DamageType::DarkMatter]= -0.10f; // vulnerable
-    enemyRes.byType[(int)DamageType::Cosmic]    = 0.20f;
-
-    ship_.resistances = enemyRes;
-    ship_.widthHeight = Util::getQuadWidthHeight(quadVerts, 6, {1, 1});
-
-}
-
-
-uint x = 0;
 
 void Renderer::spawnDamageText(const DamagePopupSpawned &damagePopupSpawned) {
     std::vector<Vertex> vertices = fontManager_->buildTextVertices(damagePopupSpawned.text, 0.0f, 0.0f, 1.0f, floatingDamageStartScale_);
@@ -2143,8 +2074,8 @@ void Renderer::recordUiSection(VkCommandBuffer cmd, TextureSections section) {
         uiPushConstant.texturePos = uiTex.textureIndex;
         uiPushConstant.offset = uiTex.offset;
         uiPushConstant.scale = uiTex.scale;
-        if(section == TextureSections::Playing) {
-            uiPushConstant.hpRatio = ship_.health.hull / ship_.health.maxHull;
+        if (section == TextureSections::Playing && ship_) {
+            uiPushConstant.hpRatio = ship_->health.hull / ship_->health.maxHull;
         }
 
         vkCmdPushConstants(cmd, overlayPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
@@ -2153,7 +2084,7 @@ void Renderer::recordUiSection(VkCommandBuffer cmd, TextureSections section) {
     }
 }
 void Renderer::animateScore() {
-    int newScore = actualScore;
+    int newScore = scoreSource_ ? *scoreSource_ : 0;
     int prevDisplay = static_cast<int>(displayedScore_);
 
     // Roll toward actualScore_
@@ -2279,42 +2210,14 @@ void Renderer::drawFrame() {
     vkQueueWaitIdle(graphicsQueue_);
 }
 
-void Renderer::updatePlayingLogic(float dt) {
-    if (lastFireTime > rateOfFire) {
-        lastFireTime = 0.0f;
-        canFire = true;
-    } else {
-        lastFireTime += dt;
-        canFire = false;
-    }
-    updateUniformBuffer();
-    updateShip();
-
-    if (alienManager_) {
-        alienManager_->update(dt);
-    }
-    if (projectileManager_ && alienManager_) {
-        projectileManager_->handleCollisions(alienManager_->aliens(), ship_, shipPC_, *alienManager_);
-    }
-    if (mechanics_) {
-        mechanics_->update(dt);
-    }
-    powerUpManager_->updatePowerUpData();
-    powerUpManager_->checkIfPowerUpCollected(ship_);
-}
-
 void Renderer::prepareFrame(bool isPlaying) {
+    updateUniformBuffer();
     animateScore();
-
-    if (projectileManager_ && gameState == GameState::Playing) {
-        projectileManager_->update(GameTime::deltaTime);
-        if (alienManager_) {
-            projectileManager_->tryAlienFire(GameTime::deltaTime, *alienManager_);
-        }
+    if (particleSystem_ && ship_) {
+        particleSystem_->updateHaloEffect(*ship_);
+        particleSystem_->updateStarField(starInstanceBufferMemory_);
+        particleSystem_->updateExplosionParticles(particlesInstanceBufferMemory_);
     }
-    particleSystem_->updateHaloEffect(ship_);
-    particleSystem_->updateStarField(starInstanceBufferMemory_);
-    particleSystem_->updateExplosionParticles(particlesInstanceBufferMemory_);
 
     shakeOffset = {0.0f, 0.0f};
     if (shakeTimer > 0.0f) {
@@ -2322,27 +2225,26 @@ void Renderer::prepareFrame(bool isPlaying) {
         shakeOffset.y = (rand() / (float) RAND_MAX - 0.5f) * 2.0f * shakeMagnitude;
         shakeTimer -= GameTime::deltaTime;
     }
-    shipPC_.flashAmount -= GameTime::deltaTime * 5.0f; // fade speed (0.2s)
-    if (shipPC_.flashAmount < 0.0f) shipPC_.flashAmount = 0.0f;
-
     glm::vec2 offsetPos{0.75, -0.8f};
 
     VkDeviceSize powerUpWriteCursor = powerUpTextStartOffset_;
-    for (auto &powerup: powerUpManager_->collectedPowerUps) {
-        if (!powerup.second.active) {
-            continue;
-        }
+    if (powerUpManager_) {
+        for (auto &powerup: powerUpManager_->collectedPowerUps) {
+            if (!powerup.second.active) {
+                continue;
+            }
 
-        std::vector<Vertex> powerupVertices = fontManager_->buildTextVertices(
-                std::to_string(powerup.second.expiryTime), 0.0, 0.0, 1.0f, 0.002f);
+            std::vector<Vertex> powerupVertices = fontManager_->buildTextVertices(
+                    std::to_string(powerup.second.expiryTime), 0.0, 0.0, 1.0f, 0.002f);
 
-        powerup.second.textPos = offsetPos;
-        if (isPlaying) {
-            allTextVertices[powerup.first] = {fontVertexBuffer_, powerupVertices, powerUpWriteCursor};
-            updateFontBuffer(device_, powerupVertices, fontBufferMemory_, powerUpWriteCursor);
+            powerup.second.textPos = offsetPos;
+            if (isPlaying) {
+                allTextVertices[powerup.first] = {fontVertexBuffer_, powerupVertices, powerUpWriteCursor};
+                updateFontBuffer(device_, powerupVertices, fontBufferMemory_, powerUpWriteCursor);
+            }
+            powerUpWriteCursor += powerupVertices.size() * sizeof(Vertex);
+            offsetPos += glm::vec2(0.0f, 0.05f);
         }
-        powerUpWriteCursor += powerupVertices.size() * sizeof(Vertex);
-        offsetPos += glm::vec2(0.0f, 0.05f);
     }
 
     powerUpTextCDOffset = std::max(powerUpTextStartOffset_, powerUpWriteCursor);
@@ -2417,6 +2319,9 @@ void Renderer::createAndUploadBuffer(const void *vertices, VkBuffer &buffer,
 }
 
 void Renderer::loadGameObjects() {
+    if (!util_ || !powerUpManager_) {
+        return;
+    }
     createAndUploadBuffer(quadVerts, util_->vtxBuffer, util_->stagingBufferMemory,
                           sizeof(quadVerts), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
 
@@ -2463,29 +2368,21 @@ void Renderer::loadGameObjects() {
     createAndUploadBuffer(uiQuadVerts, overlayVertexBuffer_, overlayVertexBufferMemory_,
                           sizeof(uiQuadVerts), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
 
-    createAndUploadBuffer(particleVerts, particleSystem_->haloVertexBuffer,
-                          particleSystem_->haloVertexBufferMemory, sizeof(particleVerts),
-                          VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
-    createAndUploadBuffer(particlesIndices, particleSystem_->haloIndexBuffer,
-                          particleSystem_->haloIndexBufferMemory, sizeof(particlesIndices),
-                          VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
-    createAndUploadBuffer(particleVerts, particleSystem_->haloInstanceBuffer,
-                          particleSystem_->haloInstanceBufferMemory, sizeof(ShieldInstance) * 6,
-                          VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    if (particleSystem_) {
+        createAndUploadBuffer(particleVerts, particleSystem_->haloVertexBuffer,
+                              particleSystem_->haloVertexBufferMemory, sizeof(particleVerts),
+                              VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+        createAndUploadBuffer(particlesIndices, particleSystem_->haloIndexBuffer,
+                              particleSystem_->haloIndexBufferMemory, sizeof(particlesIndices),
+                              VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+        createAndUploadBuffer(particleVerts, particleSystem_->haloInstanceBuffer,
+                              particleSystem_->haloInstanceBufferMemory, sizeof(ShieldInstance) * 6,
+                              VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    }
 
 }
 
 Renderer::~Renderer() {
-
-    if (damagePopupSubscriptionId_ != 0) {
-        eventBus_.unsubscribeDamagePopup(damagePopupSubscriptionId_);
-        damagePopupSubscriptionId_ = 0;
-    }
-
-    if (sfxMixer_) {
-        sfxMixer_->shutdown();
-    }
-
     if (device_ != VK_NULL_HANDLE) {
         vkDeviceWaitIdle(device_);
     }

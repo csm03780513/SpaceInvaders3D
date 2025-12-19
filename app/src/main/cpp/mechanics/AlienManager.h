@@ -46,7 +46,7 @@ public:
     void flashAlien(uint32_t index);
     void resetMovementState();
 
-    std::optional<glm::vec2> randomActiveAlienPos() const;
+    const Alien* randomActiveAlien() const;
 
 private:
     std::shared_ptr<PowerUpManager> powerUpManager_;

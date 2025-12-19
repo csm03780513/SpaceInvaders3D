@@ -18,7 +18,7 @@ void GameOverState::handleInput(const InputEvent &event) {
 
 void GameOverState::update(float dt) {
     (void) dt;
-    context_.setGameState(outcome_);
+    game_.setRenderState(outcome_);
 }
 
 void GameOverState::render(RenderContext &context) {
@@ -27,5 +27,5 @@ void GameOverState::render(RenderContext &context) {
 }
 
 void GameOverState::onEnter() {
-    context_.setGameState(outcome_);
+    game_.setRenderState(outcome_);
 }

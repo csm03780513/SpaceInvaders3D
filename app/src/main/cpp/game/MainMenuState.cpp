@@ -32,7 +32,7 @@ void MainMenuState::handleInput(const InputEvent &event) {
 
 void MainMenuState::update(float dt) {
     (void) dt;
-    context_.setGameState(GameState::MainMenu);
+    game_.setRenderState(GameState::MainMenu);
 }
 
 void MainMenuState::render(RenderContext &context) {
@@ -41,5 +41,5 @@ void MainMenuState::render(RenderContext &context) {
 }
 
 void MainMenuState::onEnter() {
-    context_.setGameState(GameState::MainMenu);
+    game_.setRenderState(GameState::MainMenu);
 }

@@ -14,6 +14,9 @@ layout (push_constant) uniform AlienPush {
     float deltaTime;
     uint enablePulse;
     vec2 size;
+    float rotation;
+    float aspect;
+    float pad0;
 } pc;
 
 
@@ -30,7 +33,16 @@ layout (location = 5) out uint outCanPulse;
 
 void main() {
 
-    gl_Position = vec4((inPos.xy * pc.size) + pc.offset , inPos.z, 1.0);
+    vec2 scaled = inPos.xy * pc.size;
+    scaled.x *= pc.aspect;
+    float c = cos(pc.rotation);
+    float s = sin(pc.rotation);
+    vec2 rotated = vec2(
+        scaled.x * c - scaled.y * s,
+        scaled.x * s + scaled.y * c
+    );
+    rotated.x /= pc.aspect;
+    gl_Position = vec4(rotated + pc.offset, inPos.z, 1.0);
     gl_Position.xy += pc.shakeOffset; // shifts everything
     //    gl_Position = vec4(inPos, 0.0, 1.0);
     fragColor = vec4(inColor.xy, inColor.z, 1.0);

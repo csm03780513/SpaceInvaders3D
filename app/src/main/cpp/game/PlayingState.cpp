@@ -13,7 +13,7 @@ void PlayingState::handleInput(const InputEvent &event) {
             touchActive_ = true;
             touchX_ = event.normalizedX;
             touchY_ = event.normalizedY;
-            context_.setShipPosition(touchX_, touchY_, false);
+            game_.setShipInput(touchX_, touchY_, false);
             break;
         case InputEventType::TouchUp:
         case InputEventType::TouchCancel:
@@ -23,16 +23,16 @@ void PlayingState::handleInput(const InputEvent &event) {
 }
 
 void PlayingState::update(float dt) {
-    context_.setGameState(GameState::Playing);
-    context_.updatePlaying(dt);
+    game_.setRenderState(GameState::Playing);
+    game_.updatePlaying(dt);
 
     if (touchActive_) {
-        context_.setShipPosition(touchX_, touchY_, true);
+        game_.setShipInput(touchX_, touchY_, true);
     }
 
-    if (context_.hasAlienBelow(-0.9f) || context_.hasShipDead()) {
+    if (game_.hasAlienBelow(-0.9f) || game_.hasShipDead()) {
         game_.requestState(GameState::Lost);
-    } else if (!context_.hasActiveAliens()) {
+    } else if (!game_.hasActiveAliens()) {
         game_.requestState(GameState::Won);
     }
 }
@@ -44,7 +44,7 @@ void PlayingState::render(RenderContext &context) {
 
 void PlayingState::onEnter() {
     touchActive_ = false;
-    context_.setGameState(GameState::Playing);
+    game_.setRenderState(GameState::Playing);
 }
 
 void PlayingState::onExit() {

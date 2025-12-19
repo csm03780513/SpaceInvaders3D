@@ -82,7 +82,7 @@ void AilmentTicker::update(float dt) {
     }
 
     ailmentSystem_.tick(dt, ShipEntityId, ship_.health, ship_.ailments,
-                        {ship_.x, ship_.y}, popupScratch_, appliedScratch_);
+                        {ship_.x, -ship_.y}, popupScratch_, appliedScratch_);
 
     for (const auto &popup: popupScratch_) {
         bus_.publish(popup);

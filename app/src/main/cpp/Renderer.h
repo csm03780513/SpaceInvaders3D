@@ -1,29 +1,27 @@
 #pragma once
 
 #include "FontManager.h"
-#include "ParticleSystem.h"
 #include <memory>
 #include <vector>
 #include <string>
 #include <unordered_map>
 #include <cstdint>
 #include "GameTime.h"
-#include "PowerUpManager.h"
-#include "Util.h"
 #include "ecs/events/CombatEvents.h"
-#include "ecs/systems/AilmentSystem.h"
-#include "events/EventBus.h"
-#include "mechanics/CombatEventSubscribers.h"
-#include "mechanics/AlienManager.h"
-#include "mechanics/ProjectileManager.h"
 #include "platform/PlatformServices.h"
 #include "GameObjectData.h"
 constexpr int SFX_SAMPLE_RATE = 44100;
 constexpr int SFX_CHANNELS = 1;
 
 struct PipelineHandles;
+struct Ship;
 class PipelineBuilder;
 class ProjectileManager;
+class AlienManager;
+class PowerUpManager;
+class ParticleSystem;
+class GameMechanicsCoordinator;
+class Util;
 
 class Renderer {
 public:
@@ -33,39 +31,34 @@ public:
 
     void drawFrame();
 
-    void updatePlayingLogic(float dt);
     void prepareFrame(bool isPlaying);
 
-    void updateShip() const;
-
-    void spawnBullet(BulletType bulletType,glm::vec2 spawnPos);
-
-    void setShipPosition(float x, float y, bool fireBullet);
-
-    void restartGame();
-
-    void stopAudioPlayer();
-
-    void resumeAudioPlayer();
-
     void setGameState(GameState state);
-    [[nodiscard]] GameState getGameState() const;
     [[nodiscard]] const std::vector<UiEntry> &getUiEntries(TextureSections section) const;
 
     void onWindowLost();
     void onWindowResumed();
 
-    [[nodiscard]] bool hasActiveAliens() const;
-    [[nodiscard]] bool hasAlienBelow(float threshold) const;
-    [[nodiscard]] bool hasShipDead() const;
+    void bindGameplay(Ship *ship,
+                      MainPushConstants *shipPushConstants,
+                      AlienManager *alienManager,
+                      ProjectileManager *projectileManager,
+                      PowerUpManager *powerUpManager,
+                      ParticleSystem *particleSystem,
+                      GameMechanicsCoordinator *mechanics,
+                      Util *util);
+    void initializeGameplayResources();
+    void setScoreSource(const int *scoreSource);
+    void onDamagePopup(const DamagePopupSpawned &popup);
 
-    float shipX_ = 0.0f;
-    float shipY_ = 0.0f;
-    float rateOfFire = 0.2f;
-    float lastFireTime = 0.0f;
-    bool canFire = false;
+    [[nodiscard]] VkDevice device() const { return device_; }
 
-    MainPushConstants shipPC_ = {.texturePos=0};
+    AlienManager *alienManager();
+    ProjectileManager *projectileManager();
+    PowerUpManager *powerUpManager();
+    ParticleSystem *particleSystem();
+    GameMechanicsCoordinator *mechanics();
+    void resetFloatingDamageState();
 
     std::unordered_map<TextureSections, std::vector<UiEntry>> uiTextures = {
             {TextureSections::MainMenu, {
@@ -90,12 +83,13 @@ private:
     GameState gameState;
 
     std::unique_ptr<FontManager> fontManager_;
-    std::unique_ptr<ParticleSystem> particleSystem_;
-    std::unique_ptr<ProjectileManager> projectileManager_;
-    std::shared_ptr<PowerUpManager> powerUpManager_;
-    std::shared_ptr<SFXMixer> sfxMixer_;
+    Ship *ship_ = nullptr;
+    const MainPushConstants *shipPC_ = nullptr;
+    ParticleSystem *particleSystem_ = nullptr;
+    ProjectileManager *projectileManager_ = nullptr;
+    PowerUpManager *powerUpManager_ = nullptr;
     std::vector<std::string> explosionClipIds_;
-    std::shared_ptr<Util> util_;
+    Util *util_ = nullptr;
     UniformBufferObject ubo_;
     IPlatformServices &platformServices_;
     VkInstance instance_{VK_NULL_HANDLE};
@@ -107,6 +101,7 @@ private:
     VkSwapchainKHR swapchain_{VK_NULL_HANDLE};
     VkFormat swapchainFormat_;
     VkExtent2D swapchainExtent_;
+    float aspect_ = 1.0f;
     std::vector<VkImage> swapchainImages_;
     std::vector<VkImageView> swapchainImageViews_;
     VkRenderPass renderPass_{VK_NULL_HANDLE};
@@ -216,14 +211,8 @@ private:
     float floatingDamageStartScale_ = 0.0025f;
     float floatingDamageEndScale_ = 0.0003f;
 
-    // Apply DOTs
-    AilmentSystem ailSys_;
-    AilmentRules ailRules_;
-    ShieldRules  shieldRules_{ .kineticHalfOnShield = true, .darkMatterIgnoresArmor = true };
-
-
     // Score tracking and animation
-    int actualScore = 0;            // Game logic value
+    const int *scoreSource_ = nullptr;
     float displayedScore_ = 0.0f;   // Smoothed UI value
     float scoreAnimSpeed_ = 400.0f; // Units per second (tune for effect)
     std::string scoreText_;         // Current display string, e.g. "Score: 1234"
@@ -357,8 +346,6 @@ private:
     void updateFloatingDamage();
     void drawFloatingDamageTexts(VkCommandBuffer cmd);
     void recordUiSection(VkCommandBuffer cmd, TextureSections section);
-    void initShip();
-
     void createCommandPool();
     bool createSwapchainResources();
     void destroySwapchainResources(bool destroySurface);
@@ -366,10 +353,8 @@ private:
     void createGraphicsPipelines();
     void destroyGraphicsPipelines();
 
-    EventBus eventBus_;
-    std::unique_ptr<GameMechanicsCoordinator> mechanics_;
-    uint32_t damagePopupSubscriptionId_ = 0;
-    std::unique_ptr<AlienManager> alienManager_;
+    GameMechanicsCoordinator *mechanics_ = nullptr;
+    AlienManager *alienManager_ = nullptr;
 
     bool swapchainValid_ = false;
     bool pendingSwapchainRecreation_ = false;

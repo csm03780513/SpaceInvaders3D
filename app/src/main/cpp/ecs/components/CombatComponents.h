@@ -88,14 +88,7 @@ enum class BulletType {
     Alien
 };
 
-struct Bullet {
-    float x{}, y{};
-    bool active{};
-    std::array<float, 2> widthHeight{};
-    BulletType bulletType{};
-    const float size = 0.05f * 0.5f; //half alien
-    DamagePayload payload{};
-};
+
 
 struct Ship {
     float x{}, y{};

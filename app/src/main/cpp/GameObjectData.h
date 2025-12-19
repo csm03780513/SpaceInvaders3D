@@ -67,7 +67,8 @@ struct Vertex {
         std::vector<VkVertexInputAttributeDescription> attributes = {
                 // Quad position (location=0)
                 {0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, pos)},
-                {1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, color)}
+                {1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, color)},
+                {2, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(Vertex, uv)}
         };
         return attributes;
     }
@@ -103,6 +104,12 @@ enum class UnitType {
     OverCharged
 };
 
+struct TextData {
+    VkBuffer buffer;
+    std::vector<Vertex> vertices;
+    VkDeviceSize offset;
+};
+
 struct MainPushConstants {
     glm::vec2 pos{0.0f, 0.0f};
     glm::vec2 shakeOffset{0.0f, 0.0f};
@@ -111,7 +118,12 @@ struct MainPushConstants {
     float time{0.0f};
     uint canPulse{0};
     glm::vec2 scale{1.0f, 1.0f};
+    float rotation{0.0f};
+    float aspect{1.0f};
+    float padding{0.0f};
 };
+
+static_assert(sizeof(MainPushConstants) == 52, "MainPushConstants layout mismatch");
 
 struct UiPushConstants {
     glm::vec2 offset{0.0f,0.0f};

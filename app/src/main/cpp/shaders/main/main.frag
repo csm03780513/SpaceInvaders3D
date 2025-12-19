@@ -21,5 +21,7 @@ void main() {
     vec4 texColor = texture(textures[inTexturePos], inUV);
     vec3 color = mix(texColor.rgb, vec3(1.0), clamp(inFlashAmount, 0.0f, 1.0f));
     outColor = vec4(color, texColor.a * alpha);
+//     or just output alpha as color for debugging
+//        outColor = vec4(inUV,0.0,1.0);
 }
 
