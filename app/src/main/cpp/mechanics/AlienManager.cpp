@@ -234,7 +234,7 @@ void AlienManager::buildBossAlien() {
     auto &bossAlien = aliens_[0];
     bossAlien.unitType = UnitType::Relic;
     bossAlien.x = 0.0f;
-    bossAlien.y = 0.8f;
+    bossAlien.y = 0.5f;
     bossAlien.baseX = 0.0f;
     bossAlien.movementTimer = 0.0f;
     bossAlien.amplitude = 0.5f;

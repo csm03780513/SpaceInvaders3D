@@ -3,7 +3,7 @@
 Use this guide to add a proper main‐menu screen to this Vulkan/NDK project. It follows the code that already exists in `app/src/main/cpp` (renderer, states, input) and keeps changes local to the current architecture.
 
 ## What you have today
-- `Game` runs a simple state machine (`MainMenu`, `Playing`, `Won`, `Lost`).
+- `Game` runs a simple state machine (`MainMenu`, `Playing`, `Won`, `YouDied`).
 - `MainMenuState` immediately jumps to `Playing` on any touch by enqueuing `RestartGameCommand`.
 - Rendering already supports textured quads (main pipeline), a font atlas, and an overlay quad.
 - Text “Space Endure v0.0.3” is loaded as `GameText::Title` in `Renderer::loadText()`.
@@ -79,7 +79,7 @@ Render the logo and start button as textured quads using the existing main pipel
        vkCmdDraw(cmd, 6, 1, 0, 0);
    }
    ```
-4. If you do not want the colored tint during the menu, guard the existing overlay draw with `gameState == GameState::Lost || gameState == GameState::Won` so the main menu stays clear.
+4. If you do not want the colored tint during the menu, guard the existing overlay draw with `gameState == GameState::YouDied || gameState == GameState::Won` so the main menu stays clear.
 
 ## 3) Update the title text
 - In `Renderer::loadText()` change the string to your final title and re-center it:

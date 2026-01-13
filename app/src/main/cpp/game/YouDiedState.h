@@ -6,9 +6,9 @@
 class Game;
 class RenderContext;
 
-class GameOverState : public IGameState {
+class YouDiedState : public IGameState {
 public:
-    GameOverState(Game &game, RenderContext &context);
+    YouDiedState(Game &game, RenderContext &context);
 
     void setOutcome(GameState outcome);
 
@@ -20,5 +20,5 @@ public:
 private:
     Game &game_;
     RenderContext &context_;
-    GameState outcome_{GameState::Lost};
+    GameState outcome_{GameState::YouDied};
 };

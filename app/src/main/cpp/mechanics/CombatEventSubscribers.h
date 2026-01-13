@@ -12,7 +12,7 @@
 
 class DamageResolver {
 public:
-    DamageResolver(EventBus &bus,
+    DamageResolver(EventBus &eventBus,
                    Ship &ship,
                    std::span<Alien> aliens,
                    AilmentRules &ailRules,
@@ -25,7 +25,7 @@ public:
 private:
     void onHit(const HitEvent &event);
 
-    EventBus &bus_;
+    EventBus &eventBus_;
     Ship &ship_;
     std::span<Alien> aliens_;
     AilmentRules &ailRules_;
@@ -54,7 +54,7 @@ private:
 
 class PowerUpOnKill {
 public:
-    PowerUpOnKill(EventBus &bus, std::span<Alien> aliens, PowerUpManager &manager);
+    PowerUpOnKill(EventBus &eventBus, std::span<Alien> aliens, PowerUpManager &manager);
     ~PowerUpOnKill();
 
     PowerUpOnKill(const PowerUpOnKill &) = delete;

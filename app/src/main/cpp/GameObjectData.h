@@ -178,7 +178,7 @@ enum class GameState {
     MainMenu,
     Playing,
     Won,
-    Lost
+    YouDied
 };
 
 enum class GameText {
@@ -204,7 +204,7 @@ enum class GameTextureType {
 
 enum class TextureSections {
     MainMenu,
-    Lost,
+    YouDied,
     Playing,
     Pause
 };

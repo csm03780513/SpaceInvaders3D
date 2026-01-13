@@ -1785,7 +1785,7 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
             auto bulletAAB = Collision::getAABB(bullets[i].x, bullets[i].y, bullets[i].widthHeight[0],
                                                 bullets[i].widthHeight[1]);
 
-                        util_->recordDrawBoundingBox(cmd, bulletAAB, {1.0f,0.0f,0.0f});
+                     //   util_->recordDrawBoundingBox(cmd, bulletAAB, {1.0f,0.0f,0.0f});
 
         }
     }
@@ -1820,8 +1820,8 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
 
     if (gameState == GameState::MainMenu) {
         recordUiSection(cmd, TextureSections::MainMenu);
-    } else if (gameState == GameState::Lost) {
-        recordUiSection(cmd, TextureSections::Lost);
+    } else if (gameState == GameState::YouDied) {
+        recordUiSection(cmd, TextureSections::YouDied);
     } else if (gameState == GameState::Playing) {
         recordUiSection(cmd, TextureSections::Playing);
     }

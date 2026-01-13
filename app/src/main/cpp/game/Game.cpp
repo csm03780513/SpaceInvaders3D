@@ -7,7 +7,7 @@
 #include "RenderContext.h"
 #include "MainMenuState.h"
 #include "PlayingState.h"
-#include "GameOverState.h"
+#include "YouDiedState.h"
 #include "input/InputCommand.h"
 #include "platform/PlatformServices.h"
 #include "SFXMixer.h"
@@ -267,6 +267,15 @@ void Game::initializeSystems() {
             }
         });
     }
+    if (damageAppliedSubId_ == 0) {
+        damageAppliedSubId_ = eventBus_.subscribeDamageApplied([this](const DamageAppliedEvent &event) {
+            if (!renderer_) return;
+            if (event.killed && event.target != ShipEntityId) {
+                renderer_->shakeTimer = 0.12f; // or whatever duration feels right
+            }
+        });
+    }
+
 
     renderer_->bindGameplay(&shipManager_.ship(),
                             &shipManager_.pushConstants(),
@@ -288,7 +297,7 @@ void Game::initializeStates() {
     }
     mainMenuState_ = std::make_unique<MainMenuState>(*this, *renderContext_);
     playingState_ = std::make_unique<PlayingState>(*this, *renderContext_);
-    gameOverState_ = std::make_unique<GameOverState>(*this, *renderContext_);
+    youDiedState = std::make_unique<YouDiedState>(*this, *renderContext_);
     currentState_ = mainMenuState_.get();
     currentStateType_ = GameState::MainMenu;
     if (currentState_) {
@@ -304,10 +313,15 @@ void Game::shutdownRenderer() {
         eventBus_.unsubscribeDamagePopup(damagePopupSubscriptionId_);
         damagePopupSubscriptionId_ = 0;
     }
+
+    if(damageAppliedSubId_ != 0) {
+        eventBus_.unsubscribeDamageApplied(damageAppliedSubId_);
+        damageAppliedSubId_ = 0;
+    }
     currentState_ = nullptr;
     mainMenuState_.reset();
     playingState_.reset();
-    gameOverState_.reset();
+    youDiedState.reset();
     renderContext_.reset();
     renderer_.reset();
     mechanics_.reset();
@@ -354,11 +368,11 @@ void Game::changeState(GameState state) {
             nextState = playingState_.get();
             break;
         case GameState::Won:
-        case GameState::Lost:
-            if (gameOverState_) {
-                gameOverState_->setOutcome(state);
+        case GameState::YouDied:
+            if (youDiedState) {
+                youDiedState->setOutcome(state);
             }
-            nextState = gameOverState_.get();
+            nextState = youDiedState.get();
             break;
     }
 

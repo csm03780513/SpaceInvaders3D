@@ -18,7 +18,7 @@ class RenderContext;
 class IGameState;
 class MainMenuState;
 class PlayingState;
-class GameOverState;
+class YouDiedState;
 class InputCommand;
 class SFXMixer;
 class Util;
@@ -69,7 +69,7 @@ private:
 
     std::unique_ptr<MainMenuState> mainMenuState_;
     std::unique_ptr<PlayingState> playingState_;
-    std::unique_ptr<GameOverState> gameOverState_;
+    std::unique_ptr<YouDiedState> youDiedState;
 
     IGameState *currentState_{nullptr};
     GameState currentStateType_{GameState::MainMenu};
@@ -89,6 +89,8 @@ private:
     std::unique_ptr<GameMechanicsCoordinator> mechanics_;
     EventBus eventBus_;
     uint32_t damagePopupSubscriptionId_ = 0;
+    uint32_t damageAppliedSubId_ = 0;
+    uint32_t shipDeadSubId_ = 0;
     AilmentSystem ailSys_;
     AilmentRules ailRules_;
     ShieldRules shieldRules_{ .kineticHalfOnShield = true, .darkMatterIgnoresArmor = true };

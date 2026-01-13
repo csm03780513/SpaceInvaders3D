@@ -3,20 +3,19 @@
 #include <algorithm>
 #include <vector>
 
-DamageResolver::DamageResolver(EventBus &bus,
+DamageResolver::DamageResolver(EventBus &eventBus,
                                Ship &ship,
                                std::span<Alien> aliens,
                                AilmentRules &ailRules,
-                               ShieldRules &shieldRules)
-        : bus_(bus), ship_(ship), aliens_(aliens), ailRules_(ailRules), shieldRules_(shieldRules) {
+                               ShieldRules &shieldRules): eventBus_(eventBus), ship_(ship), aliens_(aliens), ailRules_(ailRules), shieldRules_(shieldRules) {
     damageSystem_.ctx.ailRules = &ailRules_;
     damageSystem_.ctx.shRules = &shieldRules_;
-    subscriptionId_ = bus_.subscribeHit([this](const HitEvent &event) { onHit(event); });
+    subscriptionId_ = eventBus_.subscribeHit([this](const HitEvent &event) { onHit(event); });
 }
 
 DamageResolver::~DamageResolver() {
     if (subscriptionId_ != 0) {
-        bus_.unsubscribeHit(subscriptionId_);
+        eventBus_.unsubscribeHit(subscriptionId_);
     }
 }
 
@@ -52,10 +51,10 @@ void DamageResolver::onHit(const HitEvent &event) {
     }
 
     for (const auto &ev: applied) {
-        bus_.publish(ev);
+        eventBus_.publish(ev);
     }
     for (const auto &popup: popups) {
-        bus_.publish(popup);
+        eventBus_.publish(popup);
     }
 }
 
@@ -92,8 +91,7 @@ void AilmentTicker::update(float dt) {
     }
 }
 
-PowerUpOnKill::PowerUpOnKill(EventBus &bus, std::span<Alien> aliens, PowerUpManager &manager)
-        : bus_(bus), aliens_(aliens), powerUpManager(manager) {
+PowerUpOnKill::PowerUpOnKill(EventBus &eventBus, std::span<Alien> aliens, PowerUpManager &manager): bus_(eventBus), aliens_(aliens), powerUpManager(manager) {
     subscriptionId_ = bus_.subscribeDamageApplied([this](const DamageAppliedEvent &event) { onDamage(event); });
 }
 

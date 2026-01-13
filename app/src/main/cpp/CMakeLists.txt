@@ -22,7 +22,7 @@ add_library(SpaceInvaders3D SHARED
         game/RenderContext.cpp
         game/MainMenuState.cpp
         game/PlayingState.cpp
-        game/GameOverState.cpp
+        game/YouDiedState.cpp
         input/FireCommand.cpp
         input/MoveShipCommand.cpp
         input/RestartGameCommand.cpp

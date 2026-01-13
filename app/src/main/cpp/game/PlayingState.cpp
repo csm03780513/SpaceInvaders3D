@@ -31,7 +31,7 @@ void PlayingState::update(float dt) {
     }
 
     if (game_.hasAlienBelow(-0.9f) || game_.hasShipDead()) {
-        game_.requestState(GameState::Lost);
+        game_.requestState(GameState::YouDied);
     } else if (!game_.hasActiveAliens()) {
         game_.requestState(GameState::Won);
     }

@@ -53,11 +53,6 @@ public:
 
     [[nodiscard]] VkDevice device() const { return device_; }
 
-    AlienManager *alienManager();
-    ProjectileManager *projectileManager();
-    PowerUpManager *powerUpManager();
-    ParticleSystem *particleSystem();
-    GameMechanicsCoordinator *mechanics();
     void resetFloatingDamageState();
 
     std::unordered_map<TextureSections, std::vector<UiEntry>> uiTextures = {
@@ -66,8 +61,9 @@ public:
                 UiEntry{{0.0f, 0.0f},{9.0f, 1.5f},1,"start"},
                 UiEntry{{0.0f, 0.2f},{9.0f, 1.5f},2,"exit"}
             }},
-            {TextureSections::Lost,{
-                UiEntry{{0.0f, 0.0f},{12.0f,6.0f},3,"you_died"}
+            {TextureSections::YouDied, {
+                UiEntry{{0.0f, 0.0f},{12.0f, 2.0f},1,"restart"},
+                UiEntry{{0.0f, 0.2f},{9.0f, 1.5f},2,"exit"}
             }},
             {TextureSections::Playing,{
                 UiEntry{{-0.6f, -0.75f}, {5.0f, 0.2f}, 4, "player_hull"}
