@@ -30,6 +30,16 @@ void PowerUpManager::spawnPowerUp(const glm::vec2 &pos) {
     }
 }
 
+void PowerUpManager::reset() {
+    powerUps_.clear();
+    collectedPowerUps.clear();
+    doubleShotActive = false;
+    shieldActive = false;
+    doubleShotTimer = 0.0f;
+    shieldTimer = 0.0f;
+    elapsedTime_ = 0.0f;
+}
+
 void PowerUpManager::updatePowerUpData() {
     updatePowerUpExpiry();
     for (auto &p: powerUps_) {

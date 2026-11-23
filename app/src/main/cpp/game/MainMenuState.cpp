@@ -1,7 +1,5 @@
 #include "MainMenuState.h"
 
-#include <cstdlib>
-
 #include "Game.h"
 #include "RenderContext.h"
 #include "GameObjectData.h"
@@ -24,7 +22,7 @@ void MainMenuState::handleInput(const InputEvent &event) {
         if (entry.name == "start") {
             game_.requestState(GameState::Playing);
         } else if (entry.name == "exit") {
-            std::exit(EXIT_SUCCESS);
+            game_.requestExit();
         }
         break;
     }

@@ -2,6 +2,7 @@
 
 #include <android/asset_manager.h>
 #include <android/log.h>
+#include <android/native_activity.h>
 #include <android/native_window.h>
 
 #include <algorithm>
@@ -65,6 +66,10 @@ double AndroidPlatformServices::getMonotonicTimeSeconds() const {
     return std::chrono::duration<double>(now - start).count();
 }
 
+void AndroidPlatformServices::requestExit() {
+    ANativeActivity_finish(app_.activity);
+}
+
 void AndroidPlatformServices::handleAppCommand(int32_t cmd) {
     LifecycleCallbacks callbacksCopy;
     {
@@ -96,6 +101,9 @@ void AndroidPlatformServices::handleAppCommand(int32_t cmd) {
         case APP_CMD_CONFIG_CHANGED:
             if (callbacksCopy.onWindowDestroyed) {
                 callbacksCopy.onWindowDestroyed();
+            }
+            if (app_.window && callbacksCopy.onWindowCreated) {
+                callbacksCopy.onWindowCreated();
             }
             break;
         default:

@@ -46,15 +46,14 @@ public:
     void render();
 
     void requestState(GameState state);
+    void requestExit();
     void setRenderState(GameState state);
     void setShipInput(float x, float y, bool fireBullet);
     void updatePlaying(float dt);
-    void restartGame();
-    [[nodiscard]] bool hasActiveAliens() const;
-    [[nodiscard]] bool hasAlienBelow(float threshold) const;
-    [[nodiscard]] bool hasShipDead() const;
-
 private:
+    void restartGame();
+    void updateWaves();
+    void spawnWave(bool boss);
     void ensureRenderer();
     void initializeSystems();
     void initializeStates();
@@ -94,6 +93,12 @@ private:
     AilmentSystem ailSys_;
     AilmentRules ailRules_;
     ShieldRules shieldRules_{ .kineticHalfOnShield = true, .darkMatterIgnoresArmor = true };
+    bool windowAvailable_ = false;
+    bool focused_ = false;
+    int currentWave_ = 1;
+    double runElapsed_ = 0.0;
+    double lastRunTick_ = 0.0;
+    double reinforcementsAt_ = 0.0;
     int actualScore_ = 0;
     ShipManager shipManager_{};
 };

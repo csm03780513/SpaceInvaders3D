@@ -19,6 +19,7 @@ void ProjectileManager::setBulletSize(const std::array<float, 2> &size) {
 }
 
 void ProjectileManager::reset() {
+    alienFireTimer_ = 0.0f;
     for (auto &bullet: bullets_) {
         bullet.active = false;
     }

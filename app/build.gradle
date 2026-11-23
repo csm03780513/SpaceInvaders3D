@@ -51,6 +51,10 @@ android {
     }
 
     ndkVersion '26.1.10909125'
+    compileOptions {
+        targetCompatibility JavaVersion.VERSION_17
+        sourceCompatibility JavaVersion.VERSION_17
+    }
 
 }
 

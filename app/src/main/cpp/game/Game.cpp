@@ -1,6 +1,7 @@
 #include "Game.h"
 
 #include <android/log.h>
+#include <cmath>
 #include <exception>
 
 #include "Renderer.h"
@@ -9,6 +10,7 @@
 #include "PlayingState.h"
 #include "YouDiedState.h"
 #include "input/InputCommand.h"
+#include "input/FireCommand.h"
 #include "platform/PlatformServices.h"
 #include "SFXMixer.h"
 #include "Util.h"
@@ -17,10 +19,12 @@
 #include "mechanics/AlienManager.h"
 #include "mechanics/ProjectileManager.h"
 #include "mechanics/CombatEventSubscribers.h"
-#include "GameTime.h"
 
 namespace {
 constexpr const char *kLogTag = "SpaceInvaders3D";
+constexpr int kSecondsPerWave = 60;
+constexpr int kWaveCount = 10;
+constexpr double kReinforcementDelay = 3.0;
 }
 
 Game::Game(IPlatformServices &platformServices) : platformServices_(platformServices) {
@@ -38,6 +42,8 @@ Game::~Game() {
 }
 
 void Game::onWindowCreated() {
+    windowAvailable_ = true;
+    lastRunTick_ = platformServices_.getMonotonicTimeSeconds();
     if (renderer_) {
         renderer_->onWindowResumed();
     }
@@ -45,6 +51,7 @@ void Game::onWindowCreated() {
 }
 
 void Game::onWindowDestroyed() {
+    windowAvailable_ = false;
     if (renderer_) {
         renderer_->onWindowLost();
     }
@@ -54,6 +61,8 @@ void Game::onWindowDestroyed() {
 }
 
 void Game::onFocusGained() {
+    focused_ = true;
+    lastRunTick_ = platformServices_.getMonotonicTimeSeconds();
     if (renderer_) {
         renderer_->onWindowResumed();
     }
@@ -63,6 +72,10 @@ void Game::onFocusGained() {
 }
 
 void Game::onFocusLost() {
+    focused_ = false;
+    if (currentStateType_ == GameState::Playing) {
+        enqueueCommand(std::make_unique<FireCommand>(InputEventType::TouchCancel, 0.0f, 0.0f));
+    }
     if (renderer_) {
         renderer_->onWindowLost();
     }
@@ -96,6 +109,9 @@ void Game::update(float dt) {
     if (!renderer_ || !currentState_) {
         return;
     }
+    if (!windowAvailable_ || !focused_) {
+        return;
+    }
     processInputCommands();
     currentState_->update(dt);
     applyPendingStateChange();
@@ -114,6 +130,10 @@ void Game::requestState(GameState state) {
     }
     pendingStateTarget_ = state;
     pendingStateChange_ = true;
+}
+
+void Game::requestExit() {
+    platformServices_.requestExit();
 }
 
 void Game::setRenderState(GameState state) {
@@ -152,12 +172,18 @@ void Game::updatePlaying(float dt) {
         powerUpManager_->updatePowerUpData();
         powerUpManager_->checkIfPowerUpCollected(shipManager_.ship());
     }
-    if (projectileManager_ && currentStateType_ == GameState::Playing) {
-        projectileManager_->update(GameTime::deltaTime);
+    if (projectileManager_) {
+        projectileManager_->update(dt);
         if (alienManager_) {
-            projectileManager_->tryAlienFire(GameTime::deltaTime, *alienManager_, shipManager_.ship());
+            projectileManager_->tryAlienFire(dt, *alienManager_, shipManager_.ship());
         }
     }
+
+    if (shipManager_.isDead() || alienManager_->hasAlienBelow(-0.9f)) {
+        requestState(GameState::YouDied);
+        return;
+    }
+    updateWaves();
 }
 
 void Game::restartGame() {
@@ -165,37 +191,49 @@ void Game::restartGame() {
         return;
     }
 
-    if (alienManager_) {
-        alienManager_->initAliens();
-    }
-
-    shipManager_.resetForNewGame(alienManager_ && alienManager_->hasAlienBelow(0.9f));
-
-    if (projectileManager_) {
-        projectileManager_->reset();
-    }
-
+    currentWave_ = 1;
+    runElapsed_ = 0.0;
+    lastRunTick_ = platformServices_.getMonotonicTimeSeconds();
+    actualScore_ = 0;
+    shipManager_.resetForNewGame();
+    powerUpManager_->reset();
+    projectileManager_->reset();
+    spawnWave(false);
     renderer_->resetFloatingDamageState();
-    setRenderState(GameState::Playing);
-
+    renderer_->setWaveProgress(currentWave_, kWaveCount, kSecondsPerWave);
 }
 
-bool Game::hasActiveAliens() const {
-    if (!alienManager_) {
-        return false;
+void Game::updateWaves() {
+    const double now = platformServices_.getMonotonicTimeSeconds();
+    runElapsed_ += now - lastRunTick_;
+    lastRunTick_ = now;
+
+    if (runElapsed_ >= kWaveCount * kSecondsPerWave) {
+        requestState(GameState::Won);
+        return;
     }
-    return alienManager_->hasActiveAliens();
-}
 
-bool Game::hasAlienBelow(float threshold) const {
-    if (!alienManager_) {
-        return false;
+    const int wave = static_cast<int>(runElapsed_) / kSecondsPerWave + 1;
+    if (wave != currentWave_) {
+        currentWave_ = wave;
+        projectileManager_->reset();
+        spawnWave(currentWave_ == kWaveCount);
+    } else if (!alienManager_->hasActiveAliens()) {
+        if (reinforcementsAt_ == 0.0) {
+            reinforcementsAt_ = runElapsed_ + kReinforcementDelay;
+        } else if (runElapsed_ >= reinforcementsAt_) {
+            spawnWave(false);
+        }
     }
-    return alienManager_->hasAlienBelow(threshold);
+
+    const int secondsLeft = static_cast<int>(std::ceil(currentWave_ * kSecondsPerWave - runElapsed_));
+    renderer_->setWaveProgress(currentWave_, kWaveCount, secondsLeft);
 }
 
-bool Game::hasShipDead() const {
-    return shipManager_.isDead();
+void Game::spawnWave(bool boss) {
+    reinforcementsAt_ = 0.0;
+    alienManager_->initAliens(currentWave_, boss);
+    powerUpManager_->powerUpChance = 0.1f + 0.025f * (currentWave_ - 1);
 }
 
 void Game::ensureRenderer() {
@@ -242,9 +280,8 @@ void Game::initializeSystems() {
         particleSystem_ = std::make_unique<ParticleSystem>(renderer_->device(), powerUpManager_);
     }
     if (!alienManager_) {
-        alienManager_ = std::make_unique<AlienManager>(powerUpManager_);
+        alienManager_ = std::make_unique<AlienManager>();
     }
-    alienManager_->initAliens();
     if (!projectileManager_) {
         projectileManager_ = std::make_unique<ProjectileManager>(eventBus_, *powerUpManager_, *particleSystem_, sfxMixer_);
     }

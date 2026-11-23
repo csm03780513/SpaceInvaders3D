@@ -1811,22 +1811,20 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
         }
     }
 
-    if (gameState != GameState::Playing) {
-        // Set special color in push constant or UBO (e.g. red for GAME OVER)
-
-    } else {
-
-    }
-
     if (gameState == GameState::MainMenu) {
         recordUiSection(cmd, TextureSections::MainMenu);
-    } else if (gameState == GameState::YouDied) {
-        recordUiSection(cmd, TextureSections::YouDied);
+    } else if (gameState == GameState::YouDied || gameState == GameState::Won) {
+        recordUiSection(cmd, TextureSections::RunEnd);
     } else if (gameState == GameState::Playing) {
         recordUiSection(cmd, TextureSections::Playing);
     }
 
     for (const auto &[textName, textData]: allTextVertices) {
+        if ((textName == GameText::WaveProgress && gameState != GameState::Playing) ||
+            (textName == GameText::RunComplete && gameState != GameState::Won)) {
+            continue;
+        }
+
         FontPushConstants fontPushConstants{};
         fontPushConstants.currentTime = floatingDamageGlobalTime_;
         fontPushConstants.startTime = 0.0f;
@@ -1851,8 +1849,9 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex) {
         }
         if (powerUpManager_) {
             auto it = powerUpManager_->collectedPowerUps.find(textName);
-            if (it != powerUpManager_->collectedPowerUps.end()) {
-                if (it->second.active) {
+            if (textName == GameText::DoubleShotCD || textName == GameText::ShieldCD) {
+                if (gameState == GameState::Playing &&
+                    it != powerUpManager_->collectedPowerUps.end() && it->second.active) {
                     auto textPos = it->second.textPos;
                     fontPushConstants.pos = {textPos.x, textPos.y};
 
@@ -2083,6 +2082,21 @@ void Renderer::recordUiSection(VkCommandBuffer cmd, TextureSections section) {
         vkCmdDraw(cmd, 6, 1, 0, 0);
     }
 }
+void Renderer::setWaveProgress(int wave, int totalWaves, int secondsLeft) {
+    if (displayedWave_ == wave && displayedWaveSeconds_ == secondsLeft) {
+        return;
+    }
+    displayedWave_ = wave;
+    displayedWaveSeconds_ = secondsLeft;
+
+    char text[32];
+    snprintf(text, sizeof(text), "Wave %d/%d  %d:%02d", wave, totalWaves,
+             secondsLeft / 60, secondsLeft % 60);
+    auto vertices = fontManager_->buildTextVertices(text, 0.0f, -0.93f, 0.0f, 0.0025f, true);
+    updateFontBuffer(device_, vertices, fontBufferMemory_, waveProgressOffset_);
+    allTextVertices[GameText::WaveProgress] = {fontVertexBuffer_, std::move(vertices), waveProgressOffset_};
+}
+
 void Renderer::animateScore() {
     int newScore = scoreSource_ ? *scoreSource_ : 0;
     int prevDisplay = static_cast<int>(displayedScore_);
@@ -2091,7 +2105,7 @@ void Renderer::animateScore() {
     if (displayedScore_ != newScore) {
         float diff = newScore - displayedScore_;
         float step = scoreAnimSpeed_ * GameTime::deltaTime;
-        if (fabs(diff) < step)
+        if (newScore == 0 || fabs(diff) < step)
             displayedScore_ = static_cast<float>(newScore);
         else
             displayedScore_ += (diff > 0 ? 1 : -1) * step;
@@ -2293,10 +2307,19 @@ void Renderer::loadText() {
     updateFontBuffer(device_, titleVertices, fontBufferMemory_, titleOffset);
     allTextVertices[GameText::Title] = {fontVertexBuffer_, titleVertices, titleOffset};
 
+    const VkDeviceSize runCompleteOffset = titleOffset + titleVertices.size() * sizeof(Vertex);
+    auto runCompleteVertices = fontManager_->buildTextVertices(
+            "Run Complete", 0.0f, -0.36f, 0.0f, 0.004f, true);
+    updateFontBuffer(device_, runCompleteVertices, fontBufferMemory_, runCompleteOffset);
+    waveProgressOffset_ = runCompleteOffset + runCompleteVertices.size() * sizeof(Vertex);
+    allTextVertices[GameText::RunComplete] = {fontVertexBuffer_, std::move(runCompleteVertices), runCompleteOffset};
+
+    // Reserve enough space for every character in the formatted wave label.
+    scoreOffset_ = waveProgressOffset_ + 31 * 6 * sizeof(Vertex);
+
     // Score text
     std::vector<Vertex> scoreVertices = fontManager_->buildTextVertices(
             "Score:0", -0.95f, -0.8f, 0.0f, 0.002f);
-    scoreOffset_ = titleOffset + titleVertices.size() * sizeof(Vertex);
     updateFontBuffer(device_, scoreVertices, fontBufferMemory_, scoreOffset_);
     allTextVertices[GameText::Score] = {fontVertexBuffer_, scoreVertices, scoreOffset_};
     powerUpTextCDOffset = scoreOffset_ + scoreVertices.size() * sizeof(Vertex);
@@ -2483,11 +2506,11 @@ Renderer::~Renderer() {
         commandPool_ = VK_NULL_HANDLE;
     }
 
-    if (instance_ != VK_NULL_HANDLE) {
-        vkDestroyInstance(instance_, nullptr);
-    }
     if (device_ != VK_NULL_HANDLE) {
         vkDestroyDevice(device_, nullptr);
+    }
+    if (instance_ != VK_NULL_HANDLE) {
+        vkDestroyInstance(instance_, nullptr);
     }
 
 

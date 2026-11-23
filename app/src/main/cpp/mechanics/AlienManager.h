@@ -1,11 +1,9 @@
 #pragma once
 
 #include <array>
-#include <optional>
 #include <span>
 
 #include "GameObjectData.h"
-#include "PowerUpManager.h"
 #include "ecs/components/CombatComponents.h"
 
 struct Alien {
@@ -29,9 +27,7 @@ struct Alien {
 
 class AlienManager {
 public:
-    AlienManager(std::shared_ptr<PowerUpManager> powerUpManager);
-
-    void initAliens();
+    void initAliens(int wave, bool boss);
     void update(float dt);
 
     bool hasActiveAliens() const;
@@ -44,19 +40,14 @@ public:
     std::span<const MainPushConstants> pushConstants() const;
 
     void flashAlien(uint32_t index);
-    void resetMovementState();
 
     const Alien* randomActiveAlien() const;
 
 private:
-    std::shared_ptr<PowerUpManager> powerUpManager_;
-
     std::array<Alien, MAX_ALIENS> aliens_{};
     std::array<MainPushConstants, MAX_ALIENS> alienPC_{};
 
     float alienDirection_ = 1.0f;
-    uint32_t wave_ = 0;
-    uint32_t level_ = 0;
 
     void buildBossAlien();
 };

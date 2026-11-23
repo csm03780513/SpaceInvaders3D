@@ -17,7 +17,7 @@ void YouDiedState::handleInput(const InputEvent &event) {
     if (event.type == InputEventType::TouchDown) {
         // game_.requestState(GameState::Playing);
 
-        const auto &entries = context_.getUiEntries(TextureSections::YouDied);
+        const auto &entries = context_.getUiEntries(TextureSections::RunEnd);
         for (const auto &entry: entries) {
             if (entry.name != "restart" && entry.name != "exit") continue;
             const auto widthHeight = Util::getQuadWidthHeight(quadVerts, 6,
@@ -29,7 +29,7 @@ void YouDiedState::handleInput(const InputEvent &event) {
             if (entry.name == "restart") {
                 game_.requestState(GameState::Playing);
             } else if (entry.name == "exit") {
-                std::exit(EXIT_SUCCESS);
+                game_.requestExit();
             }
             break;
         }

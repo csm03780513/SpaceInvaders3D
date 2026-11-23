@@ -77,11 +77,12 @@ void ShipManager::update(float dt) {
     }
 }
 
-void ShipManager::resetForNewGame(bool alienBelow) {
-    if (ship_.health.dead || alienBelow) {
-        ship_.health.hull = 100.0f;
-        ship_.health.dead = false;
-    }
+void ShipManager::resetForNewGame() {
+    ship_.health = {};
+    ship_.ailments = {};
+    ship_.x = 0.0f;
+    ship_.y = 0.0f;
+    ship_.color[0] = 0.0f;
     lastFireTime_ = 0.0f;
     canFire_ = false;
     shipPC_.flashAmount = 0.0f;

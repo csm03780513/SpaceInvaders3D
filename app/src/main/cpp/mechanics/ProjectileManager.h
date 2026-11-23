@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <memory>
 #include <span>
 #include <glm/vec2.hpp>
 
@@ -18,6 +19,7 @@ class AlienManager;
 class ParticleSystem;
 
 class PowerUpManager;
+class SFXMixer;
 
 struct Bullet {
     float x{}, y{};

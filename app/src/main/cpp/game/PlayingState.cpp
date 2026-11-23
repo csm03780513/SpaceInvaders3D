@@ -29,12 +29,6 @@ void PlayingState::update(float dt) {
     if (touchActive_) {
         game_.setShipInput(touchX_, touchY_, true);
     }
-
-    if (game_.hasAlienBelow(-0.9f) || game_.hasShipDead()) {
-        game_.requestState(GameState::YouDied);
-    } else if (!game_.hasActiveAliens()) {
-        game_.requestState(GameState::Won);
-    }
 }
 
 void PlayingState::render(RenderContext &context) {

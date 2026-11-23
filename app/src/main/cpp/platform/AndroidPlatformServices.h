@@ -15,6 +15,7 @@ public:
     WindowInfo getWindowInfo() const override;
     void setLifecycleCallbacks(const LifecycleCallbacks &callbacks) override;
     double getMonotonicTimeSeconds() const override;
+    void requestExit() override;
 
     void handleAppCommand(int32_t cmd);
     android_app &nativeApp() const { return app_; }

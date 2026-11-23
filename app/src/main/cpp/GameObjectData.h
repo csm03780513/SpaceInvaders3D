@@ -187,7 +187,9 @@ enum class GameText {
     ShieldCD,
     DoubleShotCD,
     HP,
-    FloatingDamageNumbers
+    FloatingDamageNumbers,
+    WaveProgress,
+    RunComplete
 };
 
 enum class GameTextureType {
@@ -204,7 +206,7 @@ enum class GameTextureType {
 
 enum class TextureSections {
     MainMenu,
-    YouDied,
+    RunEnd,
     Playing,
     Pause
 };

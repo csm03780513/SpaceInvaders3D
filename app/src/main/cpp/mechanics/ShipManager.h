@@ -24,7 +24,7 @@ public:
     void setInput(float x, float y, bool fireBullet,
                   ProjectileManager *projectiles, PowerUpManager *powerUps);
     void update(float dt);
-    void resetForNewGame(bool alienBelow);
+    void resetForNewGame();
     bool isDead() const;
 
 private:

@@ -26,6 +26,7 @@ public:
     virtual WindowInfo getWindowInfo() const = 0;
     virtual void setLifecycleCallbacks(const LifecycleCallbacks &callbacks) = 0;
     virtual double getMonotonicTimeSeconds() const = 0;
+    virtual void requestExit() = 0;
 };
 
 class DesktopPlatformServices : public IPlatformServices {
@@ -34,4 +35,5 @@ public:
     WindowInfo getWindowInfo() const override { return {}; }
     void setLifecycleCallbacks(const LifecycleCallbacks &callbacks) override { (void)callbacks; }
     double getMonotonicTimeSeconds() const override { return 0.0; }
+    void requestExit() override {}
 };

@@ -6,17 +6,17 @@
 #include "Util.h"
 
 
-AlienManager::AlienManager(std::shared_ptr<PowerUpManager> powerUpManager)
-        : powerUpManager_(std::move(powerUpManager)) {
-}
-
-void AlienManager::resetMovementState() {
-//    alienMoveSpeed_ = 0.3f;
+void AlienManager::initAliens(int wave, bool boss) {
     alienDirection_ = 1.0f;
-}
+    aliens_.fill(Alien{});
+    alienPC_.fill(MainPushConstants{});
 
-void AlienManager::initAliens() {
-    resetMovementState();
+    if (boss) {
+        buildBossAlien();
+        return;
+    }
+
+    const int formation = (wave - 1) % 3;
 
     Resistances enemyRes{};
     enemyRes.byType[(int) DamageType::Kinetic] = 0.10f;
@@ -33,19 +33,6 @@ void AlienManager::initAliens() {
     float startY = 0.8f;
     float dx = 0.2f;
     float dy = 0.15f;
-    level_++;
-    if (powerUpManager_) {
-        powerUpManager_->powerUpChance += 0.05f;
-    }
-    if(wave_ == 3) {
-        buildBossAlien();
-        wave_++;
-        return;
-    }
-
-    if (wave_ >= 4) wave_ = 0; // reset wave
-
-
     for (int y = 0; y < NUM_ALIENS_Y; ++y) {
         for (int x = 0; x < NUM_ALIENS_X; ++x) {
             int idx = y * NUM_ALIENS_X + x;
@@ -63,26 +50,15 @@ void AlienManager::initAliens() {
 
             aliens_[idx].widthHeight = Util::getQuadWidthHeight(quadVerts, 6, {1.0, 1.0});
             alienPC_[idx].texturePos = 1;
-            if (wave_ == 0) {
-                aliens_[idx].movementType = AlienMovementType::LeftRight;
-            } else if (wave_ == 1) {
-                aliens_[idx].frequency = aliens_[idx].baseFrequency * 7 + (level_ * 0.05f);
+            if (formation == 1) {
                 aliens_[idx].movementType = AlienMovementType::SnakeWave;
-                aliens_[idx].vy += 0.01f;
-            } else if (wave_ == 2) {
+                aliens_[idx].frequency = aliens_[idx].baseFrequency * 7 + wave * 0.05f;
+            } else if (formation == 2) {
                 aliens_[idx].movementType = AlienMovementType::SineWave;
-                aliens_[idx].frequency = aliens_[idx].baseFrequency * 5 + (level_ * 0.05f);
-                aliens_[idx].vy += 0.01f;
-            } else if (wave_ == 3) {
-                aliens_[idx].movementType = AlienMovementType::TogetherOne;
-                aliens_[idx].x = 0.0f;
-                aliens_[idx].vy += 0.01f;
-            } else {
-                aliens_[idx].movementType = AlienMovementType::JustGoDown;
+                aliens_[idx].frequency = aliens_[idx].baseFrequency * 5 + wave * 0.05f;
             }
         }
     }
-    wave_++;
 }
 
 void AlienManager::update(float dt) {
@@ -164,7 +140,7 @@ void AlienManager::update(float dt) {
         alienDirection_ *= -1.0f;
         for (auto &alien: aliens_) {
             if (alien.active && alien.unitType == UnitType::Standard) {
-                alien.y -= 0.04f;
+                alien.y -= 0.02f;
             }
         }
     }
@@ -242,7 +218,8 @@ void AlienManager::buildBossAlien() {
     bossAlien.baseFrequency = 0.1f;
     bossAlien.movementType = AlienMovementType::LeftRight;
     bossAlien.active = true;
-    bossAlien.health.hull = 1000.0f;
+    bossAlien.health.maxHull = 1000.0f;
+    bossAlien.health.hull = bossAlien.health.maxHull;
     bossAlien.health.dead = false;
     bossAlien.resistances = enemyRes;
     bossAlien.ailments = {};

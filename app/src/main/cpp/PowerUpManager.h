@@ -51,6 +51,7 @@ public:
     explicit PowerUpManager(VkDevice device, const std::shared_ptr<Util> &util, const std::shared_ptr<SFXMixer> &sfxMixer);
     ~PowerUpManager();
     void update(float deltaTime);
+    void reset();
     void spawnPowerUp(const glm::vec2& pos);
     void updatePowerUpData();
     void checkIfPowerUpCollected(const Ship &ship);

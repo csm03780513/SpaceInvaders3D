@@ -49,6 +49,7 @@ public:
                       Util *util);
     void initializeGameplayResources();
     void setScoreSource(const int *scoreSource);
+    void setWaveProgress(int wave, int totalWaves, int secondsLeft);
     void onDamagePopup(const DamagePopupSpawned &popup);
 
     [[nodiscard]] VkDevice device() const { return device_; }
@@ -61,8 +62,8 @@ public:
                 UiEntry{{0.0f, 0.0f},{9.0f, 1.5f},1,"start"},
                 UiEntry{{0.0f, 0.2f},{9.0f, 1.5f},2,"exit"}
             }},
-            {TextureSections::YouDied, {
-                UiEntry{{0.0f, 0.0f},{12.0f, 2.0f},1,"restart"},
+            {TextureSections::RunEnd, {
+                UiEntry{{0.0f, 0.0f},{12.0f, 2.0f},3,"restart"},
                 UiEntry{{0.0f, 0.2f},{9.0f, 1.5f},2,"exit"}
             }},
             {TextureSections::Playing,{
@@ -178,6 +179,9 @@ private:
     VkBuffer fontVertexBuffer_;
     VkDeviceMemory fontBufferMemory_;
     VkDeviceSize fontBufferSize_ = 0;
+    VkDeviceSize waveProgressOffset_ = 0;
+    int displayedWave_ = 0;
+    int displayedWaveSeconds_ = -1;
     VkDeviceSize scoreOffset_ = 0;
     VkDeviceSize powerUpTextCDOffset = 0;
     VkDeviceSize powerUpTextStartOffset_ = 0;
